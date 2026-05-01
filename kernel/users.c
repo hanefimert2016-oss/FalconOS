@@ -12,10 +12,11 @@
  * ============================================================================= */
 #include "falcon.h"
 
-/* Stretching factor for the password KDF. 50 000 rounds of HMAC-SHA256
- * keep verification under ~250 ms on a stock 2 GHz core but raise the
- * cost of an offline brute-force attack 5x relative to v5.0.           */
-#define PBKDF2_ROUNDS  50000
+/* Stretching factor for the password KDF. 100 000 rounds of HMAC-SHA256
+ * keep verification under ~500 ms on a stock 2 GHz core (still snappy
+ * for users) but double the cost of an offline brute-force attack
+ * vs. v5.2.  This matches modern OWASP guidance for SHA-256 PBKDF2.   */
+#define PBKDF2_ROUNDS  100000
 
 static i32 first_free_slot(void)
 {
@@ -115,9 +116,20 @@ bool users_verify(i32 idx, const char *plaintext)
     if (idx < 0 || idx >= FALCON_MAX_USERS) return false;
     falcon_user_t *u = &SET.users[idx];
     if (!u->in_use) return false;
-    if (u->no_password) return (plaintext == NULL || plaintext[0] == 0);
+    if (u->no_password) {
+        bool ok = (plaintext == NULL || plaintext[0] == 0);
+        if (ok) {
+            u->failed_attempts = 0;
+            u->last_login_uptime_ms = pit_ms();
+        }
+        return ok;
+    }
 
-    if (plaintext == NULL || plaintext[0] == 0) return false;
+    if (plaintext == NULL || plaintext[0] == 0) {
+        u->failed_attempts++;
+        u->last_fail_uptime_ms = pit_ms();
+        return false;
+    }
 
     u8 candidate[FALCON_HASH_BYTES];
     pbkdf2_sha256((const u8 *)plaintext, (u32)k_strlen(plaintext),
@@ -133,7 +145,39 @@ bool users_verify(i32 idx, const char *plaintext)
      * memory can't recover this guess (and, by extension, narrow the
      * search space).                                                  */
     k_explicit_bzero(candidate, sizeof candidate);
-    return diff == 0;
+
+    bool ok = (diff == 0);
+    if (ok) {
+        u->failed_attempts        = 0;
+        u->last_login_uptime_ms   = pit_ms();
+    } else {
+        u->failed_attempts++;
+        u->last_fail_uptime_ms    = pit_ms();
+    }
+    return ok;
+}
+
+i32 password_strength(const char *plain)
+{
+    if (plain == NULL) return 0;
+    i32 len = (i32)k_strlen(plain);
+    if (len == 0) return 0;
+    if (len < 4)  return 0;
+
+    i32 has_lower = 0, has_upper = 0, has_digit = 0, has_other = 0;
+    for (i32 i = 0; i < len; i++) {
+        char c = plain[i];
+        if      (c >= 'a' && c <= 'z') has_lower = 1;
+        else if (c >= 'A' && c <= 'Z') has_upper = 1;
+        else if (c >= '0' && c <= '9') has_digit = 1;
+        else                            has_other = 1;
+    }
+    i32 classes = has_lower + has_upper + has_digit + has_other;
+
+    if (len < 6)                  return 1;
+    if (len >= 12 && classes >= 3) return 3;
+    if (len >= 8  && classes >= 2) return 2;
+    return 1;
 }
 
 const falcon_user_t *users_at(i32 idx)

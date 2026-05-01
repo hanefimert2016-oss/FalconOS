@@ -196,8 +196,8 @@ void installer_render(u32 frame)
         case INST_USER_PASS: {
             headline = T("Set a password",
                           "Bir parola belirle");
-            helptext = T("Hashed with PBKDF2-HMAC-SHA256, 50000 rounds + salt.",
-                          "PBKDF2-HMAC-SHA256, 50000 tur + salt ile hash.");
+            helptext = T("Hashed with PBKDF2-HMAC-SHA256, 100000 rounds + salt.",
+                          "PBKDF2-HMAC-SHA256, 100000 tur + salt ile hash.");
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
 
             char who[40]; k_strcpy(who, T("User: ", "Kullanici: "));
@@ -212,6 +212,33 @@ void installer_render(u32 frame)
             gfx_text(fx + 16, fy + 20, masked, PAL_TEXT);
             i32 caret_x = fx + 16 + gfx_text_width(masked);
             if ((frame / 30) & 1) gfx_rect(caret_x, fy + 16, 2, 22, PAL_ACCENT);
+
+            /* Strength meter — three pips that light up as the password
+             * gets longer/more diverse. Empty pwd = 0 pips (allowed but
+             * dimmed warning); 12+ chars w/ mixed classes = 3 pips.    */
+            g_pwd[g_pwd_len] = 0;
+            i32 strength = password_strength(g_pwd);
+            i32 sx = fx + fw - 90, sy = fy + 22;
+            for (i32 i = 0; i < 3; i++) {
+                u32 c = (i < strength) ? COL_OK : PAL_HAIRLINE;
+                if (strength == 1 && i == 0) c = COL_WARN;
+                if (strength == 2 && i <  2) c = COL_OK;
+                gfx_round_rect(sx + i * 22, sy, 16, 12, 5, c);
+            }
+            const char *strength_label;
+            switch (strength) {
+                case 0: strength_label = TX("(empty)", "(bos)",
+                                             "(leer)", "(vide)", "(vacio)"); break;
+                case 1: strength_label = TX("Weak", "Zayif",
+                                             "Schwach","Faible","Debil"); break;
+                case 2: strength_label = TX("OK",   "Iyi",
+                                             "OK",  "OK",     "OK"); break;
+                default:strength_label = TX("Strong","Guclu",
+                                             "Stark","Forte", "Fuerte"); break;
+            }
+            gfx_text(sx, sy + 16, strength_label,
+                     strength >= 2 ? COL_OK :
+                     strength == 1 ? COL_WARN : PAL_TEXT_FAINT);
 
             gfx_text_centered(cx, cy + 76, helptext, PAL_TEXT_DIM);
             break;

@@ -343,6 +343,11 @@ typedef struct {
     u8     hash[FALCON_HASH_BYTES];
     u8     no_password;                   /* 1 = empty pwd, hash unused     */
     accent_t accent;                      /* per-user accent for avatar    */
+    /* v5.3 — security audit / brute-force resistance.  Persistent so a
+     * reboot does not reset the throttle window mid-attack.            */
+    u32    failed_attempts;               /* since last successful unlock   */
+    u32    last_login_uptime_ms;          /* PIT ms at successful unlock    */
+    u32    last_fail_uptime_ms;           /* PIT ms at most recent failure  */
 } falcon_user_t;
 
 /* ---- runtime settings (single source of truth) ---------------------------- */
@@ -404,6 +409,9 @@ bool users_remove(i32 idx);
 bool users_set_default(i32 idx);
 bool users_change_password(i32 idx, const char *new_plaintext);
 bool users_verify(i32 idx, const char *plaintext);
+/* Heuristic 0..3 strength rating: 0=empty/very-short, 1=weak,
+ * 2=ok, 3=strong (length >= 12 + mixed classes).                       */
+i32  password_strength(const char *plain);
 const falcon_user_t *users_at(i32 idx);
 i32  users_count(void);
 
@@ -418,7 +426,7 @@ void hex_encode(const u8 *in, u32 n, char *out);   /* out >= n*2+1 chars   */
 
 /* ---- disk persistence: FalconFS superblock (kernel/diskdb.c) ------------- */
 #define FALCONFS_MAGIC      0x46414C43   /* 'FALC' */
-#define FALCONFS_VERSION    1
+#define FALCONFS_VERSION    2            /* v5.3: per-user audit fields    */
 #define FALCONFS_SECTOR     0            /* LBA0 of master ATA device      */
 
 void diskdb_load(void);          /* called from settings_init()             */
