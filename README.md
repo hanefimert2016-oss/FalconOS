@@ -52,9 +52,14 @@ to the desktop. **Esc** closes the active app or Launchpad.
 - **PBKDF2-HMAC-SHA256 password hashing** — passwords are *never*
   stored as plaintext. Each account carries a 16-byte random salt
   (TSC-seeded RNG) and a 32-byte PBKDF2-HMAC-SHA256 hash stretched
-  10 000 rounds. Verification uses constant-time comparison. See
-  `kernel/auth.c` for the full SHA-256 + HMAC + PBKDF2 implementation
-  (RFC 2898 §5.2, FIPS 198-1, FIPS 180-4 — clean-room, no libcrypto).
+  50 000 rounds. Verification uses constant-time comparison, and
+  every transient password buffer (in the installer, in the lock
+  screen, and inside `users_verify()`) is wiped with a volatile
+  `k_explicit_bzero()` so plaintext doesn't linger in BSS. The lock
+  screen also throttles brute-force attempts: after 3 wrong tries it
+  freezes new submissions for 5 seconds. See `kernel/auth.c` for the
+  full SHA-256 + HMAC + PBKDF2 implementation (RFC 2898 §5.2,
+  FIPS 198-1, FIPS 180-4 — clean-room, no libcrypto).
 - **Disk-backed user database (FalconFS)** — the entire `settings_t`
   (including all 8 user records, salts and hashes) is written to
   LBA0–3 of the primary IDE disk on every change, with a custom

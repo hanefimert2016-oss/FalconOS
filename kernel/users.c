@@ -12,7 +12,10 @@
  * ============================================================================= */
 #include "falcon.h"
 
-#define PBKDF2_ROUNDS  10000
+/* Stretching factor for the password KDF. 50 000 rounds of HMAC-SHA256
+ * keep verification under ~250 ms on a stock 2 GHz core but raise the
+ * cost of an offline brute-force attack 5x relative to v5.0.           */
+#define PBKDF2_ROUNDS  50000
 
 static i32 first_free_slot(void)
 {
@@ -121,10 +124,15 @@ bool users_verify(i32 idx, const char *plaintext)
                   u->salt, FALCON_SALT_BYTES,
                   PBKDF2_ROUNDS,
                   candidate, FALCON_HASH_BYTES);
-    /* constant-time compare */
+    /* constant-time compare so the verifier can't be timing-attacked */
     u8 diff = 0;
     for (i32 i = 0; i < FALCON_HASH_BYTES; i++)
         diff |= (u8)(candidate[i] ^ u->hash[i]);
+
+    /* Zero the candidate hash so an attacker who later reads stack
+     * memory can't recover this guess (and, by extension, narrow the
+     * search space).                                                  */
+    k_explicit_bzero(candidate, sizeof candidate);
     return diff == 0;
 }
 

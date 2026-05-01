@@ -60,6 +60,15 @@ void k_memset(void *d, u8 v, u32 n)
     while (n--) *p++ = v;
 }
 
+/* Volatile pointer + memory clobber stop the optimiser from folding
+ * away a zeroing pass on a buffer that's about to go out of scope.   */
+void k_explicit_bzero(void *p, u32 n)
+{
+    volatile u8 *vp = p;
+    while (n--) *vp++ = 0;
+    __asm__ __volatile__("" ::: "memory");
+}
+
 void k_memcpy(void *d, const void *s, u32 n)
 {
     u8 *dp = d; const u8 *sp = s;

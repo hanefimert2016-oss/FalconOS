@@ -27,6 +27,16 @@ static u32  g_shake_until = 0;
 static bool g_show_error  = false;
 static i32  g_user_cursor = -1;        /* index into SET.users[]            */
 
+/* ---- brute-force throttle -------------------------------------------------
+ *  Three consecutive wrong passwords on the same boot lock new attempts
+ *  out for THROTTLE_TICKS PIT ticks (~5 s at 100 Hz).  The counter is
+ *  per-process (not persisted) — a power cycle is enough to retry, but
+ *  that's already a real-world attacker friction.                          */
+#define MAX_FAILS_BEFORE_THROTTLE  3
+#define THROTTLE_TICKS             500     /* 100 Hz × 5 s                  */
+static u32 g_fail_count   = 0;
+static u32 g_throttle_end = 0;             /* g_tick value when lifted      */
+
 bool lockscreen_is_unlocked(void) { return g_unlocked; }
 
 static void ensure_cursor_valid(void)
@@ -188,7 +198,17 @@ void lockscreen_render(u32 frame)
     }
 
     /* ---- error / hint --------------------------------------------------- */
-    if (g_show_error) {
+    extern volatile u32 g_tick;
+    if (g_throttle_end > g_tick) {
+        u32 secs = (g_throttle_end - g_tick + 99) / 100;
+        char msg[64];
+        char tmp[8];
+        k_strcpy(msg, T("Locked - wait ", "Kilitli - bekle "));
+        k_itoa(secs, tmp, 10);
+        k_strcat(msg, tmp);
+        k_strcat(msg, "s");
+        gfx_text_centered(cx, fy + fh + 12, msg, COL_ERR);
+    } else if (g_show_error) {
         gfx_text_centered(cx, fy + fh + 12,
                           T("Wrong password - try again",
                             "Parola yanlis - tekrar dene"), COL_ERR);
@@ -222,17 +242,30 @@ void lockscreen_input(i32 key)
         g_show_error = false;
         return;
     }
+    /* While the throttle is active, swallow every keystroke other than
+     * the user-cursor moves (those reset the typed buffer above).      */
+    if (g_throttle_end > g_tick) return;
+
     if (key == KEY_ENTER) {
         g_input[g_input_len] = 0;
-        if (users_verify(g_user_cursor, g_input)) {
+        bool ok = users_verify(g_user_cursor, g_input);
+        if (ok) {
             SET.active_user = g_user_cursor;
             g_unlocked      = true;
+            g_fail_count    = 0;
         } else {
             g_show_error  = true;
             g_shake_until = g_tick + 30;
-            g_input_len   = 0;
-            g_input[0]    = 0;
+            g_fail_count++;
+            if (g_fail_count >= MAX_FAILS_BEFORE_THROTTLE) {
+                g_throttle_end = g_tick + THROTTLE_TICKS;
+                g_fail_count   = 0;
+            }
         }
+        /* Always wipe the plaintext attempt buffer so it doesn't
+         * linger in BSS for someone with a JTAG / memdump.          */
+        k_explicit_bzero(g_input, sizeof g_input);
+        g_input_len = 0;
         return;
     }
     if (key >= 0x20 && key < 0x7F && g_input_len < 23) {

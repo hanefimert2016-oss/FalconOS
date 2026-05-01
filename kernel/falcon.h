@@ -200,6 +200,10 @@ void  k_pad(char *buf, i32 width, char fill);
 i32   k_strlen(const char *s);
 void  k_memcpy(void *d, const void *s, u32 n);
 void  k_memset(void *d, u8 v, u32 n);
+/* Volatile zero-fill that the compiler may not optimise away. Use this
+ * for transient password / key buffers so plaintext doesn't linger in
+ * stack or BSS slots after authentication.                             */
+void  k_explicit_bzero(void *p, u32 n);
 char *k_strcat(char *d, const char *s);
 char *k_strcpy(char *d, const char *s);
 i32   k_strcmp(const char *a, const char *b);
@@ -283,7 +287,7 @@ void lockscreen_lock(void);
  *  becomes the system "default" — every cold boot opens the lock screen
  *  focused on that user.  Passwords are NEVER stored as plaintext: each user
  *  carries a 16-byte random salt and a 32-byte PBKDF2-HMAC-SHA256 hash that
- *  was stretched 10 000 rounds.  See kernel/auth.c.                       */
+ *  is stretched 50 000 rounds.  See kernel/auth.c.                        */
 #define FALCON_MAX_USERS    8
 #define FALCON_SALT_BYTES   16
 #define FALCON_HASH_BYTES   32

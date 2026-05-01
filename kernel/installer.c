@@ -196,8 +196,8 @@ void installer_render(u32 frame)
         case INST_USER_PASS: {
             headline = T("Set a password",
                           "Bir parola belirle");
-            helptext = T("Hashed with PBKDF2-HMAC-SHA256, 10000 rounds + salt.",
-                          "PBKDF2-HMAC-SHA256, 10000 tur + salt ile hash.");
+            helptext = T("Hashed with PBKDF2-HMAC-SHA256, 50000 rounds + salt.",
+                          "PBKDF2-HMAC-SHA256, 50000 tur + salt ile hash.");
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
 
             char who[40]; k_strcpy(who, T("User: ", "Kullanici: "));
@@ -255,15 +255,21 @@ static void commit_user(void)
     accent_t acc = (accent_t)((SET.user_count) % ACC_COUNT);
     users_add(g_uname, g_pwd, acc);
 
-    /* Mirror first user into legacy SET.owner / SET.password fields so any
-     * v5-era code that still references them keeps showing the right data. */
+    /* Mirror first user into legacy SET.owner so any v5-era code that
+     * still references SET.owner keeps showing the right name. We
+     * deliberately do NOT mirror the password — auth always goes
+     * through users_verify() against the PBKDF2 hash, and copying the
+     * plaintext into SET.password leaves it on disk too.              */
     if (SET.user_count == 1) {
         k_strcpy(SET.owner, g_uname);
-        k_strcpy(SET.password, g_pwd);   /* compat — auth uses hash now    */
     }
+    /* Wipe the legacy field if anything earlier touched it.            */
+    k_explicit_bzero(SET.password, sizeof SET.password);
 
-    g_uname[0]  = 0; g_uname_len = 0;
-    g_pwd[0]    = 0; g_pwd_len   = 0;
+    /* Wipe the local capture buffers so the plaintext password doesn't
+     * linger in BSS for the rest of the boot.                          */
+    k_explicit_bzero(g_uname, sizeof g_uname); g_uname_len = 0;
+    k_explicit_bzero(g_pwd,   sizeof g_pwd);   g_pwd_len   = 0;
 }
 
 void installer_input(i32 key)
