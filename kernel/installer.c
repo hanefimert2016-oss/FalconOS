@@ -97,10 +97,11 @@ void installer_render(u32 frame)
     i32 cx = W / 2;
     i32 cy = H / 2;
 
-    /* logo + title */
-    gfx_circle(cx, cy - 200, 36, PAL_ACCENT);
-    gfx_text_centered(cx, cy - 196, "F", 0xFFFFFF);
-    gfx_text_centered(cx, cy - 152, "FalconOS Setup", PAL_TEXT);
+    /* logo + title — the title uses the 16×32 headline font so the
+     * setup wizard reads as a real OS install screen, not a debug ROM. */
+    gfx_circle(cx, cy - 220, 36, PAL_ACCENT);
+    gfx_text_lg_centered(cx, cy - 236, "F", 0xFFFFFF);
+    gfx_text_lg_centered(cx, cy - 180, "FalconOS Setup", PAL_TEXT);
 
     /* card */
     draw_card(cx, cy, 760, 280);

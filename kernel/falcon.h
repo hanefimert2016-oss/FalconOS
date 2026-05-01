@@ -138,7 +138,16 @@ void gfx_dim(u8 amount);
 /* Apply the current SET.viewport_w / SET.viewport_h letterbox after drawing. */
 void gfx_apply_viewport(void);
 
-extern const u8 FONT8X16[95][16];
+/* 8×16 grayscale (antialiased) — one byte per pixel, row-major.        */
+extern const u8 FONT8X16 [95][128];
+/* 16×32 1-bit headline font — two bytes per row, MSB = leftmost pixel. */
+extern const u8 FONT16X32[95][64];
+
+/* Optional headline renderer — same color/coordinate semantics, twice
+ * the metrics. Used by titles/installer headings, not by general UI.   */
+void gfx_text_lg(i32 x, i32 y, const char *s, u32 c);
+void gfx_text_lg_centered(i32 cx, i32 y, const char *s, u32 c);
+i32  gfx_text_width_lg(const char *s);
 
 /* ---- keyboard ------------------------------------------------------------- */
 i32  kbd_poll(void);

@@ -297,19 +297,27 @@ void gfx_line(i32 x0, i32 y0, i32 x1, i32 y1, u32 c)
     }
 }
 
-/* ---- text ----------------------------------------------------------------- */
-i32 gfx_text_width(const char *s) { return k_strlen(s) * 8; }
+/* ---- text -----------------------------------------------------------------
+ *  gfx_text:   8 × 16 antialiased default — each glyph is a row-major
+ *              alpha map (one byte per pixel, 0 = transparent).
+ *  gfx_text_lg: 16 × 32 1-bit headline font, used for big titles.
+ *  Same coordinate / color semantics; (x, y) is the top-left of the glyph
+ *  cell, c is an 0xAARRGGBB tint.                                        */
+i32 gfx_text_width(const char *s)    { return k_strlen(s) * 8;  }
+i32 gfx_text_width_lg(const char *s) { return k_strlen(s) * 16; }
 
 void gfx_text(i32 x, i32 y, const char *s, u32 c)
 {
     while (*s) {
         u8 ch = (u8)*s++;
         if (ch < 0x20 || ch > 0x7E) ch = '?';
-        const u8 *g = FONT8X16[ch - 0x20];
+        const u8 *g = FONT8X16[ch - 0x20];      /* 8 × 16 = 128 alpha bytes */
         for (i32 j = 0; j < 16; j++) {
-            u8 row = g[j];
-            for (i32 i = 0; i < 8; i++)
-                if (row & (0x80 >> i)) gfx_pixel(x + i, y + j, c);
+            const u8 *row = g + j * 8;
+            for (i32 i = 0; i < 8; i++) {
+                u8 a = row[i];
+                if (a) gfx_pixel_a(x + i, y + j, c, a);
+            }
         }
         x += 8;
     }
@@ -318,6 +326,26 @@ void gfx_text(i32 x, i32 y, const char *s, u32 c)
 void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c)
 {
     gfx_text(cx - gfx_text_width(s) / 2, y, s, c);
+}
+
+void gfx_text_lg(i32 x, i32 y, const char *s, u32 c)
+{
+    while (*s) {
+        u8 ch = (u8)*s++;
+        if (ch < 0x20 || ch > 0x7E) ch = '?';
+        const u8 *g = FONT16X32[ch - 0x20];     /* 16 × 32 = 64 bytes (1-bit) */
+        for (i32 j = 0; j < 32; j++) {
+            u16 row = ((u16)g[j * 2] << 8) | g[j * 2 + 1];
+            for (i32 i = 0; i < 16; i++)
+                if (row & (0x8000 >> i)) gfx_pixel(x + i, y + j, c);
+        }
+        x += 16;
+    }
+}
+
+void gfx_text_lg_centered(i32 cx, i32 y, const char *s, u32 c)
+{
+    gfx_text_lg(cx - gfx_text_width_lg(s) / 2, y, s, c);
 }
 
 /* Letterbox the back buffer to SET.viewport_w x SET.viewport_h centered.

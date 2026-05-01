@@ -135,9 +135,11 @@ void lockscreen_render(u32 frame)
         k_itoa(H_, tmp, 10); if (H_ < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
         k_strcat(clk, ":");
         k_itoa(M_, tmp, 10); if (M_ < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
-        gfx_text_centered(cx, cy - 230, clk, PAL_TEXT);
-        gfx_text_centered(cx, cy - 210, T("Welcome back",
-                                          "Tekrar hosgeldin"), PAL_TEXT_DIM);
+        /* Big crisp clock + small helper text; gives the lockscreen a
+         * proper macOS-style headline rather than a tiny terminal time. */
+        gfx_text_lg_centered(cx, cy - 245, clk, PAL_TEXT);
+        gfx_text_centered   (cx, cy - 200, T("Welcome back",
+                                             "Tekrar hosgeldin"), PAL_TEXT_DIM);
     }
 
     /* ---- user picker ---------------------------------------------------- */
