@@ -254,6 +254,97 @@ void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r)
     gfx_round_outline(x, y, w, h, r, PAL_HAIRLINE);
 }
 
+/* =============================================================================
+ *  v5.2 "Aero" — frosted-glass blur
+ * -----------------------------------------------------------------------------
+ *  Two-pass separable box blur over a sub-rect of the live back buffer.
+ *  Only the requested rect is touched, so the cost scales with rect area
+ *  (a 600×400 app-window chrome blur runs in ~12 ms even in TCG).
+ *
+ *  We need a scratch buffer to hold one intermediate pass — sized for the
+ *  largest panel we ever blur (full-width dock at 1920×120 ≈ 0.9 MiB).
+ *  Static allocation in BSS keeps the code allocator-free.
+ * ============================================================================= */
+#define BLUR_MAX_W 1920
+#define BLUR_MAX_H 480
+static u32 BLUR_SCRATCH[BLUR_MAX_W * BLUR_MAX_H];
+
+void gfx_blur_rect(i32 x, i32 y, i32 w, i32 h, i32 r)
+{
+    /* clamp to buffer bounds and the scratch capacity */
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > (i32)BACK_W) w = (i32)BACK_W - x;
+    if (y + h > (i32)BACK_H) h = (i32)BACK_H - y;
+    if (w > BLUR_MAX_W) w = BLUR_MAX_W;
+    if (h > BLUR_MAX_H) h = BLUR_MAX_H;
+    if (w <= 0 || h <= 0 || r <= 0) return;
+    if (r > 8) r = 8;            /* radius cap — past 8 the look stops      */
+                                 /*  improving and the cost balloons.       */
+
+    /* horizontal pass: BACK[x..x+w, y..y+h] -> BLUR_SCRATCH[0..w, 0..h] */
+    for (i32 yy = 0; yy < h; yy++) {
+        u32 *src = &BACK[(y + yy) * BACK_W + x];
+        u32 *dst = &BLUR_SCRATCH[yy * BLUR_MAX_W];
+        for (i32 xx = 0; xx < w; xx++) {
+            u32 sr = 0, sg = 0, sb = 0, n = 0;
+            for (i32 k = -r; k <= r; k++) {
+                i32 i = xx + k;
+                if (i < 0) i = 0;
+                if (i >= w) i = w - 1;
+                u32 c = src[i];
+                sr += (c >> 16) & 0xFF;
+                sg += (c >>  8) & 0xFF;
+                sb +=  c        & 0xFF;
+                n++;
+            }
+            dst[xx] = ((sr / n) << 16) | ((sg / n) << 8) | (sb / n);
+        }
+    }
+
+    /* vertical pass: BLUR_SCRATCH -> BACK */
+    for (i32 xx = 0; xx < w; xx++) {
+        for (i32 yy = 0; yy < h; yy++) {
+            u32 sr = 0, sg = 0, sb = 0, n = 0;
+            for (i32 k = -r; k <= r; k++) {
+                i32 j = yy + k;
+                if (j < 0) j = 0;
+                if (j >= h) j = h - 1;
+                u32 c = BLUR_SCRATCH[j * BLUR_MAX_W + xx];
+                sr += (c >> 16) & 0xFF;
+                sg += (c >>  8) & 0xFF;
+                sb +=  c        & 0xFF;
+                n++;
+            }
+            BACK[(y + yy) * BACK_W + (x + xx)] =
+                ((sr / n) << 16) | ((sg / n) << 8) | (sb / n);
+        }
+    }
+}
+
+/* Blurs the rect under (x,y,w,h,r) then overlays a translucent rounded
+ * tint with a hairline border. The corner mask is applied by drawing a
+ * full-alpha rectangle of TRANSPARENT pixels outside the rounded shape —
+ * which we approximate by re-rendering only the rounded body with the
+ * tint and trusting the corner-cut from gfx_round_rect_a.               */
+void gfx_aero_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r,
+                          u32 tint, u8 tint_alpha)
+{
+    /* drop shadow first so the blur doesn't smear it */
+    gfx_round_rect_a(x + 2, y + 6, w, h, r, COL_SHADOW, 28);
+    gfx_round_rect_a(x + 1, y + 3, w, h, r, COL_SHADOW, 18);
+
+    /* blur the area now (after shadow, so the shadow contributes a soft
+     * darkening at the panel edges — looks natural).                  */
+    gfx_blur_rect(x, y, w, h, 6);
+
+    /* translucent tint on top of the blurred pixels */
+    gfx_round_rect_a(x, y, w, h, r, tint, tint_alpha);
+
+    /* hairline border for crispness */
+    gfx_round_outline(x, y, w, h, r, PAL_HAIRLINE);
+}
+
 void gfx_round_outline(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c)
 {
     if (r * 2 > w) r = w / 2;

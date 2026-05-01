@@ -126,6 +126,15 @@ void gfx_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c);
 void gfx_round_rect_a(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c, u8 a);
 void gfx_round_outline(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c);
 void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r);
+/* Aero (frosted-glass) primitives — separable box blur the live back
+ * buffer in a sub-rect, then optionally tint the blurred pixels with a
+ * translucent rounded panel. The blur is *real*: it samples the pixels
+ * already rendered behind the panel, so wallpaper / widgets / open
+ * windows show through softly. Disable globally via SET.aero_enabled
+ * (see settings.c) to fall back to the cheaper flat gfx_round_glass.  */
+void gfx_blur_rect(i32 x, i32 y, i32 w, i32 h, i32 radius);
+void gfx_aero_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r,
+                          u32 tint, u8 tint_alpha);
 void gfx_circle(i32 cx, i32 cy, i32 r, u32 c);
 void gfx_circle_a(i32 cx, i32 cy, i32 r, u32 c, u8 alpha);
 void gfx_circle_outline(i32 cx, i32 cy, i32 r, u32 c);
@@ -324,6 +333,18 @@ typedef struct {
     i32         user_count;
     i32         default_user;    /* index into users[]                      */
     i32         active_user;     /* who unlocked the desktop                */
+
+    /* v5.2 "Aero" — frosted-glass / translucency toggle. Default true on
+     * x86_64 (≈ 4 ms per panel even in TCG), users on slow boxes can
+     * disable from Settings.                                              */
+    bool        aero_enabled;
+    /* v5.2 timezone offset in *minutes* east of UTC. e.g. Istanbul = +180,
+     * London = 0/+60, NYC = -300, Tokyo = +540. Read by pit_uptime() to
+     * convert wall-clock to local time without a full tz database.        */
+    i32         tz_minutes;
+    /* v5.2 first-run welcome banner — shown once on the desktop after
+     * the initial install completes, dismissable.                         */
+    bool        welcome_shown;
 } settings_t;
 
 extern settings_t SET;

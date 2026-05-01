@@ -43,6 +43,15 @@ void settings_init(void)
     SET.active_user   = 0;
     for (i32 i = 0; i < FALCON_MAX_USERS; i++) SET.users[i].in_use = false;
 
+    /* v5.2 Aero — translucency on by default. Falls back gracefully on
+     * older hardware via Settings ▸ "Aero" toggle.                      */
+    SET.aero_enabled  = true;
+    /* v5.2 timezone — Istanbul / TRT (UTC+3). Installer step lets the
+     * user pick a different region; in headless / pre-install boots
+     * the lock screen still shows a sensible local time.                */
+    SET.tz_minutes    = 180;
+    SET.welcome_shown = false;
+
     /* Probe disk and try to restore the entire settings_t from LBA0. If a
      * superblock with matching magic+version+checksum is found, SET is
      * overwritten and the installer wizard is skipped automatically.    */
