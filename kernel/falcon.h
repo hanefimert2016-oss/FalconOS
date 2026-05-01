@@ -54,7 +54,14 @@ typedef enum {
     ACC_GRAPHITE,
     ACC_COUNT
 } accent_t;
-typedef enum { LANG_TR = 0, LANG_EN = 1 } lang_t;
+typedef enum {
+    LANG_TR = 0,    /* Turkce       */
+    LANG_EN = 1,    /* English      */
+    LANG_DE = 2,    /* Deutsch      */
+    LANG_FR = 3,    /* Francais     */
+    LANG_ES = 4,    /* Espanol      */
+    LANG_COUNT,
+} lang_t;
 typedef enum {
     KBD_TR_Q = 0,    /* Türkçe Q (default for TR users)                  */
     KBD_TR_F,        /* Türkçe F                                          */
@@ -126,6 +133,15 @@ void gfx_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c);
 void gfx_round_rect_a(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c, u8 a);
 void gfx_round_outline(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c);
 void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r);
+/* Aero (frosted-glass) primitives — separable box blur the live back
+ * buffer in a sub-rect, then optionally tint the blurred pixels with a
+ * translucent rounded panel. The blur is *real*: it samples the pixels
+ * already rendered behind the panel, so wallpaper / widgets / open
+ * windows show through softly. Disable globally via SET.aero_enabled
+ * (see settings.c) to fall back to the cheaper flat gfx_round_glass.  */
+void gfx_blur_rect(i32 x, i32 y, i32 w, i32 h, i32 radius);
+void gfx_aero_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r,
+                          u32 tint, u8 tint_alpha);
 void gfx_circle(i32 cx, i32 cy, i32 r, u32 c);
 void gfx_circle_a(i32 cx, i32 cy, i32 r, u32 c, u8 alpha);
 void gfx_circle_outline(i32 cx, i32 cy, i32 r, u32 c);
@@ -177,6 +193,19 @@ u32  pit_ms(void);
 void pit_sleep(u32 ms);
 void pit_uptime(u32 *h, u32 *m, u32 *s);
 extern volatile u32 g_ticks;          /* 100 Hz, set by IRQ0 */
+
+/* ---- real-time clock (CMOS / MC146818) ----------------------------------- */
+typedef struct {
+    u32 year;     /* full 4-digit, e.g. 2026 */
+    u8  month;    /* 1..12  */
+    u8  day;      /* 1..31  */
+    u8  hour;     /* 0..23  */
+    u8  min;      /* 0..59  */
+    u8  sec;      /* 0..59  */
+} rtc_time_t;
+
+void rtc_now(rtc_time_t *t);     /* raw CMOS read (UTC on most BIOSes)   */
+void rtc_local(rtc_time_t *t);   /* CMOS + SET.tz_minutes, date rolled  */
 
 /* ---- gdt / idt / pic ------------------------------------------------------ */
 void gdt_install(void);
@@ -324,6 +353,18 @@ typedef struct {
     i32         user_count;
     i32         default_user;    /* index into users[]                      */
     i32         active_user;     /* who unlocked the desktop                */
+
+    /* v5.2 "Aero" — frosted-glass / translucency toggle. Default true on
+     * x86_64 (≈ 4 ms per panel even in TCG), users on slow boxes can
+     * disable from Settings.                                              */
+    bool        aero_enabled;
+    /* v5.2 timezone offset in *minutes* east of UTC. e.g. Istanbul = +180,
+     * London = 0/+60, NYC = -300, Tokyo = +540. Read by pit_uptime() to
+     * convert wall-clock to local time without a full tz database.        */
+    i32         tz_minutes;
+    /* v5.2 first-run welcome banner — shown once on the desktop after
+     * the initial install completes, dismissable.                         */
+    bool        welcome_shown;
 } settings_t;
 
 extern settings_t SET;
@@ -331,7 +372,18 @@ extern settings_t SET;
 void settings_init(void);
 
 const char *T(const char *en, const char *tr);  /* tr/en switch helper      */
+/* 5-way translation: NULL slots fall back to English. Used when v5.2
+ * adds DE/FR/ES coverage to a string that already had TR localised.   */
+const char *TX(const char *en, const char *tr, const char *de,
+               const char *fr, const char *es);
+const char *lang_name(lang_t l);                /* "Turkce", "English", ... */
 const char *kbd_layout_name(kbd_layout_t l);
+
+/* ---- locale-aware formatting --------------------------------------------- */
+char        loc_decimal_sep(void);              /* ',' or '.'               */
+const char *loc_month_short(u8 month_1_to_12);  /* "Jan", "Oca", "Jan", ... */
+void        loc_format_date(char *out, const rtc_time_t *t);
+void        loc_format_int_grouped(char *out, u32 value);  /* 1.234.567 etc */
 
 /* ---- multi-user helpers (v5+) -------------------------------------------- */
 i32  users_add(const char *name, const char *plaintext_pwd, accent_t accent);

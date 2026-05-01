@@ -111,11 +111,11 @@ void installer_render(u32 frame)
 
     switch (g_step) {
         case INST_LANG: {
-            headline = "Choose your language  /  Dilini sec";
+            headline = "Choose your language  /  Dilini sec  /  Sprache  /  Langue  /  Idioma";
             helptext = "<-/->  switch    Enter  continue";
-            const char *items[2] = { "Turkce", "English" };
+            const char *items[5] = { "Turkce", "English", "Deutsch", "Francais", "Espanol" };
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
-            draw_choice_row(cy - 40, items, 2, g_choice);
+            draw_choice_row(cy - 40, items, 5, g_choice);
             gfx_text_centered(cx, cy + 76, helptext, PAL_TEXT_DIM);
             break;
         }
@@ -282,9 +282,9 @@ void installer_input(i32 key)
         g_step == INST_USER_MORE) {
         i32 max;
         switch (g_step) {
+            case INST_LANG:     max = LANG_COUNT; break;
             case INST_ACCENT:   max = 5; break;
             case INST_KBD:      max = 3; break;
-            case INST_LANG:
             case INST_THEME:
             case INST_USER_MORE:max = 2; break;
             default:            max = 2; break;
@@ -294,7 +294,11 @@ void installer_input(i32 key)
         if (key == KEY_ENTER) {
             switch (g_step) {
                 case INST_LANG:
-                    SET.lang = (g_choice == 0) ? LANG_TR : LANG_EN;
+                    SET.lang = (lang_t)g_choice;
+                    /* default keyboard heuristic — only TR users want
+                     * a TR layout; everyone else gets US-QWERTY.       */
+                    if (SET.lang == LANG_TR) SET.kbd_layout = KBD_TR_Q;
+                    else                     SET.kbd_layout = KBD_US;
                     g_step = INST_THEME;   g_choice = SET.theme;        return;
                 case INST_THEME:
                     SET.theme = (g_choice == 0) ? THEME_LIGHT : THEME_DARK;

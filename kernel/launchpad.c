@@ -72,8 +72,23 @@ void launchpad_render(u32 frame)
     /* dim the desktop */
     gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 130);
 
-    /* very-soft frosted overlay (light/dark-aware tint to keep it readable) */
-    gfx_rect_a(0, 0, FB.width, FB.height, PAL_PANEL,  35);
+    /* Aero — blur the entire desktop behind the launchpad so the
+     * tiles float over a soft, readable wash of wallpaper. We do
+     * the blur in horizontal strips to stay within the BLUR scratch.
+     * Flat overlay fallback for users with Aero off.                  */
+    if (SET.aero_enabled) {
+        i32 W = (i32)FB.width;
+        i32 H = (i32)FB.height;
+        i32 strip = 320;
+        for (i32 y = 0; y < H; y += strip) {
+            i32 sh = (y + strip > H) ? H - y : strip;
+            gfx_blur_rect(0, y, W, sh, 8);
+        }
+        gfx_rect_a(0, 0, W, H, PAL_PANEL, 80);
+    } else {
+        /* very-soft frosted overlay (light/dark-aware tint to keep it readable) */
+        gfx_rect_a(0, 0, FB.width, FB.height, PAL_PANEL, 35);
+    }
 
     /* scale-in animation: ~200 ms */
     u32 dt = pit_ms() - g_open_at;

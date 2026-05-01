@@ -78,9 +78,16 @@ static void draw_menu_bar(void)
     i32 W = (i32)FB.width;
     i32 H = 30;
 
-    /* glass strip across the top */
-    gfx_rect_a(0, 0, W, H,     PAL_PANEL,    220);
-    gfx_rect_a(0, H, W, 1,     PAL_HAIRLINE, 255);
+    /* Aero glass strip across the top — blur the wallpaper underneath
+     * so the menu bar feels lifted off the desktop.  When SET.aero is
+     * off, fall back to the cheap flat overlay.                       */
+    if (SET.aero_enabled) {
+        gfx_blur_rect(0, 0, W, H, 5);
+        gfx_rect_a(0, 0, W, H, PAL_PANEL, 150);
+    } else {
+        gfx_rect_a(0, 0, W, H, PAL_PANEL, 220);
+    }
+    gfx_rect_a(0, H, W, 1, PAL_HAIRLINE, 255);
 
     /* left: brand */
     gfx_circle(20, H / 2, 6, PAL_ACCENT);
@@ -106,20 +113,30 @@ static void draw_menu_bar(void)
         gfx_text(hx + 14, 7, hint, PAL_TEXT_DIM);
     }
 
-    /* right: HH:MM:SS  +  small lang badge */
-    u32 H_, M_, S_; pit_uptime(&H_, &M_, &S_);
-    char clk[16]; char tmp[8];
+    /* right: locale-formatted "DD <mon> HH:MM:SS"  +  lang badge      */
+    rtc_time_t now; rtc_local(&now);
+    char clk[24]; char tmp[8];
     k_strcpy(clk, "");
-    k_itoa(H_, tmp, 10); if (H_ < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    /* day + localized month abbrev */
+    k_itoa(now.day, tmp, 10);
+    if (now.day < 10) k_strcat(clk, "0");
+    k_strcat(clk, tmp);
+    k_strcat(clk, " ");
+    k_strcat(clk, loc_month_short(now.month));
+    k_strcat(clk, "  ");
+    /* HH:MM:SS */
+    k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
     k_strcat(clk, ":");
-    k_itoa(M_, tmp, 10); if (M_ < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_itoa(now.min,  tmp, 10); if (now.min  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
     k_strcat(clk, ":");
-    k_itoa(S_, tmp, 10); if (S_ < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_itoa(now.sec,  tmp, 10); if (now.sec  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
 
     i32 cw = gfx_text_width(clk);
     gfx_text(W - cw - 18, 7, clk, PAL_TEXT);
 
-    const char *lang = SET.lang == LANG_TR ? "TR" : "EN";
+    /* tiny ISO-639 lang badge (TR/EN/DE/FR/ES) */
+    const char *codes[] = { "TR", "EN", "DE", "FR", "ES" };
+    const char *lang = (SET.lang < LANG_COUNT) ? codes[SET.lang] : "EN";
     gfx_round_rect_a(W - cw - 56, 6, 28, 18, 9, PAL_PANEL_DEEP, 255);
     gfx_text(W - cw - 48, 8, lang, PAL_ACCENT);
 }

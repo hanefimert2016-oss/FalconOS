@@ -8,7 +8,7 @@
       ___---___
     //  (   )  \\         F a l c o n O S
    /  (  ~~~  )  \
-  |  / O\   /O \  |       v5.0  ·  AURORA
+  |  / O\   /O \  |       v5.2  ·  AERO
   |  |   \ /   |  |       64-bit long mode
    \ |  _/~~~\_  | /
     \|_/       \_|/        << Born  to  Fly >>
@@ -37,6 +37,44 @@ Hit **F1** at any time to flip between them. **F2** in Personal mode
 opens the **Launchpad** (a full-screen 4 × 4 grid of all built-in
 apps). Inside the Launchpad, press **P** on a tile to pin / unpin it
 to the desktop. **Esc** closes the active app or Launchpad.
+
+## What's new in v5.2 — "Aero"
+
+- **Frosted-glass transparency (Aero)** — every translucent panel
+  now actually blurs the pixels behind it instead of using a flat
+  alpha overlay. The dock, top menu bar, lockscreen password pill,
+  Launchpad backdrop, app window chrome and every glass widget all
+  go through `gfx_aero_round_rect()`, which runs a two-pass
+  separable box blur over the live back buffer (radius capped at 8,
+  scratch buffer 1920 × 480 in BSS) and then tints the result.
+  Toggle globally from Settings ▸ "Aero" if you're on a slow box —
+  fallback is the previous flat panel look.
+- **Real wall-clock + timezone** — the menu bar and lockscreen now
+  show the actual time of day from the CMOS RTC (MC146818 reader in
+  `kernel/rtc.c`, handles BCD/binary, 12h/24h, update-in-progress
+  polling). The timezone is configurable: Settings ▸ "Timezone"
+  cycles 13 curated cities from Honolulu (UTC-10) to Sydney
+  (UTC+10), including UTC+5:30 for Mumbai. Date is rolled across
+  midnight / month / year boundaries (incl. leap February) when the
+  offset crosses a day.
+- **5 languages, locale-aware formatting** — Türkçe and English get
+  full coverage; Deutsch / Français / Español are at baseline
+  (installer, lockscreen, settings labels, login welcome). New
+  `TX(en, tr, de, fr, es)` helper in `kernel/locale.c` falls back to
+  English on missing translations. Date formatting is locale-correct
+  too: MM/DD/YYYY for English, DD.MM.YYYY for German, DD/MM/YYYY
+  everywhere else, with localised month abbreviations (`Oca / Jan /
+  Ene` etc.). The number grouping helper switches `1,234.56` ↔
+  `1.234,56` as appropriate.
+- **First-run welcome banner** — after the installer finishes, the
+  desktop shows a one-shot greeting card with the user's name in
+  their language ("Welcome, mert!" / "Hosgeldin, mert!" / etc.) and
+  the three keyboard shortcuts that get a normal user productive
+  immediately (F2 / F1 / Esc). Dismissed by clicking *OK* — the
+  dismissal is persisted to disk so it never reappears.
+- **Smarter keyboard defaults** — picking a non-Turkish language in
+  the installer auto-selects US-QWERTY instead of TR-Q. Existing
+  Turkish-speaking users still get TR-Q out of the box.
 
 ## What's new in v5 — "Aurora"
 
