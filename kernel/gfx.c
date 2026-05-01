@@ -135,6 +135,18 @@ void gfx_circle(i32 cx, i32 cy, i32 r, u32 c)
         }
 }
 
+void gfx_circle_a(i32 cx, i32 cy, i32 r, u32 c, u8 alpha)
+{
+    if (r < 1) { gfx_pixel_a(cx, cy, c, alpha); return; }
+    for (i32 y = -r - 1; y <= r + 1; y++)
+        for (i32 x = -r - 1; x <= r + 1; x++) {
+            u8 a = _coverage(x, y, r);
+            if (!a) continue;
+            u32 aa = ((u32)a * alpha) >> 8;
+            gfx_pixel_a(cx + x, cy + y, c, (u8)aa);
+        }
+}
+
 void gfx_circle_outline(i32 cx, i32 cy, i32 r, u32 c)
 {
     if (r < 2) { gfx_circle(cx, cy, r, c); return; }
@@ -245,4 +257,17 @@ void gfx_text(i32 x, i32 y, const char *s, u32 c)
 void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c)
 {
     gfx_text(cx - gfx_text_width(s) / 2, y, s, c);
+}
+
+/* darken every back-buffer pixel by `amount`/255 — used for boot fade */
+void gfx_dim(u8 amount)
+{
+    u32 ia = 255 - amount;
+    for (u32 i = 0; i < BACK_W * BACK_H; i++) {
+        u32 c = BACK[i];
+        u32 r = (((c >> 16) & 0xFF) * ia) >> 8;
+        u32 g = (((c >>  8) & 0xFF) * ia) >> 8;
+        u32 b = (( c        & 0xFF) * ia) >> 8;
+        BACK[i] = (r << 16) | (g << 8) | b;
+    }
 }

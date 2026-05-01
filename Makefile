@@ -26,7 +26,7 @@ LDFLAGS     := -m elf_i386 -T linker.ld -nostdlib
 
 C_SRCS      := $(wildcard kernel/*.c)
 C_OBJS      := $(C_SRCS:%.c=$(BUILD)/%.o)
-ASM_OBJS    := $(BUILD)/boot/multiboot2.o
+ASM_OBJS    := $(BUILD)/boot/multiboot2.o $(BUILD)/boot/isr.o
 
 KERNEL      := $(BUILD)/falcon.elf
 ISO         := $(BUILD)/FalconOS.iso
@@ -42,8 +42,8 @@ all: $(KERNEL)
 $(BUILD)/kernel/%.o: kernel/%.c kernel/falcon.h | $(BUILD)/kernel
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# ---- assemble multiboot stub --------------------------------------------------
-$(BUILD)/boot/multiboot2.o: boot/multiboot2.asm | $(BUILD)/boot
+# ---- assemble nasm sources ----------------------------------------------------
+$(BUILD)/boot/%.o: boot/%.asm | $(BUILD)/boot
 	$(NASM) -f elf32 $< -o $@
 
 # ---- link kernel --------------------------------------------------------------

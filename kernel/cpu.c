@@ -72,3 +72,32 @@ void k_pad(char *buf, i32 width, char fill)
     for (i32 i = n; i >= 0; i--) buf[i + pad] = buf[i];
     for (i32 i = 0; i < pad; i++) buf[i] = fill;
 }
+
+i32 k_strcmp(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return (u8)*a - (u8)*b;
+}
+
+i32 k_strncmp(const char *a, const char *b, i32 n)
+{
+    while (n-- > 0 && *a && *a == *b) { a++; b++; }
+    if (n < 0) return 0;
+    return (u8)*a - (u8)*b;
+}
+
+u32 k_parse_hex(const char *s)
+{
+    u32 v = 0;
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+    while (*s) {
+        u32 d = 0;
+        if (*s >= '0' && *s <= '9') d = *s - '0';
+        else if (*s >= 'a' && *s <= 'f') d = *s - 'a' + 10;
+        else if (*s >= 'A' && *s <= 'F') d = *s - 'A' + 10;
+        else break;
+        v = (v << 4) | d;
+        s++;
+    }
+    return v;
+}
