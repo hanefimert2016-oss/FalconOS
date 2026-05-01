@@ -222,19 +222,20 @@ void repl_input(i32 key)
 
 void repl_render(i32 x, i32 y, i32 w, i32 h)
 {
-    gfx_round_rect_a(x, y, w, h, 12, COL_PANEL, 230);
-    gfx_round_outline(x, y, w, h, 12, COL_PANEL_HI);
+    gfx_round_glass(x, y, w, h, 14);
     gfx_text(x + 16, y + 12, "REPL", COL_ACCENT);
     gfx_text(x + w - 110, y + 12, "type `help`", COL_TEXT_DIM);
 
+    /* recent history (above the prompt) */
+    i32 prompt_y = y + h - 32;
     /* prompt line */
     char line[REPL_MAX + 8];
     k_strcpy(line, "> ");
     k_strcat(line, buf);
-    gfx_text(x + 16, y + h - 28, line, COL_TEXT);
+    gfx_text(x + 16, prompt_y, line, COL_TEXT);
     /* blink caret */
     if ((g_ticks >> 4) & 1) {
         i32 cx = x + 16 + gfx_text_width(line);
-        gfx_rect(cx, y + h - 28, 8, 14, COL_ACCENT);
+        gfx_rect(cx, prompt_y, 8, 14, COL_ACCENT);
     }
 }

@@ -15,11 +15,23 @@ fb_t FB;
 
 /* off-screen buffer — every gfx_* call writes here, then the dispatcher
  * blits it to the real framebuffer once per frame via gfx_present().
- * Sized for the 1024×768 mode we request from GRUB (≈ 3 MiB of BSS).      */
-#define BACK_W   1024
-#define BACK_H   768
+ * Sized at build time via -DFB_W / -DFB_H (Makefile RES variable):
+ *   RES=hd   → 1280×800   (≈ 4 MiB BSS)
+ *   RES=fhd  → 1920×1080  (≈ 8 MiB BSS)  ← default
+ *   RES=2k   → 2560×1440  (≈ 14 MiB BSS) */
+#ifndef FB_W
+#define FB_W 1920
+#endif
+#ifndef FB_H
+#define FB_H 1080
+#endif
+
+#define BACK_W   FB_W
+#define BACK_H   FB_H
 static u32 BACK[BACK_W * BACK_H];
-static u32 BACK_PITCH_BYTES = BACK_W * 4;
+
+u32 gfx_back_w(void) { return BACK_W; }
+u32 gfx_back_h(void) { return BACK_H; }
 
 void gfx_init(void *p, u32 w, u32 h, u32 pitch, u8 bpp)
 {
@@ -76,7 +88,6 @@ void gfx_clear(u32 c)
 {
     u32 n = BACK_W * BACK_H;
     for (u32 i = 0; i < n; i++) BACK[i] = c;
-    (void)BACK_PITCH_BYTES;
 }
 
 void gfx_gradient_v(u32 top, u32 bot)
@@ -92,6 +103,41 @@ void gfx_gradient_v(u32 top, u32 bot)
         u32 c  = (r << 16) | (g << 8) | b;
         u32 *row = &BACK[y * BACK_W];
         for (u32 x = 0; x < BACK_W; x++) row[x] = c;
+    }
+}
+
+/* Big-Sur-style wallpaper: vertical gradient + soft radial accent in the
+ * upper-left.  Cheap (~one pass over the back buffer) but visually rich. */
+void gfx_wallpaper(void)
+{
+    u32 tr = (COL_BG_TOP >> 16) & 0xFF, tg = (COL_BG_TOP >> 8) & 0xFF, tb = COL_BG_TOP & 0xFF;
+    u32 br = (COL_BG_BOT >> 16) & 0xFF, bg = (COL_BG_BOT >> 8) & 0xFF, bb = COL_BG_BOT & 0xFF;
+    u32 hr = (COL_BG_HINT >> 16) & 0xFF, hg = (COL_BG_HINT >> 8) & 0xFF, hb = COL_BG_HINT & 0xFF;
+    i32 ax = (i32)BACK_W / 4;
+    i32 ay = (i32)BACK_H / 4;
+    /* 1 / max(BACK_W, BACK_H) — radial fall-off normalisation */
+    u32 norm = (BACK_W > BACK_H ? BACK_W : BACK_H);
+    for (u32 y = 0; y < BACK_H; y++) {
+        u32 t  = (y * 256) / BACK_H;
+        u32 it = 256 - t;
+        u32 vr = (tr * it + br * t) >> 8;
+        u32 vg = (tg * it + bg * t) >> 8;
+        u32 vb = (tb * it + bb * t) >> 8;
+        u32 *row = &BACK[y * BACK_W];
+        for (u32 x = 0; x < BACK_W; x++) {
+            i32 dx = (i32)x - ax;
+            i32 dy = (i32)y - ay;
+            i32 d  = dx * dx + dy * dy;
+            i32 dn = (i32)((u32)d / norm);
+            i32 a  = 200 - dn;          /* peaks near (ax, ay) */
+            if (a < 0) a = 0;
+            u32 ca = (u32)a;
+            u32 ia = 256 - ca;
+            u32 r = (vr * ia + hr * ca) >> 8;
+            u32 g = (vg * ia + hg * ca) >> 8;
+            u32 b = (vb * ia + hb * ca) >> 8;
+            row[x] = (r << 16) | (g << 8) | b;
+        }
     }
 }
 
@@ -191,6 +237,19 @@ void gfx_round_rect_a(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c, u8 a)
 void gfx_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c)
 {
     gfx_round_rect_a(x, y, w, h, r, c, 255);
+}
+
+/* Frosted-glass rounded rect: soft drop shadow + translucent white panel
+ * + 1 px hairline border.  The signature look of every Lumen-theme card. */
+void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r)
+{
+    /* drop shadow (soft) */
+    gfx_round_rect_a(x + 2, y + 6, w, h, r, COL_SHADOW, 28);
+    gfx_round_rect_a(x + 1, y + 3, w, h, r, COL_SHADOW, 18);
+    /* glass body */
+    gfx_round_rect_a(x, y, w, h, r, COL_PANEL, 235);
+    /* hairline border */
+    gfx_round_outline(x, y, w, h, r, COL_HAIRLINE);
 }
 
 void gfx_round_outline(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c)

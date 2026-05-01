@@ -1,5 +1,5 @@
 /* =============================================================================
- *  FalconOS — public kernel header (v3)
+ *  FalconOS — public kernel header (v4 "Lumen")
  * =============================================================================
  *  All public types, theme colors and module-level entry points live here so
  *  the rest of the kernel can stay surgically small.
@@ -30,25 +30,36 @@ typedef struct {
 } fb_t;
 
 extern fb_t FB;
+u32  gfx_back_w(void);
+u32  gfx_back_h(void);
 
-/* ---- macOS-inspired theme palette (0x00RRGGBB) ---------------------------- */
-#define COL_BG_TOP      0x0F1216
-#define COL_BG_BOT      0x222A33
-#define COL_PANEL       0x1B2028
-#define COL_PANEL_HI    0x2B313B
-#define COL_TEXT        0xEEF0F5
-#define COL_TEXT_DIM    0x8A93A1
-#define COL_ACCENT      0x4F9EFF
-#define COL_OK          0x46D160
-#define COL_WARN        0xFFB547
-#define COL_ERR         0xFF5E57
-#define COL_GLASS       0x2A323C
+/* ---- macOS-Big-Sur-inspired LIGHT theme (v4 "Lumen") --------------------- */
+#define COL_BG_TOP      0xEAF0F8   /* light wallpaper top    */
+#define COL_BG_BOT      0xC8D5E6   /* light wallpaper bottom */
+#define COL_BG_HINT     0xA8BBD3   /* deeper accent for vignette */
+#define COL_PANEL       0xFFFFFF   /* frosted glass: white   */
+#define COL_PANEL_HI    0xD8E1EC   /* frosted glass border   */
+#define COL_PANEL_DEEP  0xF1F4F9   /* alternate panel        */
+#define COL_TEXT        0x14181F   /* near-black text        */
+#define COL_TEXT_DIM    0x6E7884   /* secondary slate text   */
+#define COL_TEXT_FAINT  0xA3ACB7   /* tertiary text          */
+#define COL_ACCENT      0x3070FF   /* primary blue           */
+#define COL_ACCENT_DIM  0xB8CDFF   /* tinted accent          */
+#define COL_OK          0x2BB673   /* green                  */
+#define COL_WARN        0xF59F1A   /* amber                  */
+#define COL_ERR         0xE53935   /* red                    */
+#define COL_PURPLE      0xA45EE5
+#define COL_TEAL        0x16B5A8
+#define COL_GLASS       0xFFFFFF   /* dock & menubar glass tint */
+#define COL_HAIRLINE    0xC4CDD9
+#define COL_SHADOW      0x000000
 
 /* ---- gfx primitives ------------------------------------------------------- */
 void gfx_init(void *p, u32 w, u32 h, u32 pitch, u8 bpp);
 void gfx_present(void);
 void gfx_clear(u32 c);
 void gfx_gradient_v(u32 top, u32 bot);
+void gfx_wallpaper(void);
 void gfx_pixel(i32 x, i32 y, u32 c);
 void gfx_pixel_a(i32 x, i32 y, u32 c, u8 a);
 void gfx_rect(i32 x, i32 y, i32 w, i32 h, u32 c);
@@ -56,6 +67,7 @@ void gfx_rect_a(i32 x, i32 y, i32 w, i32 h, u32 c, u8 a);
 void gfx_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c);
 void gfx_round_rect_a(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c, u8 a);
 void gfx_round_outline(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c);
+void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r);
 void gfx_circle(i32 cx, i32 cy, i32 r, u32 c);
 void gfx_circle_a(i32 cx, i32 cy, i32 r, u32 c, u8 alpha);
 void gfx_circle_outline(i32 cx, i32 cy, i32 r, u32 c);
@@ -151,12 +163,20 @@ void mode_developer_input(i32 key);
 i32          apps_count(void);
 const char  *apps_name(i32 i);
 u32          apps_tint(i32 i);
+const char  *apps_subtitle(i32 i);
 void         apps_draw_icon(i32 i, i32 cx, i32 cy);
 void         apps_open(i32 i);
 void         apps_close(void);
 i32          apps_active(void);
 void         apps_render_active(u32 frame);
 void         apps_input_active(i32 key);
+
+/* ---- Launchpad (full-screen app grid, F2) --------------------------------- */
+void launchpad_open(void);
+void launchpad_close(void);
+bool launchpad_is_open(void);
+void launchpad_render(u32 frame);
+void launchpad_input(i32 key);
 
 /* tiny global tick (incremented by main loop, NOT real time — see g_ticks) */
 extern volatile u32 g_tick;

@@ -5,8 +5,17 @@
 ;  framebuffer at the requested resolution, and jumps to `_start` with
 ;  the boot info pointer in EBX and the magic value 0x36D76289 in EAX.
 ;
-;  We push (eax, ebx) onto the stack and hand control to `kernel_main`.
+;  The preferred framebuffer resolution is configurable at build time via
+;  NASM `-DFB_W=… -DFB_H=…` (see Makefile `RES` variable).  GRUB will pick
+;  the closest available mode if the BIOS/VBE can't honor the request.
 ; =============================================================================
+
+%ifndef FB_W
+%define FB_W 1920
+%endif
+%ifndef FB_H
+%define FB_H 1080
+%endif
 
 MB2_MAGIC     equ 0xE85250D6
 MB2_ARCH      equ 0                              ; i386 protected mode
@@ -27,8 +36,8 @@ fb_tag_start:
     dw  5                       ; type   = framebuffer
     dw  0                       ; flags  = required
     dd  fb_tag_end - fb_tag_start
-    dd  1024                    ; preferred width
-    dd  768                     ; preferred height
+    dd  FB_W                    ; preferred width  (build-time)
+    dd  FB_H                    ; preferred height (build-time)
     dd  32                      ; preferred depth
 fb_tag_end:
 
@@ -43,7 +52,7 @@ header_end:
 section .bss
 align 16
 stack_bottom:
-    resb 16384                  ; 16 KiB kernel stack
+    resb 32768                  ; 32 KiB kernel stack
 stack_top:
 
 ; -----------------------------------------------------------------------------
