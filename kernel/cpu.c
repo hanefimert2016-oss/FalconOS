@@ -15,6 +15,35 @@ void outb(u16 port, u8 v)
     __asm__ volatile ("outb %0, %1" :: "a"(v), "Nd"(port));
 }
 
+u16 inw(u16 port)
+{
+    u16 v;
+    __asm__ volatile ("inw %1, %0" : "=a"(v) : "Nd"(port));
+    return v;
+}
+
+void outw(u16 port, u16 v)
+{
+    __asm__ volatile ("outw %0, %1" :: "a"(v), "Nd"(port));
+}
+
+void insw(u16 port, void *buf, u32 count)
+{
+    /* repeat in word — port -> [rdi/edi] */
+    __asm__ volatile ("cld; rep insw"
+                      : "+D"(buf), "+c"(count)
+                      : "d"(port)
+                      : "memory");
+}
+
+void outsw(u16 port, const void *buf, u32 count)
+{
+    __asm__ volatile ("cld; rep outsw"
+                      : "+S"(buf), "+c"(count)
+                      : "d"(port)
+                      : "memory");
+}
+
 u64 rdtsc(void)
 {
     u32 lo, hi;
@@ -29,6 +58,15 @@ void k_memset(void *d, u8 v, u32 n)
 {
     u8 *p = d;
     while (n--) *p++ = v;
+}
+
+/* Volatile pointer + memory clobber stop the optimiser from folding
+ * away a zeroing pass on a buffer that's about to go out of scope.   */
+void k_explicit_bzero(void *p, u32 n)
+{
+    volatile u8 *vp = p;
+    while (n--) *vp++ = 0;
+    __asm__ __volatile__("" ::: "memory");
 }
 
 void k_memcpy(void *d, const void *s, u32 n)

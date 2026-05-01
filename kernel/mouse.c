@@ -15,9 +15,22 @@ static volatile i32  m_x  = 480;
 static volatile i32  m_y  = 360;
 static volatile bool m_l  = false;
 static volatile bool m_l_edge = false;
+static volatile bool m_r  = false;
+static volatile bool m_r_edge = false;
 
 static u8 pkt[3];
 static i32 cyc = 0;
+
+/* User feedback: mouse felt slow + Y axis inverted. The PS/2 spec sends
+ * dy positive = "away from user" (== up on screen) so most kernels do
+ *   m_y -= dy
+ * but QEMU's input pipeline already inverts Y for the SDL backend, so
+ * the screen ends up moving the wrong way. We do the natural mapping
+ *   m_y += dy
+ * which matches the user's pointer motion 1:1. The 2x multiplier turns
+ * a 1-count-per-mickey hardware default into a comfortable cursor speed
+ * at FullHD/QHD framebuffers without hiding small motions. */
+#define MOUSE_SENSITIVITY  2
 
 static void wait_send(void)  { for (i32 i = 0; i < 100000; i++) if (!(inb(PS2_STAT) & 2)) return; }
 static void wait_recv(void)  { for (i32 i = 0; i < 100000; i++) if   (inb(PS2_STAT) & 1)  return; }
@@ -61,14 +74,25 @@ void mouse_irq(void)
     if (cyc < 3) return;
     cyc = 0;
 
-    i8 dx = (i8)pkt[1];
-    i8 dy = (i8)pkt[2];
-    bool ln = (pkt[0] & 1) != 0;
-    if (ln && !m_l) m_l_edge = true;
-    m_l = ln;
+    /* Drop packets the controller marks as overflow rather than letting
+     * a stale 9th bit cause the cursor to jump across the screen.       */
+    if (pkt[0] & 0xC0) return;
 
-    m_x += dx;
-    m_y -= dy;
+    /* Proper 9-bit sign extension: byte 0 carries the sign bits for the
+     * deltas, and bytes 1/2 carry the lower 8 bits. The raw cast to i8
+     * worked for slow motions but flipped sign on fast ones (>127).    */
+    i32 dx = (i32)pkt[1] - ((pkt[0] & 0x10) ? 0x100 : 0);
+    i32 dy = (i32)pkt[2] - ((pkt[0] & 0x20) ? 0x100 : 0);
+
+    bool ln = (pkt[0] & 1) != 0;
+    bool rn = (pkt[0] & 2) != 0;
+    if (ln && !m_l) m_l_edge = true;
+    if (rn && !m_r) m_r_edge = true;
+    m_l = ln;
+    m_r = rn;
+
+    m_x += dx * MOUSE_SENSITIVITY;
+    m_y += dy * MOUSE_SENSITIVITY;
     if (m_x < 0) m_x = 0;
     if (m_y < 0) m_y = 0;
     if ((u32)m_x >= FB.width)  m_x = (i32)FB.width  - 1;
@@ -84,5 +108,12 @@ bool mouse_consume_click(void)
 {
     bool e = m_l_edge;
     m_l_edge = false;
+    return e;
+}
+
+bool mouse_consume_right(void)
+{
+    bool e = m_r_edge;
+    m_r_edge = false;
     return e;
 }

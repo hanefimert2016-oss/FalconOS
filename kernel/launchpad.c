@@ -14,7 +14,7 @@
 #include "falcon.h"
 
 #define LP_COLS 4
-#define LP_ROWS 3
+#define LP_ROWS 4
 #define LP_MAX  (LP_COLS * LP_ROWS)
 
 static bool g_open      = false;
@@ -53,19 +53,27 @@ void launchpad_input(i32 key)
     if (key == KEY_DOWN)  g_cursor += LP_COLS;
     clamp_cursor();
 
+    /* `p` / `P`  — toggle desktop pin for the highlighted app           */
+    if (key == 'p' || key == 'P') {
+        desktop_pin_toggle(g_cursor);
+        return;
+    }
+
     if (key == KEY_ENTER || key == ' ') {
         apps_open(g_cursor);
         launchpad_close();
     }
 }
 
+i32 launchpad_cursor(void) { return g_cursor; }
+
 void launchpad_render(u32 frame)
 {
     /* dim the desktop */
     gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 130);
 
-    /* very-soft frosted overlay (light tint to keep it bright) */
-    gfx_rect_a(0, 0, FB.width, FB.height, COL_PANEL,  35);
+    /* very-soft frosted overlay (light/dark-aware tint to keep it readable) */
+    gfx_rect_a(0, 0, FB.width, FB.height, PAL_PANEL,  35);
 
     /* scale-in animation: ~200 ms */
     u32 dt = pit_ms() - g_open_at;
@@ -87,10 +95,11 @@ void launchpad_render(u32 frame)
     i32 grid_y = ((i32)FB.height - grid_h) / 2;
 
     /* title */
-    gfx_text_centered((i32)FB.width / 2, grid_y - 60, "Launchpad", COL_TEXT);
+    gfx_text_centered((i32)FB.width / 2, grid_y - 60, "Launchpad", PAL_TEXT);
     gfx_text_centered((i32)FB.width / 2, grid_y - 36,
-                      "all 12 apps - arrows + Enter, or click - Esc / F2 closes",
-                      COL_TEXT_DIM);
+                      T("arrows + Enter to open, click to launch, P pins to desktop, Esc closes",
+                        "ok ile gez Enter ile ac, tikla, P masaustune sabitler, Esc kapatir"),
+                      PAL_TEXT_DIM);
 
     i32 mx, my; bool ml; mouse_get(&mx, &my, &ml); (void)ml;
     bool clicked = mouse_consume_click();
@@ -124,12 +133,17 @@ void launchpad_render(u32 frame)
         /* selection ring */
         if (hov) {
             gfx_round_outline(cx - tile / 2 - 4, cy - tile / 2 - 4,
-                              tile + 8, tile + 8, rad + 4, COL_ACCENT);
+                              tile + 8, tile + 8, rad + 4, PAL_ACCENT);
+        }
+        /* pinned indicator */
+        if (desktop_pin_is_pinned(i)) {
+            gfx_circle(cx + tile / 2 - 12, cy - tile / 2 + 12, 6, COL_OK);
+            gfx_circle_outline(cx + tile / 2 - 12, cy - tile / 2 + 12, 6, 0xFFFFFF);
         }
         /* label below tile */
         i32 ly = cy + tile / 2 + 16;
-        gfx_text_centered(cx, ly,     apps_name(i),     COL_TEXT);
-        gfx_text_centered(cx, ly + 18, apps_subtitle(i), COL_TEXT_DIM);
+        gfx_text_centered(cx, ly,     apps_name(i),     PAL_TEXT);
+        gfx_text_centered(cx, ly + 18, apps_subtitle(i), PAL_TEXT_DIM);
 
         if (hov_m && clicked) {
             apps_open(i);

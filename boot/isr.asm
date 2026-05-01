@@ -1,79 +1,94 @@
 ; =============================================================================
 ;  FalconOS — interrupt service routine stubs (32 exceptions + 16 IRQs)
 ; -----------------------------------------------------------------------------
-;  Each stub pushes (err_code, vector) and jumps to a common trampoline that
-;  saves general-purpose state, fixes up segment registers, calls the C-side
-;  handler, then returns.  Function pointers are exposed via two arrays
-;  (isr_table, irq_table) so the C layer can install them in the IDT in two
-;  short loops.
+;  64-bit version.  Each stub pushes (vec, err) and jumps to a common
+;  trampoline that saves the 16 GPRs, calls the C-side handler with `regs_t *`
+;  in RDI (System-V AMD64), then restores state and IRETQ's.
+;
+;  Function-pointer tables (isr_table / irq_table) are exposed so kernel/idt.c
+;  can install them in the 64-bit IDT in two short loops.
 ; =============================================================================
-[bits 32]
+[bits 64]
 
 extern isr_handler
 extern irq_handler
 
+%macro PUSHA64 0
+    push rax
+    push rcx
+    push rdx
+    push rbx
+    push rbp
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+%endmacro
+
+%macro POPA64 0
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rbx
+    pop rdx
+    pop rcx
+    pop rax
+%endmacro
+
 %macro ISR_NOERR 1
 global isr%1
 isr%1:
-    push dword 0
-    push dword %1
+    push qword 0
+    push qword %1
     jmp  isr_common
 %endmacro
 
 %macro ISR_ERR 1
 global isr%1
 isr%1:
-    push dword %1
+    push qword %1
     jmp  isr_common
 %endmacro
 
 %macro IRQ 2
 global irq%1
 irq%1:
-    push dword 0
-    push dword %2
+    push qword 0
+    push qword %2
     jmp  irq_common
 %endmacro
 
 isr_common:
-    pusha
-    push ds
-    mov  ax, 0x10
-    mov  ds, ax
-    mov  es, ax
-    mov  fs, ax
-    mov  gs, ax
-    push esp                ; pointer to regs_t
+    PUSHA64
+    mov  rdi, rsp           ; arg1 → regs_t *
+    cld
     call isr_handler
-    add  esp, 4
-    pop  eax                ; old ds
-    mov  ds, ax
-    mov  es, ax
-    mov  fs, ax
-    mov  gs, ax
-    popa
-    add  esp, 8             ; pop vec + err
-    iret
+    POPA64
+    add  rsp, 16            ; pop vec + err
+    iretq
 
 irq_common:
-    pusha
-    push ds
-    mov  ax, 0x10
-    mov  ds, ax
-    mov  es, ax
-    mov  fs, ax
-    mov  gs, ax
-    push esp
+    PUSHA64
+    mov  rdi, rsp
+    cld
     call irq_handler
-    add  esp, 4
-    pop  eax
-    mov  ds, ax
-    mov  es, ax
-    mov  fs, ax
-    mov  gs, ax
-    popa
-    add  esp, 8
-    iret
+    POPA64
+    add  rsp, 16
+    iretq
 
 ; ---- 32 CPU-defined exceptions ---------------------------------------------
 ISR_NOERR 0
@@ -127,13 +142,13 @@ IRQ 13, 0x2D
 IRQ 14, 0x2E
 IRQ 15, 0x2F
 
-; ---- function-pointer tables consumed by kernel/idt.c ----------------------
+; ---- function-pointer tables consumed by kernel/idt.c ---------------------
 section .data
 global isr_table
 isr_table:
 %assign i 0
 %rep 32
-    dd isr %+ i
+    dq isr %+ i
 %assign i i+1
 %endrep
 
@@ -141,6 +156,6 @@ global irq_table
 irq_table:
 %assign i 0
 %rep 16
-    dd irq %+ i
+    dq irq %+ i
 %assign i i+1
 %endrep

@@ -1,8 +1,8 @@
 /* =============================================================================
- *  FalconOS — public kernel header (v4 "Lumen")
+ *  FalconOS — public kernel header  (v5 "Aurora")
  * =============================================================================
- *  All public types, theme colors and module-level entry points live here so
- *  the rest of the kernel can stay surgically small.
+ *  All public types, theme palette functions and module-level entry points
+ *  live here so the rest of the kernel can stay surgically small.
  * ============================================================================= */
 #ifndef FALCON_H
 #define FALCON_H
@@ -15,10 +15,19 @@ typedef unsigned long long  u64;
 typedef signed char         i8;
 typedef short               i16;
 typedef int                 i32;
+typedef long long           i64;
+typedef unsigned long       uintptr_t;
 typedef _Bool               bool;
 #define true                1
 #define false               0
 #define NULL                ((void *)0)
+
+#ifndef FB_W
+#define FB_W 1920
+#endif
+#ifndef FB_H
+#define FB_H 1080
+#endif
 
 /* ---- framebuffer ---------------------------------------------------------- */
 typedef struct {
@@ -33,26 +42,75 @@ extern fb_t FB;
 u32  gfx_back_w(void);
 u32  gfx_back_h(void);
 
-/* ---- macOS-Big-Sur-inspired LIGHT theme (v4 "Lumen") --------------------- */
-#define COL_BG_TOP      0xEAF0F8   /* light wallpaper top    */
-#define COL_BG_BOT      0xC8D5E6   /* light wallpaper bottom */
-#define COL_BG_HINT     0xA8BBD3   /* deeper accent for vignette */
-#define COL_PANEL       0xFFFFFF   /* frosted glass: white   */
-#define COL_PANEL_HI    0xD8E1EC   /* frosted glass border   */
-#define COL_PANEL_DEEP  0xF1F4F9   /* alternate panel        */
-#define COL_TEXT        0x14181F   /* near-black text        */
-#define COL_TEXT_DIM    0x6E7884   /* secondary slate text   */
-#define COL_TEXT_FAINT  0xA3ACB7   /* tertiary text          */
-#define COL_ACCENT      0x3070FF   /* primary blue           */
-#define COL_ACCENT_DIM  0xB8CDFF   /* tinted accent          */
-#define COL_OK          0x2BB673   /* green                  */
-#define COL_WARN        0xF59F1A   /* amber                  */
-#define COL_ERR         0xE53935   /* red                    */
+/* ---- theme system (v5) ---------------------------------------------------- */
+/*  Palette is selected at runtime; call SET.theme = THEME_DARK and the
+ *  next frame will render in the "Nox" palette.                            */
+typedef enum { THEME_LIGHT = 0, THEME_DARK = 1 } theme_t;
+typedef enum {
+    ACC_BLUE = 0,
+    ACC_PURPLE,
+    ACC_GREEN,
+    ACC_PINK,
+    ACC_GRAPHITE,
+    ACC_COUNT
+} accent_t;
+typedef enum { LANG_TR = 0, LANG_EN = 1 } lang_t;
+typedef enum {
+    KBD_TR_Q = 0,    /* Türkçe Q (default for TR users)                  */
+    KBD_TR_F,        /* Türkçe F                                          */
+    KBD_US,          /* US QWERTY                                         */
+    KBD_COUNT
+} kbd_layout_t;
+
+/* Light theme ("Lumen") — 0xRRGGBB ----------------------------------------- */
+#define COL_BG_TOP      0xEAF0F8
+#define COL_BG_BOT      0xC8D5E6
+#define COL_BG_HINT     0xA8BBD3
+#define COL_PANEL       0xFFFFFF
+#define COL_PANEL_HI    0xD8E1EC
+#define COL_PANEL_DEEP  0xF1F4F9
+#define COL_TEXT        0x14181F
+#define COL_TEXT_DIM    0x6E7884
+#define COL_TEXT_FAINT  0xA3ACB7
+#define COL_ACCENT      0x3070FF
+#define COL_ACCENT_DIM  0xB8CDFF
+#define COL_OK          0x2BB673
+#define COL_WARN        0xF59F1A
+#define COL_ERR         0xE53935
 #define COL_PURPLE      0xA45EE5
 #define COL_TEAL        0x16B5A8
-#define COL_GLASS       0xFFFFFF   /* dock & menubar glass tint */
+#define COL_GLASS       0xFFFFFF
 #define COL_HAIRLINE    0xC4CDD9
 #define COL_SHADOW      0x000000
+
+/* Dark theme ("Nox") -------------------------------------------------------- */
+#define DCOL_BG_TOP     0x1A1E26
+#define DCOL_BG_BOT     0x0E1117
+#define DCOL_BG_HINT    0x303744
+#define DCOL_PANEL      0x232730
+#define DCOL_PANEL_HI   0x3A4150
+#define DCOL_PANEL_DEEP 0x1B1F27
+#define DCOL_TEXT       0xEBEEF4
+#define DCOL_TEXT_DIM   0x99A1AE
+#define DCOL_TEXT_FAINT 0x636C79
+#define DCOL_HAIRLINE   0x2E3340
+#define DCOL_GLASS      0x1F232C
+
+/* Runtime palette accessors (use these in render code, not the constants). */
+u32 PAL(u8 role);
+#define PAL_BG_TOP      PAL(0)
+#define PAL_BG_BOT      PAL(1)
+#define PAL_BG_HINT     PAL(2)
+#define PAL_PANEL       PAL(3)
+#define PAL_PANEL_HI    PAL(4)
+#define PAL_PANEL_DEEP  PAL(5)
+#define PAL_TEXT        PAL(6)
+#define PAL_TEXT_DIM    PAL(7)
+#define PAL_TEXT_FAINT  PAL(8)
+#define PAL_ACCENT      PAL(9)
+#define PAL_ACCENT_DIM  PAL(10)
+#define PAL_HAIRLINE    PAL(11)
+#define PAL_GLASS       PAL(12)
 
 /* ---- gfx primitives ------------------------------------------------------- */
 void gfx_init(void *p, u32 w, u32 h, u32 pitch, u8 bpp);
@@ -77,10 +135,23 @@ void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c);
 i32  gfx_text_width(const char *s);
 void gfx_dim(u8 amount);
 
-extern const u8 FONT8X16[95][16];
+/* Apply the current SET.viewport_w / SET.viewport_h letterbox after drawing. */
+void gfx_apply_viewport(void);
+
+/* 8×16 grayscale (antialiased) — one byte per pixel, row-major.        */
+extern const u8 FONT8X16 [95][128];
+/* 16×32 1-bit headline font — two bytes per row, MSB = leftmost pixel. */
+extern const u8 FONT16X32[95][64];
+
+/* Optional headline renderer — same color/coordinate semantics, twice
+ * the metrics. Used by titles/installer headings, not by general UI.   */
+void gfx_text_lg(i32 x, i32 y, const char *s, u32 c);
+void gfx_text_lg_centered(i32 cx, i32 y, const char *s, u32 c);
+i32  gfx_text_width_lg(const char *s);
 
 /* ---- keyboard ------------------------------------------------------------- */
 i32  kbd_poll(void);
+void kbd_set_focus_text(bool b);
 #define KEY_F1         0x101
 #define KEY_F2         0x102
 #define KEY_F3         0x103
@@ -98,6 +169,7 @@ i32  kbd_poll(void);
 void mouse_init(void);
 void mouse_get(i32 *x, i32 *y, bool *left);
 bool mouse_consume_click(void);
+bool mouse_consume_right(void);
 
 /* ---- timer / clock -------------------------------------------------------- */
 void pit_init(void);
@@ -116,6 +188,10 @@ void pic_eoi(u32 vec);
 /* ---- CPU helpers ---------------------------------------------------------- */
 u8   inb(u16 port);
 void outb(u16 port, u8 v);
+u16  inw(u16 port);
+void outw(u16 port, u16 v);
+void insw(u16 port, void *buf, u32 count);
+void outsw(u16 port, const void *buf, u32 count);
 u64  rdtsc(void);
 
 /* ---- utility -------------------------------------------------------------- */
@@ -124,6 +200,10 @@ void  k_pad(char *buf, i32 width, char fill);
 i32   k_strlen(const char *s);
 void  k_memcpy(void *d, const void *s, u32 n);
 void  k_memset(void *d, u8 v, u32 n);
+/* Volatile zero-fill that the compiler may not optimise away. Use this
+ * for transient password / key buffers so plaintext doesn't linger in
+ * stack or BSS slots after authentication.                             */
+void  k_explicit_bzero(void *p, u32 n);
 char *k_strcat(char *d, const char *s);
 char *k_strcpy(char *d, const char *s);
 i32   k_strcmp(const char *a, const char *b);
@@ -177,6 +257,142 @@ void launchpad_close(void);
 bool launchpad_is_open(void);
 void launchpad_render(u32 frame);
 void launchpad_input(i32 key);
+i32  launchpad_cursor(void);
+
+/* ---- desktop widgets + shortcuts (v5) ------------------------------------ */
+void widgets_render(u32 frame);
+void desktop_pins_render(u32 frame);
+bool desktop_pins_input_click(i32 mx, i32 my);     /* returns true if launched */
+bool desktop_pin_toggle(i32 app_id);                /* returns new pinned state */
+bool desktop_pin_is_pinned(i32 app_id);
+
+/* ---- v5 boot screens ------------------------------------------------------ */
+typedef enum {
+    SCR_INSTALL = 0,    /* first-boot wizard (lang, theme, password)        */
+    SCR_LOCK    = 1,    /* lock screen (password entry)                     */
+    SCR_DESKTOP = 2     /* normal Personal/Developer dispatch               */
+} screen_t;
+
+void installer_render(u32 frame);
+void installer_input(i32 key);
+bool installer_is_done(void);
+
+void lockscreen_render(u32 frame);
+void lockscreen_input(i32 key);
+bool lockscreen_is_unlocked(void);
+void lockscreen_lock(void);
+
+/* ---- multi-user database (v5) -------------------------------------------- */
+/*  Up to FALCON_MAX_USERS accounts.  The first one created in the installer
+ *  becomes the system "default" — every cold boot opens the lock screen
+ *  focused on that user.  Passwords are NEVER stored as plaintext: each user
+ *  carries a 16-byte random salt and a 32-byte PBKDF2-HMAC-SHA256 hash that
+ *  is stretched 50 000 rounds.  See kernel/auth.c.                        */
+#define FALCON_MAX_USERS    8
+#define FALCON_SALT_BYTES   16
+#define FALCON_HASH_BYTES   32
+#define FALCON_NAME_BYTES   24
+
+typedef struct {
+    bool   in_use;
+    bool   is_default;                    /* first-created user = main      */
+    char   name[FALCON_NAME_BYTES];
+    u8     salt[FALCON_SALT_BYTES];
+    u8     hash[FALCON_HASH_BYTES];
+    u8     no_password;                   /* 1 = empty pwd, hash unused     */
+    accent_t accent;                      /* per-user accent for avatar    */
+} falcon_user_t;
+
+/* ---- runtime settings (single source of truth) ---------------------------- */
+typedef struct {
+    bool        installed;       /* installer wizard completed              */
+    theme_t     theme;
+    accent_t    accent;
+    lang_t      lang;
+    kbd_layout_t kbd_layout;     /* TR-Q / TR-F / US                        */
+    bool        animations;
+    i32         dock_size;       /* 0..4 → 50px..86px tile                  */
+    i32         viewport_w;      /* 0 = native, else letterbox sub-rect     */
+    i32         viewport_h;
+    char        password[24];    /* deprecated single-user; kept for compat */
+    char        owner[24];       /* deprecated; mirrors users[default].name */
+    bool        widgets_shown;   /* hide widget grid if false               */
+    bool        center_circle;   /* legacy v4 hero (default false in v5)    */
+
+    /* multi-user (v5+) */
+    falcon_user_t users[FALCON_MAX_USERS];
+    i32         user_count;
+    i32         default_user;    /* index into users[]                      */
+    i32         active_user;     /* who unlocked the desktop                */
+} settings_t;
+
+extern settings_t SET;
+
+void settings_init(void);
+
+const char *T(const char *en, const char *tr);  /* tr/en switch helper      */
+const char *kbd_layout_name(kbd_layout_t l);
+
+/* ---- multi-user helpers (v5+) -------------------------------------------- */
+i32  users_add(const char *name, const char *plaintext_pwd, accent_t accent);
+bool users_remove(i32 idx);
+bool users_set_default(i32 idx);
+bool users_change_password(i32 idx, const char *new_plaintext);
+bool users_verify(i32 idx, const char *plaintext);
+const falcon_user_t *users_at(i32 idx);
+i32  users_count(void);
+
+/* ---- crypto: SHA-256 + PBKDF2 (kernel/auth.c) ---------------------------- */
+void sha256_hash(const u8 *data, u32 len, u8 out[32]);
+void hmac_sha256(const u8 *key, u32 klen, const u8 *msg, u32 mlen, u8 out[32]);
+void pbkdf2_sha256(const u8 *pwd, u32 plen,
+                   const u8 *salt, u32 slen,
+                   u32 iterations, u8 *out, u32 outlen);
+void rng_bytes(u8 *out, u32 n);
+void hex_encode(const u8 *in, u32 n, char *out);   /* out >= n*2+1 chars   */
+
+/* ---- disk persistence: FalconFS superblock (kernel/diskdb.c) ------------- */
+#define FALCONFS_MAGIC      0x46414C43   /* 'FALC' */
+#define FALCONFS_VERSION    1
+#define FALCONFS_SECTOR     0            /* LBA0 of master ATA device      */
+
+void diskdb_load(void);          /* called from settings_init()             */
+bool diskdb_save(void);          /* writes SET into LBA0                    */
+bool diskdb_present(void);       /* true if last load found a magic block   */
+
+/* ---- ATA PIO (linux/ata_pio.c) ------------------------------------------- */
+bool ata_read_lba28 (i32 dev, u32 lba, u8 *buf512, u32 sectors);
+bool ata_write_lba28(i32 dev, u32 lba, const u8 *buf512, u32 sectors);
+
+/* ---- keyboard layout (kernel/kbd.c, switched by SET.kbd_layout) ---------- */
+i32  kbd_translate(u8 sc, kbd_layout_t layout, bool shift);
+
+/* ---- prg package manager + Store app -------------------------------------- */
+typedef struct {
+    const char *name;
+    const char *version;
+    const char *summary;
+    const char *category;
+    const char *depends;
+    u32         size_kb;
+    bool        builtin;         /* ships with the OS, can't be removed     */
+} prg_pkg_t;
+
+i32                prg_count(void);
+const prg_pkg_t   *prg_at(i32 i);
+const prg_pkg_t   *prg_find(const char *name);
+bool               prg_is_installed(i32 i);
+bool               prg_install(i32 i);
+bool               prg_remove(i32 i);
+i32                prg_installed_count(void);
+
+/* ---- Linux compatibility (drivers + UAPI shims) -------------------------- */
+void   linux_compat_init(void);
+const char *linux_compat_summary(void);
+i32    ata_probe_count(void);          /* 0..2 ATA devices detected      */
+const char *ata_model(i32 idx);
+u64    ata_sectors(i32 idx);
+void   hid_keymap_dump(char *buf, u32 max);
 
 /* tiny global tick (incremented by main loop, NOT real time — see g_ticks) */
 extern volatile u32 g_tick;
