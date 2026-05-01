@@ -113,10 +113,18 @@ static void draw_menu_bar(void)
         gfx_text(hx + 14, 7, hint, PAL_TEXT_DIM);
     }
 
-    /* right: HH:MM:SS local time (RTC + tz_minutes) + lang badge.   */
+    /* right: locale-formatted "DD <mon> HH:MM:SS"  +  lang badge      */
     rtc_time_t now; rtc_local(&now);
-    char clk[16]; char tmp[8];
+    char clk[24]; char tmp[8];
     k_strcpy(clk, "");
+    /* day + localized month abbrev */
+    k_itoa(now.day, tmp, 10);
+    if (now.day < 10) k_strcat(clk, "0");
+    k_strcat(clk, tmp);
+    k_strcat(clk, " ");
+    k_strcat(clk, loc_month_short(now.month));
+    k_strcat(clk, "  ");
+    /* HH:MM:SS */
     k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
     k_strcat(clk, ":");
     k_itoa(now.min,  tmp, 10); if (now.min  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
@@ -126,7 +134,9 @@ static void draw_menu_bar(void)
     i32 cw = gfx_text_width(clk);
     gfx_text(W - cw - 18, 7, clk, PAL_TEXT);
 
-    const char *lang = SET.lang == LANG_TR ? "TR" : "EN";
+    /* tiny ISO-639 lang badge (TR/EN/DE/FR/ES) */
+    const char *codes[] = { "TR", "EN", "DE", "FR", "ES" };
+    const char *lang = (SET.lang < LANG_COUNT) ? codes[SET.lang] : "EN";
     gfx_round_rect_a(W - cw - 56, 6, 28, 18, 9, PAL_PANEL_DEEP, 255);
     gfx_text(W - cw - 48, 8, lang, PAL_ACCENT);
 }

@@ -54,7 +54,14 @@ typedef enum {
     ACC_GRAPHITE,
     ACC_COUNT
 } accent_t;
-typedef enum { LANG_TR = 0, LANG_EN = 1 } lang_t;
+typedef enum {
+    LANG_TR = 0,    /* Turkce       */
+    LANG_EN = 1,    /* English      */
+    LANG_DE = 2,    /* Deutsch      */
+    LANG_FR = 3,    /* Francais     */
+    LANG_ES = 4,    /* Espanol      */
+    LANG_COUNT,
+} lang_t;
 typedef enum {
     KBD_TR_Q = 0,    /* Türkçe Q (default for TR users)                  */
     KBD_TR_F,        /* Türkçe F                                          */
@@ -365,7 +372,18 @@ extern settings_t SET;
 void settings_init(void);
 
 const char *T(const char *en, const char *tr);  /* tr/en switch helper      */
+/* 5-way translation: NULL slots fall back to English. Used when v5.2
+ * adds DE/FR/ES coverage to a string that already had TR localised.   */
+const char *TX(const char *en, const char *tr, const char *de,
+               const char *fr, const char *es);
+const char *lang_name(lang_t l);                /* "Turkce", "English", ... */
 const char *kbd_layout_name(kbd_layout_t l);
+
+/* ---- locale-aware formatting --------------------------------------------- */
+char        loc_decimal_sep(void);              /* ',' or '.'               */
+const char *loc_month_short(u8 month_1_to_12);  /* "Jan", "Oca", "Jan", ... */
+void        loc_format_date(char *out, const rtc_time_t *t);
+void        loc_format_int_grouped(char *out, u32 value);  /* 1.234.567 etc */
 
 /* ---- multi-user helpers (v5+) -------------------------------------------- */
 i32  users_add(const char *name, const char *plaintext_pwd, accent_t accent);

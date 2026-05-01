@@ -654,7 +654,10 @@ static void set_input_key(i32 key)
             SET.aero_enabled = !SET.aero_enabled;
             break;
         case SR_LANG:
-            SET.lang = (SET.lang == LANG_TR) ? LANG_EN : LANG_TR;
+            { i32 v = (i32)SET.lang + d;
+              if (v < 0)             v = LANG_COUNT - 1;
+              if (v >= LANG_COUNT)   v = 0;
+              SET.lang = (lang_t)v; }
             break;
         case SR_KBD:
             { i32 v = (i32)SET.kbd_layout + d;
@@ -755,8 +758,8 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 
     /* Language --------------------------------------------------------- */
     s_row(sx, sy + SR_LANG * step, sw,
-          T("Language", "Dil"),
-          SET.lang == LANG_TR ? "Turkce" : "English",
+          TX("Language", "Dil", "Sprache", "Langue", "Idioma"),
+          lang_name(SET.lang),
           set_row == SR_LANG, PAL_TEXT);
 
     /* Keyboard layout -------------------------------------------------- */
