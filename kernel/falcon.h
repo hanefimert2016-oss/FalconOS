@@ -1,5 +1,5 @@
 /* =============================================================================
- *  FalconOS — public kernel header  (v5 "Aurora")
+ *  FalconOS — public kernel header  (v5.3 "Continuum")
  * =============================================================================
  *  All public types, theme palette functions and module-level entry points
  *  live here so the rest of the kernel can stay surgically small.

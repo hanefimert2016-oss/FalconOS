@@ -298,15 +298,15 @@ static void render_stats(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame; (void)wh;
-    section(wx, wy, T("About FalconOS", "FalconOS Hakkinda"), "v5 \"Aurora\"");
+    section(wx, wy, T("About FalconOS", "FalconOS Hakkinda"), "v5.3 \"Continuum\"");
 
     i32 cx = wx + ww / 2;
     gfx_circle(cx, wy + 110, 56, PAL_ACCENT);
     gfx_circle(cx, wy + 110, 36, PAL_PANEL);
     gfx_circle(cx, wy + 110, 18, PAL_ACCENT);
 
-    gfx_text_centered(cx, wy + 190, "FalconOS",                         PAL_TEXT);
-    gfx_text_centered(cx, wy + 210, "v5 \"Aurora\" - x86_64 long mode", PAL_ACCENT);
+    gfx_text_centered(cx, wy + 190, "FalconOS",                            PAL_TEXT);
+    gfx_text_centered(cx, wy + 210, "v5.3 \"Continuum\" - x86_64 long mode", PAL_ACCENT);
     gfx_text_centered(cx, wy + 232,
         T("two kernels, one binary - F1 to flip - F2 Launchpad",
           "iki cekirdek, tek ikili - F1 ile gec - F2 Launchpad"),
@@ -1155,7 +1155,7 @@ static app_def_t APPS[] = {
     { "Calendar",   "month view",          0x3070FF, render_calendar, NULL,             icon_calendar },
     { "Gallery",    "palette swatches",    0xC084FC, render_gallery,  NULL,             icon_gallery  },
     { "Chrome",     "Tab to switch tabs",  0x4285F4, render_browser, chrome_input_key,  icon_browser  },
-    { "About",      "v5 Aurora",           0xA45EE5, render_about,    NULL,             icon_about    },
+    { "About",      "v5.3 Continuum",      0xA45EE5, render_about,    NULL,             icon_about    },
 };
 
 i32 apps_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
