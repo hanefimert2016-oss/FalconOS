@@ -115,10 +115,23 @@ static void icon_gallery(i32 cx, i32 cy)
 }
 static void icon_browser(i32 cx, i32 cy)
 {
-    gfx_circle(cx, cy, 16, PAL_PANEL);
-    gfx_circle_outline(cx, cy, 12, PAL_ACCENT);
-    gfx_line(cx - 12, cy, cx + 12, cy, PAL_ACCENT);
-    gfx_line(cx, cy - 12, cx, cy + 12, PAL_ACCENT);
+    /* Chrome-style multi-colour wheel: red / yellow / green outer ring,
+     * blue centre dot. Drawn with three pie wedges + a centre fill so
+     * the silhouette reads as Chrome at any size.                       */
+    gfx_circle(cx, cy, 16, 0xF8F8F8);                 /* white halo     */
+    gfx_circle_a(cx, cy, 14, 0xEA4335, 0xFF);         /* red top-left   */
+    /* mask out top-right with yellow                                    */
+    for (i32 dy = -14; dy <= 0; dy++)
+        for (i32 dx = 0; dx <= 14; dx++)
+            if (dx*dx + dy*dy <= 14*14)
+                gfx_pixel(cx + dx, cy + dy, 0xFBBC04);
+    /* mask out bottom half with green                                  */
+    for (i32 dy = 1; dy <= 14; dy++)
+        for (i32 dx = -14; dx <= 14; dx++)
+            if (dx*dx + dy*dy <= 14*14)
+                gfx_pixel(cx + dx, cy + dy, 0x34A853);
+    gfx_circle(cx, cy, 6, 0x4285F4);                  /* blue centre    */
+    gfx_circle_outline(cx, cy, 6, 0xFFFFFF);
 }
 static void icon_store(i32 cx, i32 cy)
 {
@@ -912,32 +925,154 @@ static void render_gallery(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     }
 }
 
-/* --- Browser (visual mock) ---------------------------------------------- */
+/* --- Chrome (visual browser app) ----------------------------------------
+ *  Goal: read like a real Chrome window. The window chrome (title bar +
+ *  traffic lights) is drawn by the dispatcher; this routine paints
+ *      [tab bar]  [address bar + nav buttons]  [bookmark bar]  [page]
+ *  in roughly Chrome's layout, with a Google-search-style landing page.
+ *  No real network — but the surface area, typography and component
+ *  spacing are correct for screenshots and demos.                        */
+static const char *CHROME_TABS[3] = {
+    "Welcome",
+    "Falcon Docs",
+    "Source",
+};
+static i32 chrome_active_tab = 0;
+
+static void chrome_input_key(i32 key)
+{
+    /* Tab / Shift-Tab cycle the active tab; left/right also move it.   */
+    if (key == 0x09 /* TAB */ || key == 0x0E /* RIGHT */) {
+        chrome_active_tab = (chrome_active_tab + 1) % 3;
+    } else if (key == 0x0D /* LEFT */ || key == 0x0B /* SHIFT-TAB */) {
+        chrome_active_tab = (chrome_active_tab + 2) % 3;
+    }
+}
+
 static void render_browser(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame; (void)wh;
-    section(wx, wy, "Browser", "no network - visual mock");
 
-    /* address bar */
-    i32 ax = wx + 24, ay = wy + 60, aw = ww - 48;
-    gfx_round_rect_a(ax, ay, aw, 36, 18, PAL_PANEL_DEEP, 255);
-    gfx_round_outline(ax, ay, aw, 36, 18, PAL_HAIRLINE);
-    gfx_circle(ax + 18, ay + 18, 6, COL_OK);
-    gfx_text(ax + 36, ay + 12, "https://falcon.os/welcome", PAL_TEXT);
-
-    /* bookmarks */
-    const char *BM[] = { "Docs", "Repo", "Lumen Notes", "F1 dev" };
-    const u32   BC[] = { PAL_ACCENT, COL_OK, COL_PURPLE, COL_WARN };
-    i32 cw = (ww - 80) / 4, cy = wy + 120, ch = 90;
-    for (i32 i = 0; i < 4; i++) {
-        i32 cx = wx + 24 + i * (cw + 12);
-        gfx_round_rect_a(cx, cy, cw, ch, 12, PAL_PANEL_DEEP, 255);
-        gfx_round_outline(cx, cy, cw, ch, 12, PAL_HAIRLINE);
-        gfx_circle(cx + cw / 2, cy + 32, 18, BC[i]);
-        gfx_text_centered(cx + cw / 2, cy + 64, BM[i], PAL_TEXT);
+    /* ---- tab strip ----------------------------------------------------- */
+    i32 tx = wx + 12, ty = wy + 8;
+    i32 tw = (ww - 24) / 4;     /* leave room for a "+" button on the right */
+    for (i32 i = 0; i < 3; i++) {
+        i32 x = tx + i * (tw + 4);
+        u32 fill = (i == chrome_active_tab) ? PAL_PANEL : PAL_PANEL_DEEP;
+        gfx_round_rect_a(x, ty, tw, 32, 8, fill, 255);
+        gfx_round_outline(x, ty, tw, 32, 8, PAL_HAIRLINE);
+        gfx_circle(x + 14, ty + 16, 5,
+                   i == 0 ? 0x4285F4 :
+                   i == 1 ? 0x34A853 : 0xFBBC04);
+        gfx_text(x + 26, ty + 9, CHROME_TABS[i],
+                 i == chrome_active_tab ? PAL_TEXT : PAL_TEXT_DIM);
+        gfx_text(x + tw - 16, ty + 9, "x", PAL_TEXT_FAINT);
+    }
+    /* "+" new-tab button                                                  */
+    {
+        i32 nx = tx + 3 * (tw + 4);
+        gfx_round_rect_a(nx, ty + 4, 28, 24, 6, PAL_PANEL_DEEP, 255);
+        gfx_text_centered(nx + 14, ty + 9, "+", PAL_TEXT);
     }
 
-    gfx_text(wx + 24, wy + 240, "(network stack not implemented)", PAL_TEXT_FAINT);
+    /* ---- toolbar (back / fwd / reload / address / star / menu) -------- */
+    i32 by = wy + 50;
+    gfx_rect(wx, by, ww, 44, PAL_PANEL_HI);
+
+    i32 bx = wx + 12;
+    /* nav buttons */
+    const char *NAV[3] = { "<", ">", "C" };
+    for (i32 i = 0; i < 3; i++) {
+        gfx_circle(bx + 14 + i * 32, by + 22, 12, PAL_PANEL);
+        gfx_text_centered(bx + 14 + i * 32, by + 16, NAV[i], PAL_TEXT);
+    }
+
+    /* address bar */
+    i32 ax = bx + 110, aw = ww - 110 - 80;
+    gfx_round_rect_a(ax, by + 6, aw, 32, 16, PAL_PANEL, 255);
+    gfx_round_outline(ax, by + 6, aw, 32, 16, PAL_HAIRLINE);
+    gfx_circle(ax + 16, by + 22, 6, COL_OK);   /* lock icon            */
+    const char *URL[3] = {
+        "https://www.google.com/",
+        "falcon.os/docs",
+        "github.com/hanefimert2016-oss/FalconOS",
+    };
+    gfx_text(ax + 32, by + 16, URL[chrome_active_tab], PAL_TEXT);
+    gfx_text(ax + aw - 18, by + 16, "*", PAL_TEXT_DIM);  /* bookmark star */
+
+    /* menu button */
+    gfx_circle(wx + ww - 28, by + 22, 12, PAL_PANEL);
+    gfx_text_centered(wx + ww - 28, by + 16, ":", PAL_TEXT);
+
+    /* ---- bookmark bar -------------------------------------------------- */
+    i32 mb = wy + 96;
+    gfx_rect(wx, mb, ww, 28, PAL_PANEL_DEEP);
+    const char *BM[5] = { "Falcon Docs", "Source", "Issues",
+                          "PRs", "Lumen Notes" };
+    i32 bmx = wx + 16;
+    for (i32 i = 0; i < 5; i++) {
+        gfx_circle(bmx + 6, mb + 14, 4, PAL_ACCENT);
+        gfx_text(bmx + 16, mb + 8, BM[i], PAL_TEXT);
+        bmx += k_strlen(BM[i]) * 8 + 36;
+    }
+
+    /* ---- page content (per-tab) --------------------------------------- */
+    i32 px = wx + 24, py = wy + 132, pw = ww - 48;
+    gfx_round_rect_a(px, py, pw, 200, 12, PAL_PANEL, 255);
+    gfx_round_outline(px, py, pw, 200, 12, PAL_HAIRLINE);
+
+    if (chrome_active_tab == 0) {
+        /* Google-style landing page. */
+        i32 cx = px + pw / 2;
+        gfx_text_lg_centered(cx - 70, py + 28, "G", 0x4285F4);
+        gfx_text_lg_centered(cx - 38, py + 28, "o", 0xEA4335);
+        gfx_text_lg_centered(cx -  6, py + 28, "o", 0xFBBC04);
+        gfx_text_lg_centered(cx + 26, py + 28, "g", 0x4285F4);
+        gfx_text_lg_centered(cx + 58, py + 28, "l", 0x34A853);
+        gfx_text_lg_centered(cx + 90, py + 28, "e", 0xEA4335);
+
+        /* search box */
+        gfx_round_rect_a(cx - 200, py + 80, 400, 36, 18, PAL_PANEL_DEEP, 255);
+        gfx_round_outline(cx - 200, py + 80, 400, 36, 18, PAL_HAIRLINE);
+        gfx_circle(cx - 184, py + 98, 6, PAL_TEXT_DIM);
+        gfx_text(cx - 168, py + 92, "Search Google or type a URL",
+                 PAL_TEXT_DIM);
+
+        /* search / lucky buttons */
+        gfx_round_rect_a(cx - 90, py + 134, 80, 28, 6, PAL_PANEL_DEEP, 255);
+        gfx_text_centered(cx - 50, py + 138, "Search", PAL_TEXT);
+        gfx_round_rect_a(cx + 10, py + 134, 80, 28, 6, PAL_PANEL_DEEP, 255);
+        gfx_text_centered(cx + 50, py + 138, "I'm Lucky", PAL_TEXT);
+    } else if (chrome_active_tab == 1) {
+        gfx_text_lg(px + 16, py + 12, "FalconOS Docs", PAL_TEXT);
+        gfx_text(px + 16, py + 56,
+                 "Bare-metal x86_64 OS with multi-user, PBKDF2 hashing,",
+                 PAL_TEXT);
+        gfx_text(px + 16, py + 76,
+                 "antialiased UI text and a Linux-derived ATA / HID layer.",
+                 PAL_TEXT);
+        gfx_text(px + 16, py + 110, "  - make run        run in QEMU",
+                 PAL_TEXT_DIM);
+        gfx_text(px + 16, py + 130, "  - make run-disk   persistent disk",
+                 PAL_TEXT_DIM);
+        gfx_text(px + 16, py + 150, "  - F1              toggle dev kernel",
+                 PAL_TEXT_DIM);
+        gfx_text(px + 16, py + 170, "  - F2              Launchpad",
+                 PAL_TEXT_DIM);
+    } else {
+        gfx_text_lg(px + 16, py + 12, "github.com/hanefimert2016-oss/FalconOS",
+                    PAL_TEXT);
+        const char *FILES[5] = {
+            "kernel/", "linux/", "boot/", "tools/", "README.md"
+        };
+        for (i32 i = 0; i < 5; i++)
+            gfx_text(px + 16, py + 60 + i * 20, FILES[i], PAL_TEXT);
+    }
+
+    /* ---- status hint --------------------------------------------------- */
+    gfx_text(wx + 24, wy + 350,
+             "Tab: switch tabs   Esc: close   (no network stack)",
+             PAL_TEXT_FAINT);
 }
 
 /* ===== app table & dispatch ============================================= */
@@ -965,7 +1100,7 @@ static app_def_t APPS[] = {
     { "Stats",      "system telemetry",    0xE53935, render_stats,    NULL,             icon_stats    },
     { "Calendar",   "month view",          0x3070FF, render_calendar, NULL,             icon_calendar },
     { "Gallery",    "palette swatches",    0xC084FC, render_gallery,  NULL,             icon_gallery  },
-    { "Browser",    "no network",          0x3070FF, render_browser,  NULL,             icon_browser  },
+    { "Chrome",     "Tab to switch tabs",  0x4285F4, render_browser, chrome_input_key,  icon_browser  },
     { "About",      "v5 Aurora",           0xA45EE5, render_about,    NULL,             icon_about    },
 };
 
