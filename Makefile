@@ -78,11 +78,15 @@ ASM_OBJS    := $(BUILD)/boot/multiboot2.o $(BUILD)/boot/isr.o
 KERNEL      := $(BUILD)/falcon.elf
 ISO         := $(BUILD)/FalconOS.iso
 
-# 64 MB VRAM lets std VGA (Bochs VBE) drive 2K at 32 bpp comfortably
-QEMU_FLAGS    := -m 512M -no-reboot -no-shutdown -serial stdio \
-                 -display sdl -vga std -global VGA.vgamem_mb=64
-HEADLESS_FLAGS:= -m 512M -no-reboot -no-shutdown -serial stdio \
-                 -display none -vga std -global VGA.vgamem_mb=64
+# 4 GB main RAM, 4 vCPUs, 128 MB VRAM — keeps the system snappy at 2K @ 32 bpp.
+# (FalconOS itself only uses ~16 MB; the headroom is so guests can later run
+#  bigger workloads without bumping the Makefile.)
+QEMU_FLAGS    := -m 4096M -smp 4 -no-reboot -no-shutdown -serial stdio \
+                 -display sdl -vga std -global VGA.vgamem_mb=128 \
+                 -accel kvm:tcg
+HEADLESS_FLAGS:= -m 4096M -smp 4 -no-reboot -no-shutdown -serial stdio \
+                 -display none -vga std -global VGA.vgamem_mb=128 \
+                 -accel kvm:tcg
 
 .PHONY: all iso run run-fb run-headless run-disk run-disk-headless wipe-disk font clean
 
@@ -125,13 +129,14 @@ run-fb: $(KERNEL)
 run-headless: $(ISO)
 	$(QEMU) -cdrom $< $(HEADLESS_FLAGS)
 
-# ---- persistent disk image: 64 MiB raw IDE drive on the primary master.
+# ---- persistent disk image: 4 GiB raw IDE drive on the primary master.
 #  diskdb.c writes the user database + settings_t to LBA0 (4 sectors) so
-#  user accounts and passwords survive cold reboots.
+#  user accounts and passwords survive cold reboots.  4 GiB leaves room
+#  for the future Files/prg backing store.
 $(BUILD)/falcon.img: | $(BUILD)
 	@if [ ! -f $@ ]; then \
-	  qemu-img create -f raw $@ 64M; \
-	  echo "[OK] new disk image $@ (64 MiB raw)"; \
+	  qemu-img create -f raw $@ 4G; \
+	  echo "[OK] new disk image $@ (4 GiB raw)"; \
 	fi
 
 run-disk: $(ISO) $(BUILD)/falcon.img
