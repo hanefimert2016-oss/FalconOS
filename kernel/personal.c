@@ -170,6 +170,80 @@ static void draw_dock(void)
     }
 }
 
+/* --- first-run welcome banner -------------------------------------------- */
+/*  Shown once on the desktop after a fresh install completes so a "normal
+ *  user" sees a friendly greeting + the three keyboard shortcuts that get
+ *  them productive immediately. Dismissed by clicking the OK pill or
+ *  pressing Esc — both clear SET.welcome_shown and persist to disk so it
+ *  never reappears.                                                       */
+static void draw_welcome_banner(void)
+{
+    if (SET.welcome_shown) return;
+    if (!SET.installed)    return;   /* installer is still active           */
+
+    i32 W = (i32)FB.width;
+    i32 w = 560, h = 180;
+    i32 x = (W - w) / 2;
+    i32 y = 60;
+
+    gfx_round_rect_a(x + 4, y + 12, w, h, 18, COL_SHADOW, 70);
+    gfx_round_rect_a(x,     y,      w, h, 18, PAL_PANEL, 250);
+    gfx_round_outline(x,    y,      w, h, 18, PAL_ACCENT);
+
+    /* personalised greeting in the active language */
+    char greet[64];
+    k_strcpy(greet,
+             TX("Welcome",  "Hosgeldin",  "Willkommen",  "Bienvenue",  "Bienvenido"));
+    if (SET.user_count > 0 &&
+        SET.active_user >= 0 && SET.active_user < FALCON_MAX_USERS &&
+        SET.users[SET.active_user].in_use) {
+        k_strcat(greet, ", ");
+        k_strcat(greet, SET.users[SET.active_user].name);
+    }
+    k_strcat(greet, "!");
+    gfx_text_centered(x + w / 2, y + 18, greet, PAL_TEXT);
+
+    /* three actionable hints — same order in every language */
+    gfx_text_centered(x + w / 2, y + 56,
+        TX("F2 opens the Launchpad with all your apps",
+           "F2 tum uygulamalari Launchpad'de acar",
+           "F2 oeffnet das Launchpad mit allen Apps",
+           "F2 ouvre le Launchpad avec toutes vos apps",
+           "F2 abre el Launchpad con todas tus apps"), PAL_TEXT_DIM);
+
+    gfx_text_centered(x + w / 2, y + 78,
+        TX("F1 toggles to the Developer kernel",
+           "F1 ile Developer cekirdegine gecersin",
+           "F1 schaltet zum Developer-Kernel",
+           "F1 bascule sur le noyau Developer",
+           "F1 cambia al kernel Developer"), PAL_TEXT_DIM);
+
+    gfx_text_centered(x + w / 2, y + 100,
+        TX("Esc closes any open app",
+           "Esc acik uygulamayi kapatir",
+           "Esc schliesst geoeffnete Apps",
+           "Esc ferme l'app ouverte",
+           "Esc cierra cualquier app abierta"), PAL_TEXT_DIM);
+
+    /* dismiss pill */
+    const char *ok = TX("OK, got it", "Anladim", "Verstanden", "C'est compris", "Entendido");
+    i32 ow = gfx_text_width(ok) + 32;
+    i32 ox = x + (w - ow) / 2;
+    i32 oy = y + h - 38;
+    gfx_round_rect_a(ox, oy, ow, 26, 13, PAL_ACCENT, 255);
+    gfx_text_centered(x + w / 2, oy + 4, ok, 0xFFFFFF);
+
+    /* mouse / keyboard dismiss */
+    i32 mx, my; bool ml; mouse_get(&mx, &my, &ml); (void)ml;
+    bool clicked = (mx >= ox && mx <= ox + ow &&
+                    my >= oy && my <= oy + 26 &&
+                    mouse_consume_click());
+    if (clicked) {
+        SET.welcome_shown = true;
+        diskdb_save();
+    }
+}
+
 /* --- entry point --------------------------------------------------------- */
 void mode_personal_render(u32 frame)
 {
@@ -178,6 +252,7 @@ void mode_personal_render(u32 frame)
     draw_res_card();
     widgets_render(frame);
     desktop_pins_render(frame);
+    draw_welcome_banner();
     draw_dock();
 
     /* nav hint */

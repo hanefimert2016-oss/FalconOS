@@ -139,17 +139,29 @@ void lockscreen_render(u32 frame)
 
     /* ---- live clock + "welcome back" line ------------------------------- */
     {
-        u32 H_, M_, S_; pit_uptime(&H_, &M_, &S_);
+        rtc_time_t now; rtc_local(&now);
         char clk[16]; char tmp[8];
         k_strcpy(clk, "");
-        k_itoa(H_, tmp, 10); if (H_ < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+        k_itoa(now.hour, tmp, 10);
+        if (now.hour < 10) k_strcat(clk, "0");
+        k_strcat(clk, tmp);
         k_strcat(clk, ":");
-        k_itoa(M_, tmp, 10); if (M_ < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+        k_itoa(now.min, tmp, 10);
+        if (now.min < 10) k_strcat(clk, "0");
+        k_strcat(clk, tmp);
         /* Big crisp clock + small helper text; gives the lockscreen a
          * proper macOS-style headline rather than a tiny terminal time. */
         gfx_text_lg_centered(cx, cy - 245, clk, PAL_TEXT);
-        gfx_text_centered   (cx, cy - 200, T("Welcome back",
-                                             "Tekrar hosgeldin"), PAL_TEXT_DIM);
+        /* date below the clock, locale-formatted */
+        char date_buf[16];
+        loc_format_date(date_buf, &now);
+        gfx_text_centered(cx, cy - 215, date_buf, PAL_TEXT_DIM);
+        gfx_text_centered   (cx, cy - 195,
+                            TX("Welcome back",
+                               "Tekrar hosgeldin",
+                               "Willkommen zuruck",
+                               "Bon retour",
+                               "Bienvenido de nuevo"), PAL_TEXT_DIM);
     }
 
     /* ---- user picker ---------------------------------------------------- */
@@ -210,23 +222,39 @@ void lockscreen_render(u32 frame)
         u32 secs = (g_throttle_end - g_tick + 99) / 100;
         char msg[64];
         char tmp[8];
-        k_strcpy(msg, T("Locked - wait ", "Kilitli - bekle "));
+        k_strcpy(msg, TX("Locked - wait ",
+                         "Kilitli - bekle ",
+                         "Gesperrt - warte ",
+                         "Verrouille - attendre ",
+                         "Bloqueado - espera "));
         k_itoa(secs, tmp, 10);
         k_strcat(msg, tmp);
         k_strcat(msg, "s");
         gfx_text_centered(cx, fy + fh + 12, msg, COL_ERR);
     } else if (g_show_error) {
         gfx_text_centered(cx, fy + fh + 12,
-                          T("Wrong password - try again",
-                            "Parola yanlis - tekrar dene"), COL_ERR);
+                          TX("Wrong password - try again",
+                             "Parola yanlis - tekrar dene",
+                             "Falsches Passwort - erneut versuchen",
+                             "Mauvais mot de passe - reessayer",
+                             "Contrasena incorrecta - intentar de nuevo"),
+                          COL_ERR);
     } else if (no_pwd) {
         gfx_text_centered(cx, fy + fh + 12,
-                          T("No password set - press Enter",
-                            "Parola yok - Enter ile devam"), PAL_TEXT_DIM);
+                          TX("No password set - press Enter",
+                             "Parola yok - Enter ile devam",
+                             "Kein Passwort - Eingabe drucken",
+                             "Pas de mot de passe - appuyez sur Entree",
+                             "Sin contrasena - pulsa Intro"),
+                          PAL_TEXT_DIM);
     } else {
         gfx_text_centered(cx, fy + fh + 12,
-                          T("Press Enter to unlock",
-                            "Enter ile kilidi ac"), PAL_TEXT_DIM);
+                          TX("Press Enter to unlock",
+                             "Enter ile kilidi ac",
+                             "Eingabe zum Entsperren",
+                             "Entree pour deverrouiller",
+                             "Intro para desbloquear"),
+                          PAL_TEXT_DIM);
     }
 
     /* ---- footer hint ---------------------------------------------------- */
