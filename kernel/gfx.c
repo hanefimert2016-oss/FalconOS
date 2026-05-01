@@ -240,11 +240,22 @@ void gfx_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c)
     gfx_round_rect_a(x, y, w, h, r, c, 255);
 }
 
-/* Frosted-glass rounded rect: soft drop shadow + translucent panel + 1 px
- * hairline border.  Theme-aware via the runtime palette so the same card
- * style works on Lumen (light) and Nox (dark).                            */
+/* Frosted-glass rounded rect.  When SET.aero_enabled is true (the
+ * default in v5.2), this dispatches to the real blur-based Aero glass
+ * defined further down so every existing dock / widget / panel call
+ * site picks up translucency for free.  The flat-overlay fallback
+ * keeps the same visual silhouette for users who turn Aero off, and
+ * is also used by very-early-boot code paths (e.g. the installer's
+ * first frame) where SET hasn't been initialised yet.                 */
 void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r)
 {
+    if (SET.aero_enabled) {
+        /* Aero look — slightly stronger tint than the flat glass so
+         * UI text on top of the panel remains legible against busy
+         * blurred backgrounds.                                     */
+        gfx_aero_round_rect(x, y, w, h, r, PAL_GLASS, 170);
+        return;
+    }
     /* drop shadow (soft) */
     gfx_round_rect_a(x + 2, y + 6, w, h, r, COL_SHADOW, 28);
     gfx_round_rect_a(x + 1, y + 3, w, h, r, COL_SHADOW, 18);

@@ -1142,10 +1142,17 @@ void apps_render_active(u32 frame)
     i32 off = (i32)((200 - dt) * 60 / 200);
     wy += off;
 
-    /* card */
+    /* card — Aero blurs the desktop / dock / widgets behind the
+     * window so the chrome feels lifted; the body remains solid
+     * because most apps render their own opaque content into it.   */
     gfx_round_rect_a(wx + 4, wy + 12, ww, wh, 18, COL_SHADOW, 70);   /* shadow */
-    gfx_round_rect_a(wx,     wy,      ww, wh, 18, PAL_PANEL,   245);
-    gfx_round_outline(wx,    wy,      ww, wh, 18, PAL_HAIRLINE);
+    if (SET.aero_enabled) {
+        gfx_blur_rect(wx, wy, ww, wh, 6);
+        gfx_round_rect_a(wx, wy, ww, wh, 18, PAL_PANEL, 220);
+    } else {
+        gfx_round_rect_a(wx, wy, ww, wh, 18, PAL_PANEL, 245);
+    }
+    gfx_round_outline(wx, wy, ww, wh, 18, PAL_HAIRLINE);
 
     /* title bar */
     gfx_circle(wx + 18,  wy + 18, 7, COL_ERR);

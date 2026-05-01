@@ -179,7 +179,14 @@ void lockscreen_render(u32 frame)
         i32 dx = ((phase < 8) ? phase : (16 - phase)) - 4;
         fx += dx;
     }
-    gfx_round_rect_a(fx, fy, fw, fh, 14, PAL_PANEL, 240);
+    /* Aero blur the wallpaper behind the password pill so the field
+     * lifts off the desktop. Flat overlay if the user disabled Aero. */
+    if (SET.aero_enabled) {
+        gfx_blur_rect(fx, fy, fw, fh, 6);
+        gfx_round_rect_a(fx, fy, fw, fh, 14, PAL_PANEL, 170);
+    } else {
+        gfx_round_rect_a(fx, fy, fw, fh, 14, PAL_PANEL, 240);
+    }
     gfx_round_outline(fx, fy, fw, fh, 14, PAL_HAIRLINE);
 
     char masked[24];

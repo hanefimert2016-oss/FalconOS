@@ -78,9 +78,16 @@ static void draw_menu_bar(void)
     i32 W = (i32)FB.width;
     i32 H = 30;
 
-    /* glass strip across the top */
-    gfx_rect_a(0, 0, W, H,     PAL_PANEL,    220);
-    gfx_rect_a(0, H, W, 1,     PAL_HAIRLINE, 255);
+    /* Aero glass strip across the top — blur the wallpaper underneath
+     * so the menu bar feels lifted off the desktop.  When SET.aero is
+     * off, fall back to the cheap flat overlay.                       */
+    if (SET.aero_enabled) {
+        gfx_blur_rect(0, 0, W, H, 5);
+        gfx_rect_a(0, 0, W, H, PAL_PANEL, 150);
+    } else {
+        gfx_rect_a(0, 0, W, H, PAL_PANEL, 220);
+    }
+    gfx_rect_a(0, H, W, 1, PAL_HAIRLINE, 255);
 
     /* left: brand */
     gfx_circle(20, H / 2, 6, PAL_ACCENT);

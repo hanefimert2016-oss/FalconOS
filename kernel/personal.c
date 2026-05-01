@@ -106,10 +106,18 @@ static void draw_dock(void)
     i32 dx   = ((i32)FB.width - dw) / 2;
     i32 dy   = (i32)FB.height - dh - 22;
 
-    /* glass tray */
-    gfx_round_rect_a(dx + 2, dy + 8, dw, dh, 26, COL_SHADOW, 60);
-    gfx_round_rect_a(dx,     dy,     dw, dh, 26, PAL_PANEL,  220);
-    gfx_round_outline(dx,    dy,     dw, dh, 26, PAL_HAIRLINE);
+    /* glass tray — Aero blur underneath when enabled, flat overlay when
+     * the user has turned Aero off in Settings.                         */
+    if (SET.aero_enabled) {
+        gfx_round_rect_a(dx + 2, dy + 8, dw, dh, 26, COL_SHADOW, 60);
+        gfx_blur_rect(dx, dy, dw, dh, 7);
+        gfx_round_rect_a(dx, dy, dw, dh, 26, PAL_PANEL, 140);
+        gfx_round_outline(dx, dy, dw, dh, 26, PAL_HAIRLINE);
+    } else {
+        gfx_round_rect_a(dx + 2, dy + 8, dw, dh, 26, COL_SHADOW, 60);
+        gfx_round_rect_a(dx, dy, dw, dh, 26, PAL_PANEL, 220);
+        gfx_round_outline(dx, dy, dw, dh, 26, PAL_HAIRLINE);
+    }
 
     for (i32 i = 0; i < n; i++) {
         i32 ix    = dx + 18 + i * (tile + gap) + tile / 2;
