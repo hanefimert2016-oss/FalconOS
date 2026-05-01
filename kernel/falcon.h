@@ -180,6 +180,18 @@ void kbd_set_focus_text(bool b);
 #define KEY_DOWN       0x111
 #define KEY_LEFT       0x112
 #define KEY_RIGHT      0x113
+#define KEY_HOME       0x114
+#define KEY_END        0x115
+#define KEY_PGUP       0x116
+#define KEY_PGDN       0x117
+#define KEY_DEL        0x07F
+
+/* Modifier-state bitmask returned by kbd_mod_state().                    */
+#define KMOD_SHIFT  (1u << 0)
+#define KMOD_CTRL   (1u << 1)
+#define KMOD_ALT    (1u << 2)
+#define KMOD_CAPS   (1u << 3)
+u32  kbd_mod_state(void);
 
 /* ---- mouse ---------------------------------------------------------------- */
 void mouse_init(void);

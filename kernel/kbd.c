@@ -22,7 +22,25 @@
 #define KBUF 64
 static volatile i32 KBD_BUF[KBUF];
 static volatile u32 KBD_HEAD = 0, KBD_TAIL = 0;
+
+/* Modifier state — tracked across IRQs.  CapsLock toggles on press
+ * (not on release) like a real PS/2 controller; Ctrl/Alt are level-
+ * tracked. We expose these to the kernel via kbd_mod_state() so apps
+ * can implement Ctrl-C / Ctrl-V style shortcuts later.                 */
 static volatile bool g_shift = false;
+static volatile bool g_ctrl  = false;
+static volatile bool g_alt   = false;
+static volatile bool g_caps  = false;
+
+u32 kbd_mod_state(void)
+{
+    u32 m = 0;
+    if (g_shift) m |= 1u << 0;
+    if (g_ctrl)  m |= 1u << 1;
+    if (g_alt)   m |= 1u << 2;
+    if (g_caps)  m |= 1u << 3;
+    return m;
+}
 
 /* ---- US-QWERTY tables (lower / upper) -----------------------------------*/
 static const i32 SC_US_LO[128] = {
@@ -121,7 +139,11 @@ i32 kbd_translate(u8 sc, kbd_layout_t layout, bool shift)
     else                         tbl = SC_US_LO;
 
     i32 k = tbl[sc];
-    if (shift && k >= 'a' && k <= 'z') return k - 'a' + 'A';
+    /* CapsLock acts on letter keys only — XOR with shift like real
+     * keyboards (caps + shift = lowercase).                            */
+    bool letter_upper = shift;
+    if (k >= 'a' && k <= 'z' && g_caps) letter_upper = !letter_upper;
+    if (letter_upper && k >= 'a' && k <= 'z') return k - 'a' + 'A';
     /* punctuation shift: only US has full mapping; reuse for others       */
     if (shift && SC_US_HI[sc] && (k < 0x100)) return SC_US_HI[sc];
     return k;
@@ -150,15 +172,24 @@ void kbd_irq(void)
     static bool extended = false;
     u8 sc = inb(PS2_DATA);
 
+    /* PS/2 packet sentinels we never want to treat as keys */
+    if (sc == 0x00 || sc == 0xFA || sc == 0xFE || sc == 0xAA || sc == 0xEE) return;
+
     if (sc == 0xE0) { extended = true; return; }
     if (sc & 0x80)  {
-        /* key release — track shift */
+        /* key release — track all level-triggered modifiers */
         u8 raw = sc & 0x7F;
         if (raw == 0x2A || raw == 0x36) g_shift = false;
+        if (raw == 0x1D)                g_ctrl  = false;   /* Ctrl  (L/R) */
+        if (raw == 0x38)                g_alt   = false;   /* Alt   (L/R) */
         extended = false;
         return;
     }
-    if (sc == 0x2A || sc == 0x36) { g_shift = true; return; }
+    /* Modifier presses — never enqueue, just update state */
+    if (sc == 0x2A || sc == 0x36) { g_shift = true;  return; }
+    if (sc == 0x1D)               { g_ctrl  = true;  return; }
+    if (sc == 0x38)               { g_alt   = true;  return; }
+    if (sc == 0x3A)               { g_caps  = !g_caps; return; }
 
     i32 k = 0;
     if (extended) {
@@ -167,6 +198,11 @@ void kbd_irq(void)
             case 0x50: k = KEY_DOWN;  break;
             case 0x4B: k = KEY_LEFT;  break;
             case 0x4D: k = KEY_RIGHT; break;
+            case 0x47: k = KEY_HOME;  break;
+            case 0x4F: k = KEY_END;   break;
+            case 0x49: k = KEY_PGUP;  break;
+            case 0x51: k = KEY_PGDN;  break;
+            case 0x53: k = KEY_DEL;   break;
             default:   break;
         }
         extended = false;
