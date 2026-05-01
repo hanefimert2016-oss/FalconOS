@@ -198,6 +198,7 @@ void mouse_init(void);
 void mouse_get(i32 *x, i32 *y, bool *left);
 bool mouse_consume_click(void);
 bool mouse_consume_right(void);
+bool mouse_consume_double(void);
 
 /* ---- timer / clock -------------------------------------------------------- */
 void pit_init(void);

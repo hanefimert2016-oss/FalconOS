@@ -17,6 +17,8 @@ static volatile bool m_l  = false;
 static volatile bool m_l_edge = false;
 static volatile bool m_r  = false;
 static volatile bool m_r_edge = false;
+static volatile bool m_l_double_edge = false;
+static volatile u32  m_last_click_ms = 0;
 
 static u8 pkt[3];
 static i32 cyc = 0;
@@ -27,10 +29,24 @@ static i32 cyc = 0;
  * but QEMU's input pipeline already inverts Y for the SDL backend, so
  * the screen ends up moving the wrong way. We do the natural mapping
  *   m_y += dy
- * which matches the user's pointer motion 1:1. The 2x multiplier turns
- * a 1-count-per-mickey hardware default into a comfortable cursor speed
- * at FullHD/QHD framebuffers without hiding small motions. */
-#define MOUSE_SENSITIVITY  2
+ * which matches the user's pointer motion 1:1.
+ *
+ * Pointer acceleration curve (macOS-like): small motions stay 1:1
+ * for precision, but fast flicks get a quadratic boost so crossing a
+ * 4K screen takes a single sweep rather than four. We compute the
+ * scale-up per-axis so a diagonal flick doesn't double-count.        */
+static i32 mouse_accel(i32 d)
+{
+    i32 a = d < 0 ? -d : d;
+    /* base sensitivity 2x at all speeds, plus quadratic above 4 counts */
+    i32 boost = 0;
+    if (a > 4)  boost = (a - 4) * (a - 4) / 8;     /* small */
+    if (boost > 14) boost = 14;                     /* hard cap */
+    i32 scale = 2 + boost;
+    return d * scale;
+}
+
+#define DOUBLE_CLICK_MS  350
 
 static void wait_send(void)  { for (i32 i = 0; i < 100000; i++) if (!(inb(PS2_STAT) & 2)) return; }
 static void wait_recv(void)  { for (i32 i = 0; i < 100000; i++) if   (inb(PS2_STAT) & 1)  return; }
@@ -86,17 +102,29 @@ void mouse_irq(void)
 
     bool ln = (pkt[0] & 1) != 0;
     bool rn = (pkt[0] & 2) != 0;
-    if (ln && !m_l) m_l_edge = true;
+    if (ln && !m_l) {
+        m_l_edge = true;
+        u32 now = pit_ms();
+        if (now - m_last_click_ms < DOUBLE_CLICK_MS) m_l_double_edge = true;
+        m_last_click_ms = now;
+    }
     if (rn && !m_r) m_r_edge = true;
     m_l = ln;
     m_r = rn;
 
-    m_x += dx * MOUSE_SENSITIVITY;
-    m_y += dy * MOUSE_SENSITIVITY;
+    m_x += mouse_accel(dx);
+    m_y += mouse_accel(dy);
     if (m_x < 0) m_x = 0;
     if (m_y < 0) m_y = 0;
     if ((u32)m_x >= FB.width)  m_x = (i32)FB.width  - 1;
     if ((u32)m_y >= FB.height) m_y = (i32)FB.height - 1;
+}
+
+bool mouse_consume_double(void)
+{
+    bool e = m_l_double_edge;
+    m_l_double_edge = false;
+    return e;
 }
 
 void mouse_get(i32 *x, i32 *y, bool *left)
