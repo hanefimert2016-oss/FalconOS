@@ -1,7 +1,7 @@
 /* =============================================================================
  *  FalconOS — Linux UAPI compatibility shim
  * -----------------------------------------------------------------------------
- *  Clean-room reimplementation of the small subset of <linux/*> headers that
+ *  Clean-room reimplementation of the small subset of linux UAPI headers that
  *  FalconOS uses internally.  The names + structure match Linux kernel UAPI
  *  exactly so future Linux-driver port-ins compile unmodified, but no Linux
  *  source code was copied: every constant comes from publicly-available

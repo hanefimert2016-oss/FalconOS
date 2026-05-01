@@ -110,7 +110,7 @@ static void cmd_peek(const char *args)
     u32 n = parse_dec_arg(next, 16);
     if (n > 32) n = 32;
 
-    u8 *p = (u8 *)addr;
+    u8 *p = (u8 *)(uptr)addr;
     char out[80], hex[16];
     k_strcpy(out, "peek 0x");
     k_itoa(addr, hex, 16); k_strcat(out, hex); k_strcat(out, " :");
@@ -133,7 +133,7 @@ static void cmd_poke(const char *args)
     const char *next = skip_word(args);
     u32 val  = parse_hex_arg(next, 0);
     if (!addr) { log_push_dev("poke: addr required"); return; }
-    *(u8 *)addr = (u8)val;
+    *(u8 *)(uptr)addr = (u8)val;
     char out[64], hex[16];
     k_strcpy(out, "poke 0x");
     k_itoa(addr, hex, 16); k_strcat(out, hex);

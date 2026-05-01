@@ -17,6 +17,10 @@ typedef short               i16;
 typedef int                 i32;
 typedef long long           i64;
 typedef unsigned long       uintptr_t;
+/* Short alias used in low-level code that has to round-trip a memory
+ * address through an integer (e.g. dev memory inspector, REPL peek).
+ * uintptr_t already captures word-width on 32- and 64-bit builds. */
+typedef uintptr_t           uptr;
 typedef _Bool               bool;
 #define true                1
 #define false               0
@@ -258,7 +262,7 @@ typedef struct { u32 base; u32 length; u32 type; } mmap_entry_t;
 extern mmap_entry_t MMAP[MMAP_MAX];
 extern i32          MMAP_N;
 extern u32          RAM_TOTAL_KB;
-void mmap_parse(u32 info_ptr);
+void mmap_parse(uptr info_ptr);
 const char *mmap_type_name(u32 t);
 
 /* ---- developer log -------------------------------------------------------- */

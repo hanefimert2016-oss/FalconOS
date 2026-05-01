@@ -68,7 +68,7 @@ static void parse_multiboot(u64 magic, u64 info_ptr)
         p += (t->size + 7) & ~7u;
     }
 
-    mmap_parse((u32)info_ptr);
+    mmap_parse((uptr)info_ptr);
 }
 
 /* --------------------------------------------------------------------------- */

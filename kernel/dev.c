@@ -141,7 +141,7 @@ void mode_developer_render(u32 frame)
         gfx_text(mem_x + 16, top_y + 12, head, PAL_ACCENT);
         gfx_text(mem_x + mem_w - 110, top_y + 12, "Up/Down", PAL_TEXT_DIM);
 
-        u8 *p = (u8 *)mem_addr;
+        u8 *p = (u8 *)(uptr)mem_addr;
         for (i32 r = 0; r < 8; r++) {
             char row[80] = ""; char b[4];
             hex32(hex, mem_addr + r * 16); k_strcat(row, hex);

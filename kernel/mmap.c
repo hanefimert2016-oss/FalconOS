@@ -26,7 +26,7 @@ typedef struct __attribute__((packed)) {
     u32 reserved;
 } mb2_mmap_e_t;
 
-void mmap_parse(u32 info_ptr)
+void mmap_parse(uptr info_ptr)
 {
     if (!info_ptr) return;
     u8 *p = (u8 *)info_ptr;
