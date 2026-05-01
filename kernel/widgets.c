@@ -44,17 +44,67 @@ static void w_weather(i32 x, i32 y, i32 w, i32 h)
     gfx_text(x + 18, y + h - 22, "Istanbul", PAL_TEXT_FAINT);
 }
 
+/* Zeller's congruence — returns 0=Sun..6=Sat for a Gregorian date. */
+static i32 zeller_dow(u32 y, u32 m, u32 d)
+{
+    if (m < 3) { m += 12; y -= 1; }
+    u32 K = y % 100;
+    u32 J = y / 100;
+    /* Sakamoto/Zeller variant adjusted to 0=Sunday output            */
+    i32 h = (i32)((d + 13 * (m + 1) / 5 + K + K / 4 + J / 4 + 5 * J) % 7);
+    return (h + 6) % 7;   /* shift so 0=Sun */
+}
+
 static void w_calendar(i32 x, i32 y, i32 w, i32 h)
 {
     w_card(x, y, w, h, T("Calendar", "Takvim"), 0xE85D9C);
-    /* big day number + month */
-    gfx_text(x + w - 80, y + 60, "01", PAL_TEXT);
-    gfx_text(x + 18, y + h - 56,
-             T("Thursday",   "Persembe"), PAL_TEXT);
-    gfx_text(x + 18, y + h - 38,
-             T("May 1, 2026", "1 Mayis 2026"), PAL_TEXT_DIM);
+
+    rtc_time_t now; rtc_local(&now);
+
+    /* big day number */
+    char dnum[4];
+    if (now.day < 10) { dnum[0] = '0'; dnum[1] = (char)('0' + now.day); dnum[2] = 0; }
+    else              { dnum[0] = (char)('0' + now.day / 10);
+                        dnum[1] = (char)('0' + now.day % 10);
+                        dnum[2] = 0; }
+    gfx_text(x + w - 80, y + 60, dnum, PAL_TEXT);
+
+    /* day of week (localised) */
+    static const char *DOW_EN[7] = {"Sunday","Monday","Tuesday","Wednesday",
+                                    "Thursday","Friday","Saturday"};
+    static const char *DOW_TR[7] = {"Pazar","Pazartesi","Sali","Carsamba",
+                                    "Persembe","Cuma","Cumartesi"};
+    static const char *DOW_DE[7] = {"Sonntag","Montag","Dienstag","Mittwoch",
+                                    "Donnerstag","Freitag","Samstag"};
+    static const char *DOW_FR[7] = {"Dimanche","Lundi","Mardi","Mercredi",
+                                    "Jeudi","Vendredi","Samedi"};
+    static const char *DOW_ES[7] = {"Domingo","Lunes","Martes","Miercoles",
+                                    "Jueves","Viernes","Sabado"};
+    i32 dow = zeller_dow(now.year, now.month, now.day);
+    if (dow < 0 || dow > 6) dow = 0;
+    const char *day_name;
+    switch (SET.lang) {
+        case LANG_TR: day_name = DOW_TR[dow]; break;
+        case LANG_DE: day_name = DOW_DE[dow]; break;
+        case LANG_FR: day_name = DOW_FR[dow]; break;
+        case LANG_ES: day_name = DOW_ES[dow]; break;
+        case LANG_EN: default: day_name = DOW_EN[dow]; break;
+    }
+    gfx_text(x + 18, y + h - 56, day_name, PAL_TEXT);
+
+    /* full date — day + month name + year */
+    char line[40] = "";
+    char tmp[8];
+    k_itoa(now.day, tmp, 10); k_strcat(line, tmp);
+    k_strcat(line, " ");
+    k_strcat(line, loc_month_short(now.month));
+    k_strcat(line, " ");
+    k_itoa(now.year, tmp, 10); k_strcat(line, tmp);
+    gfx_text(x + 18, y + h - 38, line, PAL_TEXT_DIM);
+
     gfx_text(x + 18, y + h - 22,
-             T("Labour Day", "Emek Bayrami"), PAL_TEXT_FAINT);
+             TX("Today", "Bugun", "Heute", "Aujourd'hui", "Hoy"),
+             PAL_TEXT_FAINT);
 }
 
 static void w_system(i32 x, i32 y, i32 w, i32 h)

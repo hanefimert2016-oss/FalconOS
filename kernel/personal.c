@@ -187,8 +187,8 @@ static void draw_welcome_banner(void)
     i32 y = 60;
 
     gfx_round_rect_a(x + 4, y + 12, w, h, 18, COL_SHADOW, 70);
-    gfx_round_rect_a(x,     y,      w, h, 18, PAL_PANEL, 250);
-    gfx_round_outline(x,    y,      w, h, 18, PAL_ACCENT);
+    gfx_round_glass(x, y, w, h, 18);                       /* Aero-aware */
+    gfx_round_outline(x, y, w, h, 18, PAL_ACCENT);
 
     /* personalised greeting in the active language */
     char greet[64];
