@@ -15,6 +15,8 @@ static volatile i32  m_x  = 480;
 static volatile i32  m_y  = 360;
 static volatile bool m_l  = false;
 static volatile bool m_l_edge = false;
+static volatile bool m_r  = false;
+static volatile bool m_r_edge = false;
 
 static u8 pkt[3];
 static i32 cyc = 0;
@@ -64,8 +66,11 @@ void mouse_irq(void)
     i8 dx = (i8)pkt[1];
     i8 dy = (i8)pkt[2];
     bool ln = (pkt[0] & 1) != 0;
+    bool rn = (pkt[0] & 2) != 0;
     if (ln && !m_l) m_l_edge = true;
+    if (rn && !m_r) m_r_edge = true;
     m_l = ln;
+    m_r = rn;
 
     m_x += dx;
     m_y -= dy;
@@ -84,5 +89,12 @@ bool mouse_consume_click(void)
 {
     bool e = m_l_edge;
     m_l_edge = false;
+    return e;
+}
+
+bool mouse_consume_right(void)
+{
+    bool e = m_r_edge;
+    m_r_edge = false;
     return e;
 }

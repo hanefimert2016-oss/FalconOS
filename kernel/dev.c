@@ -109,7 +109,7 @@ void mode_developer_render(u32 frame)
     /* ---- CPU card --------------------------------------------------- */
     {
         gfx_round_glass(cpu_x, top_y, cpu_w, top_h, 14);
-        gfx_text(cpu_x + 16, top_y + 12, "CPU", COL_ACCENT);
+        gfx_text(cpu_x + 16, top_y + 12, "CPU", PAL_ACCENT);
         gfx_text(cpu_x + cpu_w - 64, top_y + 12, "live", COL_OK);
         gfx_circle(cpu_x + cpu_w - 76, top_y + 19, 4, COL_OK);
 
@@ -124,7 +124,7 @@ void mode_developer_render(u32 frame)
             line[0] = 0;
             k_strcat(line, names[i]); k_strcat(line, "  0x");
             hex32(hex, regs[i]); k_strcat(line, hex);
-            gfx_text(cpu_x + 18, top_y + 40 + i * 18, line, COL_TEXT);
+            gfx_text(cpu_x + 18, top_y + 40 + i * 18, line, PAL_TEXT);
         }
 
         line[0] = 0;
@@ -138,8 +138,8 @@ void mode_developer_render(u32 frame)
         gfx_round_glass(mem_x, top_y, mem_w, top_h, 14);
         char hex[16], head[40] = "MEM @ 0x";
         hex32(hex, mem_addr); k_strcat(head, hex);
-        gfx_text(mem_x + 16, top_y + 12, head, COL_ACCENT);
-        gfx_text(mem_x + mem_w - 110, top_y + 12, "Up/Down", COL_TEXT_DIM);
+        gfx_text(mem_x + 16, top_y + 12, head, PAL_ACCENT);
+        gfx_text(mem_x + mem_w - 110, top_y + 12, "Up/Down", PAL_TEXT_DIM);
 
         u8 *p = (u8 *)mem_addr;
         for (i32 r = 0; r < 8; r++) {
@@ -150,20 +150,20 @@ void mode_developer_render(u32 frame)
                 hexbyte(b, p[r * 16 + c]); k_strcat(row, b);
                 k_strcat(row, c == 7 ? "  " : " ");
             }
-            gfx_text(mem_x + 16, top_y + 38 + r * 18, row, COL_TEXT_DIM);
+            gfx_text(mem_x + 16, top_y + 38 + r * 18, row, PAL_TEXT_DIM);
         }
     }
 
     /* ---- mmap card -------------------------------------------------- */
     {
         gfx_round_glass(mmap_x, top_y, mmap_w, top_h, 14);
-        gfx_text(mmap_x + 16, top_y + 12, "MMAP", COL_ACCENT);
+        gfx_text(mmap_x + 16, top_y + 12, "MMAP", PAL_ACCENT);
 
         char total[40] = "RAM ";
         char hex[16];
         k_itoa(RAM_TOTAL_KB / 1024, hex, 10);
         k_strcat(total, hex); k_strcat(total, " MB");
-        gfx_text(mmap_x + 16, top_y + 38, total, COL_TEXT);
+        gfx_text(mmap_x + 16, top_y + 38, total, PAL_TEXT);
 
         i32 maxn = MMAP_N < 6 ? MMAP_N : 6;
         for (i32 i = 0; i < maxn; i++) {
@@ -172,7 +172,7 @@ void mode_developer_render(u32 frame)
             k_itoa(MMAP[i].base, hex, 16); k_strcat(ln, hex);
             k_strcat(ln, " ");
             k_strcat(ln, mmap_type_name(MMAP[i].type));
-            u32 col = MMAP[i].type == 1 ? COL_OK : COL_TEXT_DIM;
+            u32 col = MMAP[i].type == 1 ? COL_OK : PAL_TEXT_DIM;
             gfx_text(mmap_x + 16, top_y + 60 + i * 18, ln, col);
         }
     }
@@ -180,12 +180,12 @@ void mode_developer_render(u32 frame)
     /* ---- log card --------------------------------------------------- */
     {
         gfx_round_glass(m, log_y, log_w, log_h, 14);
-        gfx_text(m + 16, log_y + 12, "LOG", COL_ACCENT);
+        gfx_text(m + 16, log_y + 12, "LOG", PAL_ACCENT);
 
         char tag[16] = "tick ";
         char hex[16]; k_itoa(g_ticks, hex, 10);
         k_strcat(tag, hex);
-        gfx_text(m + log_w - gfx_text_width(tag) - 16, log_y + 12, tag, COL_TEXT_DIM);
+        gfx_text(m + log_w - gfx_text_width(tag) - 16, log_y + 12, tag, PAL_TEXT_DIM);
 
         i32 line_h = 22;
         i32 max_lines = (log_h - 40) / line_h;
@@ -194,7 +194,7 @@ void mode_developer_render(u32 frame)
             i32 idx = (log_head + LOG_LINES - max_lines + i) % LOG_LINES;
             const char *line = log_buf[idx];
             if (!line[0]) continue;
-            u32 col = (i == max_lines - 1) ? COL_TEXT : COL_TEXT_DIM;
+            u32 col = (i == max_lines - 1) ? PAL_TEXT : PAL_TEXT_DIM;
             gfx_text(m + 16, log_y + 40 + i * line_h, line, col);
         }
     }

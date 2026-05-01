@@ -107,12 +107,13 @@ void gfx_gradient_v(u32 top, u32 bot)
 }
 
 /* Big-Sur-style wallpaper: vertical gradient + soft radial accent in the
- * upper-left.  Cheap (~one pass over the back buffer) but visually rich. */
+ * upper-left.  Theme-aware: pulls colours from the runtime palette. */
 void gfx_wallpaper(void)
 {
-    u32 tr = (COL_BG_TOP >> 16) & 0xFF, tg = (COL_BG_TOP >> 8) & 0xFF, tb = COL_BG_TOP & 0xFF;
-    u32 br = (COL_BG_BOT >> 16) & 0xFF, bg = (COL_BG_BOT >> 8) & 0xFF, bb = COL_BG_BOT & 0xFF;
-    u32 hr = (COL_BG_HINT >> 16) & 0xFF, hg = (COL_BG_HINT >> 8) & 0xFF, hb = COL_BG_HINT & 0xFF;
+    u32 ctop = PAL_BG_TOP, cbot = PAL_BG_BOT, chnt = PAL_BG_HINT;
+    u32 tr = (ctop >> 16) & 0xFF, tg = (ctop >> 8) & 0xFF, tb = ctop & 0xFF;
+    u32 br = (cbot >> 16) & 0xFF, bg = (cbot >> 8) & 0xFF, bb = cbot & 0xFF;
+    u32 hr = (chnt >> 16) & 0xFF, hg = (chnt >> 8) & 0xFF, hb = chnt & 0xFF;
     i32 ax = (i32)BACK_W / 4;
     i32 ay = (i32)BACK_H / 4;
     /* 1 / max(BACK_W, BACK_H) — radial fall-off normalisation */
@@ -239,17 +240,18 @@ void gfx_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c)
     gfx_round_rect_a(x, y, w, h, r, c, 255);
 }
 
-/* Frosted-glass rounded rect: soft drop shadow + translucent white panel
- * + 1 px hairline border.  The signature look of every Lumen-theme card. */
+/* Frosted-glass rounded rect: soft drop shadow + translucent panel + 1 px
+ * hairline border.  Theme-aware via the runtime palette so the same card
+ * style works on Lumen (light) and Nox (dark).                            */
 void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r)
 {
     /* drop shadow (soft) */
     gfx_round_rect_a(x + 2, y + 6, w, h, r, COL_SHADOW, 28);
     gfx_round_rect_a(x + 1, y + 3, w, h, r, COL_SHADOW, 18);
     /* glass body */
-    gfx_round_rect_a(x, y, w, h, r, COL_PANEL, 235);
+    gfx_round_rect_a(x, y, w, h, r, PAL_GLASS, 235);
     /* hairline border */
-    gfx_round_outline(x, y, w, h, r, COL_HAIRLINE);
+    gfx_round_outline(x, y, w, h, r, PAL_HAIRLINE);
 }
 
 void gfx_round_outline(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c)
@@ -316,6 +318,30 @@ void gfx_text(i32 x, i32 y, const char *s, u32 c)
 void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c)
 {
     gfx_text(cx - gfx_text_width(s) / 2, y, s, c);
+}
+
+/* Letterbox the back buffer to SET.viewport_w x SET.viewport_h centered.
+ * Pixels outside the viewport are filled with the BG_BOT colour so that
+ * a "Settings → Display → Resolution" change visibly shrinks the canvas
+ * without re-allocating the back buffer (BSS is fixed at compile time).  */
+void gfx_apply_viewport(void)
+{
+    if (SET.viewport_w <= 0 || SET.viewport_h <= 0) return;
+    i32 vw = SET.viewport_w; if (vw > (i32)FB.width)  vw = (i32)FB.width;
+    i32 vh = SET.viewport_h; if (vh > (i32)FB.height) vh = (i32)FB.height;
+    i32 ox = ((i32)FB.width  - vw) / 2;
+    i32 oy = ((i32)FB.height - vh) / 2;
+    u32 fill = PAL_BG_BOT;
+    /* top + bottom bars */
+    for (i32 y = 0; y < oy; y++)
+        for (u32 x = 0; x < BACK_W; x++) BACK[y * BACK_W + x] = fill;
+    for (i32 y = oy + vh; y < (i32)BACK_H; y++)
+        for (u32 x = 0; x < BACK_W; x++) BACK[y * BACK_W + x] = fill;
+    /* left + right side strips */
+    for (i32 y = oy; y < oy + vh; y++) {
+        for (i32 x = 0; x < ox;            x++) BACK[y * BACK_W + x] = fill;
+        for (i32 x = ox + vw; x < (i32)BACK_W; x++) BACK[y * BACK_W + x] = fill;
+    }
 }
 
 /* darken every back-buffer pixel by `amount`/255 — used for boot fade */

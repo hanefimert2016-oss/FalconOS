@@ -1,14 +1,18 @@
 /* =============================================================================
- *  FalconOS — Personal Kernel UI (v4 "Lumen")
+ *  FalconOS — Personal Kernel UI (v5 "Aurora")
  * -----------------------------------------------------------------------------
- *  Big-Sur-inspired light desktop:
- *    - frosted-glass widgets (uptime, weather/status pills) on a soft wallpaper
- *    - macOS-style dock: glass tray, lifted hover tiles, drop shadow,
- *      app name labels, click-to-launch
- *    - F2 opens a full-screen Launchpad (handled by main loop dispatcher)
+ *  v5 desktop layout (tema-aware Lumen *and* Nox):
+ *    - top: 30px frosted menu bar  (handled in main.c)
+ *    - left edge: pinned desktop shortcuts (kernel/desktop_pins.c)
+ *    - centre: 6-card widget grid     (kernel/widgets.c)
+ *    - top corners: uptime + display cards
+ *    - bottom: macOS-style dock
  *
- *  Mouse-driven: hover detected against tile bounds, click launches apps.
- *  Keyboard fallback: ←/→ to move dock cursor, Enter to launch, F2 grid.
+ *  The v4 hero circle has been removed at the user's request — the desktop is
+ *  now "dolu dolu" (busy) by default.
+ *
+ *  Mouse-driven dock; arrow keys + Enter as keyboard fallback; F2 opens
+ *  Launchpad; right-click on any dock tile pins it to the desktop.
  * ============================================================================= */
 #include "falcon.h"
 
@@ -28,26 +32,12 @@ void mode_personal_input(i32 key)
     if (key == KEY_ENTER || key == ' ')          apps_open(dock_idx);
 }
 
-/* simple integer "sine" — peaks at ±64, period 64, no FPU */
-static i32 ksin(u32 t)
-{
-    static const i8 TABLE[16] = {
-        0, 12, 24, 35, 45, 53, 59, 62,
-        64, 62, 59, 53, 45, 35, 24, 12
-    };
-    u32 q = (t >> 1) & 63;
-    if (q < 16) return  TABLE[q];
-    if (q < 32) return  TABLE[31 - q];
-    if (q < 48) return -TABLE[q - 32];
-    return -TABLE[63 - q];
-}
-
 /* --- top-left uptime card ------------------------------------------------- */
 static void draw_uptime_card(void)
 {
-    i32 x = 24, y = 50, w = 240, h = 90;
+    i32 x = 24, y = 50, w = 240, h = 84;
     gfx_round_glass(x, y, w, h, 16);
-    gfx_text(x + 18, y + 14, "Up-time", COL_TEXT_DIM);
+    gfx_text(x + 18, y + 14, T("Up-time", "Calisma"), PAL_TEXT_DIM);
 
     u32 H, M, S; pit_uptime(&H, &M, &S);
     char buf[32], tmp[8];
@@ -58,55 +48,43 @@ static void draw_uptime_card(void)
     k_strcat(buf, tmp); k_strcat(buf, ":");
     k_itoa(S, tmp, 10); if (S < 10) k_strcat(buf, "0");
     k_strcat(buf, tmp);
-    gfx_text(x + 18, y + 38, buf, COL_TEXT);
+    gfx_text(x + 18, y + 38, buf, PAL_TEXT);
 
     gfx_circle(x + w - 22, y + 22, 5, COL_OK);
-    gfx_text(x + w - 92, y + 38, "online", COL_OK);
-    gfx_text(x + 18, y + 64, "all systems nominal", COL_TEXT_FAINT);
+    gfx_text(x + w - 92, y + 38,
+             T("online", "calisiyor"), COL_OK);
+    gfx_text(x + 18, y + 62,
+             T("all systems nominal",
+               "tum sistemler normal"), PAL_TEXT_FAINT);
 }
 
-/* --- top-right resolution card ------------------------------------------- */
+/* --- top-right display card ----------------------------------------------- */
 static void draw_res_card(void)
 {
-    i32 w = 240, h = 90;
+    i32 w = 240, h = 84;
     i32 x = (i32)FB.width - w - 24, y = 50;
     gfx_round_glass(x, y, w, h, 16);
-    gfx_text(x + 18, y + 14, "Display", COL_TEXT_DIM);
+    gfx_text(x + 18, y + 14, T("Display", "Ekran"), PAL_TEXT_DIM);
 
     char buf[32], tmp[8];
     k_strcpy(buf, "");
-    k_itoa(FB.width, tmp, 10);  k_strcat(buf, tmp);
-    k_strcat(buf, " x ");
-    k_itoa(FB.height, tmp, 10); k_strcat(buf, tmp);
-    gfx_text(x + 18, y + 38, buf, COL_TEXT);
-
-    k_strcpy(buf, "32 bpp linear FB");
-    gfx_text(x + 18, y + 64, buf, COL_TEXT_FAINT);
-
-    gfx_circle(x + w - 22, y + 22, 5, COL_ACCENT);
-}
-
-/* --- breathing hero logo -------------------------------------------------- */
-static void draw_hero(u32 frame)
-{
-    i32 cx = (i32)FB.width  / 2;
-    i32 cy = (i32)FB.height / 2 - 40;
-
-    i32 pulse = ksin(frame) / 8;
-    /* faint outer rings */
-    for (i32 i = 0; i < 4; i++) {
-        i32 r = 90 + i * 32 + pulse;
-        gfx_circle_outline(cx, cy, r,     COL_ACCENT_DIM);
-        gfx_circle_outline(cx, cy, r + 1, COL_ACCENT_DIM);
+    if (SET.viewport_w && SET.viewport_h) {
+        k_itoa(SET.viewport_w, tmp, 10); k_strcat(buf, tmp);
+        k_strcat(buf, " x ");
+        k_itoa(SET.viewport_h, tmp, 10); k_strcat(buf, tmp);
+    } else {
+        k_itoa(FB.width, tmp, 10);  k_strcat(buf, tmp);
+        k_strcat(buf, " x ");
+        k_itoa(FB.height, tmp, 10); k_strcat(buf, tmp);
     }
-    /* solid hero with subtle highlight */
-    gfx_circle_a(cx + 2, cy + 8, 78 + pulse / 2, COL_SHADOW, 30);
-    gfx_circle  (cx,     cy,     76 + pulse / 2, COL_ACCENT);
-    gfx_circle_a(cx - 18, cy - 22, 30, 0xFFFFFF, 90);
-    gfx_text_centered(cx, cy - 8, "Falcon", 0xFFFFFF);
+    gfx_text(x + 18, y + 38, buf, PAL_TEXT);
 
-    gfx_text_centered(cx, cy + 110, "FalconOS", COL_TEXT);
-    gfx_text_centered(cx, cy + 132, "v4 \"Lumen\"  -  Born to Fly", COL_TEXT_DIM);
+    gfx_text(x + 18, y + 62,
+             SET.theme == THEME_DARK ? "Nox  -  x86_64"
+                                     : "Lumen  -  x86_64",
+             PAL_TEXT_FAINT);
+
+    gfx_circle(x + w - 22, y + 22, 5, PAL_ACCENT);
 }
 
 /* --- bottom dock ---------------------------------------------------------- */
@@ -114,22 +92,24 @@ static void draw_dock(void)
 {
     i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
     bool clicked = mouse_consume_click();
+    bool rclicked = mouse_consume_right();
     (void)ml;
 
     i32 n = apps_count();
     if (n > DOCK_MAX) n = DOCK_MAX;
 
-    i32 tile  = 68;
-    i32 gap   = 18;
-    i32 dw    = n * tile + (n - 1) * gap + 36;
-    i32 dh    = tile + 32;
-    i32 dx    = ((i32)FB.width - dw) / 2;
-    i32 dy    = (i32)FB.height - dh - 22;
+    /* dock tile size scales with SET.dock_size */
+    i32 tile = 50 + SET.dock_size * 9;       /* 50 .. 86 */
+    i32 gap  = 14 + SET.dock_size * 2;
+    i32 dw   = n * tile + (n - 1) * gap + 36;
+    i32 dh   = tile + 32;
+    i32 dx   = ((i32)FB.width - dw) / 2;
+    i32 dy   = (i32)FB.height - dh - 22;
 
     /* glass tray */
     gfx_round_rect_a(dx + 2, dy + 8, dw, dh, 26, COL_SHADOW, 60);
-    gfx_round_rect_a(dx,     dy,     dw, dh, 26, COL_PANEL,  220);
-    gfx_round_outline(dx,    dy,     dw, dh, 26, COL_HAIRLINE);
+    gfx_round_rect_a(dx,     dy,     dw, dh, 26, PAL_PANEL,  220);
+    gfx_round_outline(dx,    dy,     dw, dh, 26, PAL_HAIRLINE);
 
     for (i32 i = 0; i < n; i++) {
         i32 ix    = dx + 18 + i * (tile + gap) + tile / 2;
@@ -154,42 +134,59 @@ static void draw_dock(void)
         gfx_circle_a(ix2 - rad / 3, iy2 - rad / 3, rad / 3, 0xFFFFFF, 80);
         /* glyph */
         apps_draw_icon(i, ix2, iy2);
+        /* pinned indicator dot */
+        if (desktop_pin_is_pinned(i)) {
+            gfx_circle(ix2 + rad - 4, iy2 - rad + 4, 4, COL_OK);
+        }
         /* highlight ring + label on hovered tile */
         if (hov) {
-            gfx_circle_outline(ix2, iy2, rad + 4, COL_ACCENT);
+            gfx_circle_outline(ix2, iy2, rad + 4, PAL_ACCENT);
             i32 lw = gfx_text_width(apps_name(i)) + 16;
             i32 lx = ix2 - lw / 2;
             i32 ly = iy2 + rad + 6;
-            gfx_round_rect_a(lx, ly, lw, 18, 9, COL_PANEL, 240);
-            gfx_round_outline(lx, ly, lw, 18, 9, COL_HAIRLINE);
-            gfx_text_centered(ix2, ly + 2, apps_name(i), COL_TEXT);
+            gfx_round_rect_a(lx, ly, lw, 18, 9, PAL_PANEL, 240);
+            gfx_round_outline(lx, ly, lw, 18, 9, PAL_HAIRLINE);
+            gfx_text_centered(ix2, ly + 2, apps_name(i), PAL_TEXT);
         }
 
-        if (hov_m && clicked) apps_open(i);
+        if (hov_m && clicked)  apps_open(i);
+        if (hov_m && rclicked) desktop_pin_toggle(i);
     }
 
     /* "more" indicator if there are more apps in the launchpad */
     if (apps_count() > DOCK_MAX) {
         i32 mx2 = dx + dw - 14;
-        gfx_circle(mx2,     dy + dh - 8, 2, COL_TEXT_FAINT);
-        gfx_circle(mx2 - 6, dy + dh - 8, 2, COL_TEXT_FAINT);
-        gfx_circle(mx2 - 12,dy + dh - 8, 2, COL_TEXT_FAINT);
+        gfx_circle(mx2,     dy + dh - 8, 2, PAL_TEXT_FAINT);
+        gfx_circle(mx2 - 6, dy + dh - 8, 2, PAL_TEXT_FAINT);
+        gfx_circle(mx2 - 12,dy + dh - 8, 2, PAL_TEXT_FAINT);
     }
 }
 
 /* --- entry point --------------------------------------------------------- */
 void mode_personal_render(u32 frame)
 {
+    /* desktop chrome — order matters (back to front)                       */
     draw_uptime_card();
     draw_res_card();
-    draw_hero(frame);
+    widgets_render(frame);
+    desktop_pins_render(frame);
     draw_dock();
 
     /* nav hint */
     gfx_text_centered((i32)FB.width / 2,
                       (i32)FB.height - 18,
-                      "<- ->  navigate     Enter  open     F2  Launchpad",
-                      COL_TEXT_DIM);
+                      T("<- ->  navigate    Enter open    F2 Launchpad    right-click pins to desktop",
+                        "<- ->  gez    Enter ac    F2 Launchpad    sag-tik masaustune sabitle"),
+                      PAL_TEXT_DIM);
+
+    /* desktop-pin clicks fire BEFORE active app render so a click on a pin
+     * launches an app immediately.                                          */
+    if (apps_active() < 0) {
+        i32 mx, my; bool ml; mouse_get(&mx, &my, &ml); (void)ml;
+        if (mouse_consume_click()) {
+            desktop_pins_input_click(mx, my);
+        }
+    }
 
     /* active app window (drawn over everything except menu bar / cursor) */
     apps_render_active(frame);

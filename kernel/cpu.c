@@ -15,6 +15,35 @@ void outb(u16 port, u8 v)
     __asm__ volatile ("outb %0, %1" :: "a"(v), "Nd"(port));
 }
 
+u16 inw(u16 port)
+{
+    u16 v;
+    __asm__ volatile ("inw %1, %0" : "=a"(v) : "Nd"(port));
+    return v;
+}
+
+void outw(u16 port, u16 v)
+{
+    __asm__ volatile ("outw %0, %1" :: "a"(v), "Nd"(port));
+}
+
+void insw(u16 port, void *buf, u32 count)
+{
+    /* repeat in word — port -> [rdi/edi] */
+    __asm__ volatile ("cld; rep insw"
+                      : "+D"(buf), "+c"(count)
+                      : "d"(port)
+                      : "memory");
+}
+
+void outsw(u16 port, const void *buf, u32 count)
+{
+    __asm__ volatile ("cld; rep outsw"
+                      : "+S"(buf), "+c"(count)
+                      : "d"(port)
+                      : "memory");
+}
+
 u64 rdtsc(void)
 {
     u32 lo, hi;

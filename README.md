@@ -1,15 +1,15 @@
 # FalconOS
 
-> A bare-metal x86 operating system with **two kernels in one**: switch
-> between a macOS-styled *Personal Kernel* and a hacker-grade *Developer
-> Kernel* live, with a single key-press.
+> A bare-metal **x86_64** operating system with **two kernels in one**:
+> switch between a macOS-styled *Personal Kernel* and a hacker-grade
+> *Developer Kernel* live, with a single key-press.
 
 ```
       ___---___
     //  (   )  \\         F a l c o n O S
    /  (  ~~~  )  \
-  |  / O\   /O \  |       v4.0  · LUMEN EDITION
-  |  |   \ /   |  |
+  |  / O\   /O \  |       v5.0  ·  AURORA
+  |  |   \ /   |  |       64-bit long mode
    \ |  _/~~~\_  | /
     \|_/       \_|/        << Born  to  Fly >>
          |   |
@@ -20,109 +20,133 @@
 
 ## What is it?
 
-FalconOS is a self-hosted, ~57 kB freestanding x86 kernel that boots via
-GRUB (Multiboot2) into a configurable linear framebuffer (HD / 1080p / 2K)
-and renders its own UI in software — no BIOS, no DOS, no host OS, no
-external libraries.
+FalconOS is a self-hosted, ~84 kB freestanding **64-bit** kernel that
+boots through GRUB (Multiboot2) into a configurable linear framebuffer
+(HD / 1080p / 2K), identity-maps the first 4 GiB of physical RAM with
+2-MiB huge pages, and renders its entire UI in software — no BIOS, no
+DOS, no host OS, no external libraries.
 
-Two modes coexist inside the same binary:
+Two kernels live inside the same binary:
 
-| Mode | What you get |
-|------|--------------|
-| **Personal Kernel** | macOS-Big-Sur-inspired light desktop — gradient wallpaper, frosted-glass cards, breathing concentric logo, Big-Sur dock with 7 visible tiles, top menu bar with live clock |
-| **Developer Kernel** | Live CPU register snapshot, scrollable memory inspector, BIOS memory-map panel, scrolling kernel log, interactive REPL — everything refreshes every frame |
+| Mode                    | What you get |
+|-------------------------|--------------|
+| **Personal Kernel**     | A "dolu dolu" desktop — top menu bar, 6 information widgets (Weather, Calendar, System, Now-Playing, Recents, Quick), pinnable desktop shortcuts down the left edge, a Big-Sur dock with 7 visible tiles, Launchpad (F2). No more centred breathing circle. |
+| **Developer Kernel**    | Live CPU register snapshot, scrollable memory inspector, BIOS memory-map panel, scrolling kernel log, interactive REPL — everything refreshes every frame |
 
-Hit **F1** at any time to flip between them — there is no context switch,
-just a different render path inside the same dispatcher.
-Hit **F2** in Personal mode to open the **Launchpad** — a full-screen
-4 × 3 grid of all 12 built-in apps with scale-in animation.
+Hit **F1** at any time to flip between them. **F2** in Personal mode
+opens the **Launchpad** (a full-screen 4 × 4 grid of all built-in
+apps). Inside the Launchpad, press **P** on a tile to pin / unpin it
+to the desktop. **Esc** closes the active app or Launchpad.
 
-## What's new in v4 — "Lumen"
+## What's new in v5 — "Aurora"
 
-- **Light theme** — off-white wallpaper, dark text, frosted-glass cards
-  with hairline borders. Looks at home next to a modern macOS desktop.
-- **Stylish desktop environment** — gradient wallpaper with a soft
-  radial accent, top menu bar (brand, mode, hints, clock), Big-Sur-style
-  dock at the bottom with lift-on-hover and app labels.
-- **Launchpad** — full-screen 4 × 3 app grid (F2), opens with a 200-ms
-  scale-in animation. Drive with the arrow keys + Enter, the mouse, or
-  Esc / F2 to dismiss.
-- **12 built-in apps** (up from 5):
-  Home · Files · Clock · Stats · Terminal · Calculator · Settings ·
-  Notes · Calendar · Gallery · Browser · About.
-  Terminal / Calculator / Settings / Notes accept keyboard input.
-- **HD / 1080p / 2K resolutions** — pick at build time:
-  `make iso RES=hd | fhd | 2k` (1280 × 800, 1920 × 1080, 2560 × 1440).
-- **Real interrupts (carried over from v3)** — IDT + PIC + 100 Hz PIT
-  + IRQ1 keyboard + IRQ12 mouse, plus a Multiboot2 BIOS memory-map
-  parser exposed via the `MMAP` panel and the REPL.
+- **64-bit (x86_64) long mode** — boot stub flips the CPU into long
+  mode, builds a 4-level page table, identity-maps 4 GiB with 2-MiB
+  huge pages, loads a 64-bit GDT, and tail-calls into a System-V AMD64
+  C entry point. Kernel itself is a 64-bit ELF.
+- **Multi-user system (up to 8 accounts)** — every user has its own
+  name, accent colour, and password hash. The first user created
+  becomes the system **default**: every cold boot opens the lock
+  screen focused on that user (auto-login target). ←/→ on the lock
+  screen switches between user avatars.
+- **PBKDF2-HMAC-SHA256 password hashing** — passwords are *never*
+  stored as plaintext. Each account carries a 16-byte random salt
+  (TSC-seeded RNG) and a 32-byte PBKDF2-HMAC-SHA256 hash stretched
+  10 000 rounds. Verification uses constant-time comparison. See
+  `kernel/auth.c` for the full SHA-256 + HMAC + PBKDF2 implementation
+  (RFC 2898 §5.2, FIPS 198-1, FIPS 180-4 — clean-room, no libcrypto).
+- **Disk-backed user database (FalconFS)** — the entire `settings_t`
+  (including all 8 user records, salts and hashes) is written to
+  LBA0–3 of the primary IDE disk on every change, with a custom
+  `'FALC'`-magic superblock and a Fletcher-16 checksum. Cold reboots
+  restore the user list and skip the installer. See `kernel/diskdb.c`
+  + `linux/ata_pio.c` (LBA28 PIO read/write).
+- **Multi-step installer wizard** — language (Türkçe / English), theme
+  (Lumen / Nox), accent colour (5 presets), **keyboard layout
+  (TR-Q / TR-F / US-QWERTY)**, then a repeating *user create* loop
+  (name + password) until the operator picks "Hayır, bitir".
+- **Switchable keyboard layout** — TR-Q (default for Turkish), TR-F
+  (typewriter heritage) and US-QWERTY scancode tables in `kernel/kbd.c`.
+  The layout selected in the installer is stored in
+  `SET.kbd_layout`; Settings ▸ Klavye düzeni cycles between them at
+  runtime.
+- **Lock screen with multi-user picker** — avatar strip with one
+  circle per active user; the system-default user is highlighted by
+  a green pip and is auto-focused. ←/→ scrolls users, type to enter
+  the password (masked, caret blink), Enter calls
+  `users_verify()` (PBKDF2 compare) — wrong password triggers a
+  shake animation, correct password records `SET.active_user` and
+  hands off to the desktop.
+- **Dark theme "Nox"** — full counterpart to the v4 "Lumen" light
+  theme. Every render call goes through a runtime palette so flipping
+  `SET.theme = THEME_DARK` changes the entire shell on the next frame.
+- **Desktop widgets (no centre circle)** — 6 information cards in a
+  3 × 2 grid replace the v4 hero animation: Weather, Calendar mini,
+  System, Now-Playing, Recents, Quick actions.
+- **Desktop shortcuts** — pin any app to the wallpaper from inside
+  the Launchpad with `P`. Pinned apps render as icon tiles down the
+  left edge and launch with a single click.
+- **Runtime Settings app** — theme, accent, language, dock size,
+  animations toggle, viewport (letterbox) resolution, password change,
+  lock-now action.
+- **`prg` package manager + Store app** — unified package manager
+  with a Linux-style CLI shape (`prg list / search / info / install /
+  remove / installed`). Built-in catalog of 16 packages (6 OS
+  built-ins, 10 user-installable extras across themes, apps, libs,
+  Linux-compat). The Store app browses, installs and uninstalls
+  packages live.
+- **Linux integration (real, not mocked)** — three concrete pieces of
+  Linux code are wired into the kernel:
+  1. **Linux UAPI shim** (`linux/uapi.h`) — clean-room
+     reimplementation of the small subset of `<linux/types.h>`,
+     `<linux/ata.h>` and `<linux/hid.h>` that the kernel uses.
+     Future Linux drivers can drop in unmodified.
+  2. **`libata`-style ATA PIO driver** (`linux/ata_pio.c`) —
+     port-style probe + `IDENTIFY DEVICE` + LBA28 PIO read/write
+     against the primary IDE controller, modelled after Linux's
+     `drivers/ata/libata-core.c`. Detected drives + model strings are
+     surfaced in Settings ▸ About.
+  3. **PS/2 ↔ Linux HID keymap** (`linux/hid_keymap.c`) — Linux
+     `KEY_*` codes mapped from PS/2 scancode set 1, modelled after
+     `drivers/input/keyboard/atkbd.c`.
 
-## Screenshots
+  All three are clean-room (specifications + public headers, no Linux
+  source code copied) and ship under the same MIT licence as the rest
+  of FalconOS.
 
-| Personal Kernel (1080p) | Launchpad (1080p) |
-|-------------------------|-------------------|
-| ![home](docs/v4-boot.png) | ![launchpad](docs/v4-launchpad.png) |
-| Light wallpaper, frosted-glass cards, breathing logo, Big-Sur dock | Full-screen 4 × 3 app grid, scale-in animation |
-
-| App window — Clock (1080p) | Developer Kernel (1080p) |
-|----------------------------|--------------------------|
-| ![clock](docs/v4-app-home.png) | ![dev](docs/v4-dev.png) |
-| macOS-style window chrome, analog dial driven by PIT IRQ0 | CPU / MEM / MMAP / LOG / REPL — same Lumen palette |
-
-| HD (1280 × 800) | 2K (2560 × 1440) |
-|------------------|------------------|
-| ![hd](docs/v4-hd-boot.png) | ![2k](docs/v4-2k-boot.png) |
-| Same layout, scaled down | Same layout, scaled up |
-
-Captured live from QEMU booting the GRUB ISO produced by `make iso`.
-
-## Architecture (≈ 3 000 LOC)
+## Boot flow
 
 ```
-boot/
-  multiboot2.asm         GRUB-compatible header + 32-bit entry stub
-  isr.asm                32 exception + 16 IRQ stubs (IDT thunks)
-  grub.cfg               one-liner GRUB menu
-linker.ld                kernel loaded at 1 MiB
-kernel/
-  falcon.h               public types, "Lumen" palette, module API
-  cpu.c                  inb / outb / rdtsc + tiny libc subset
-  gfx.c                  software renderer: AA circle, rounded rect,
-                         frosted glass card, gradient wallpaper, text
-  font_data.c            8 × 16 bitmap font (auto-generated)
-  gdt.c                  flat-segment GDT (kept from boot stub)
-  idt.c                  IDT setup + dispatch table
-  pic.c                  8259A remap (IRQs 32-47)
-  pit.c                  100 Hz timer, HH:MM:SS uptime
-  kbd.c                  IRQ1 PS/2 keyboard (async, ring buffer)
-  mouse.c                IRQ12 PS/2 mouse + cursor tracking
-  mmap.c                 Multiboot2 memory-map parser
-  main.c                 entry, framebuffer parse, mode dispatcher,
-                         menu bar, F1 / F2 hot-keys, boot splash
-  personal.c             Personal Kernel — wallpaper + cards + hero +
-                         dock
-  launchpad.c            Full-screen 4 × 3 app grid (F2)
-  apps.c                 12 apps + window chrome + per-app input
-  dev.c                  Developer Kernel — CPU / MEM / MMAP / LOG /
-                         REPL panels
-  repl.c                 Interactive command parser (peek/poke/...)
-tools/
-  genfont.py             regenerates font_data.c from DejaVu Sans Mono
+GRUB Multiboot2
+    │
+    ▼
+boot/multiboot2.asm  (32-bit)
+    ├─ build PML4 / PDPT / PD  (identity-map 4 GiB)
+    ├─ enable PAE + IA32_EFER.LME
+    ├─ enable CR0.PG  (long mode active)
+    ├─ load 64-bit GDT, far-jump
+    ▼
+kernel/main.c long_start (64-bit)
+    ├─ parse Multiboot2 framebuffer + memory map
+    ├─ install IDT / PIC / PIT / mouse / Linux-compat / Settings
+    ├─ boot splash (~700 ms, palette-aware fade)
+    │
+    ├─ first boot? ─ yes ─▶  installer wizard
+    │                          (lang → theme → accent → password → owner)
+    │
+    ├─ lock screen  (owner avatar + password input)
+    │
+    └─ desktop loop @ 50 FPS
+         ├─ Personal Kernel  ──── F1 ──▶ Developer Kernel
+         │     ├─ uptime card
+         │     ├─ resolution card
+         │     ├─ widgets_render()       6-card grid
+         │     ├─ desktop_pins_render()  left-edge shortcuts
+         │     └─ dock + apps
+         └─ Developer Kernel
+               ├─ CPU / MEM / MMAP / LOG panels
+               └─ REPL prompt
 ```
-
-Design choices favouring brevity:
-
-- **Real hardware interrupts** (IDT/PIC) — but still no paging, no
-  scheduler, no heap. We use a single flat address space and the GRUB
-  GDT, and let IRQ0/1/12 push events into ring buffers.
-- **Software-rendered UI** with a back buffer sized at compile time
-  from the chosen `RES`. Every frame is drawn from scratch and flipped
-  in one `gfx_present()` call.
-- **2× super-sampled circle** rasteriser keeps AA primitives below 30
-  lines while looking crisp at any radius.
-- **No libc, no dynamic allocation** — `cpu.c` provides the few
-  helpers we need (`k_strlen`, `k_strcpy`, `k_itoa`, `k_memset`,
-  `k_memcpy`, `k_parse_hex`).
 
 ## Build & boot
 
@@ -133,18 +157,22 @@ sudo apt install -y gcc nasm grub-pc-bin grub-common xorriso mtools \
                     qemu-system-x86 fonts-dejavu-core python3-pil
 ```
 
+> The kernel builds with the host's native 64-bit gcc using
+> `-m64 -ffreestanding -mno-red-zone -mcmodel=kernel -mno-sse -mno-sse2`,
+> so no x86_64-elf-gcc cross compiler is required.
+
 ### Build the kernel and ISO
 
 ```bash
 # default — 1920 × 1080
 make iso                  # build/FalconOS.iso
 
-# explicit resolution selection
+# explicit resolution
 make iso RES=hd           # 1280 × 800
 make iso RES=fhd          # 1920 × 1080  (default)
 make iso RES=2k           # 2560 × 1440
 
-make            # just build/falcon.elf  (~57 kB)
+make            # just build/falcon.elf  (~84 kB ELF64)
 make font       # regenerate kernel/font_data.c from DejaVu
 make clean
 ```
@@ -152,13 +180,47 @@ make clean
 ### Run in QEMU
 
 ```bash
-make run                  # SDL window (default RES=fhd)
+# ---- ephemeral (no disk; installer wizard runs every cold boot) ----------
+make run                  # SDL window (default RES=fhd, x86_64)
 make run RES=hd           # SDL window at 1280 × 800
 make run RES=2k           # SDL window at 2560 × 1440
-
-make run-fb               # boot the ELF directly via QEMU -kernel (faster)
 make run-headless         # no window — useful for screenshots / CI
+make run-fb               # boot the ELF directly via -kernel (faster iter)
+
+# ---- persistent disk: user accounts + settings survive reboots -----------
+# `make run-disk` creates a 64 MiB raw IDE drive at build/falcon.img on the
+# first run, then attaches it as the primary master. The kernel writes the
+# whole user database (incl. PBKDF2 hashes) to LBA0–3 on every change.
+make run-disk             # SDL window  + persistent disk
+make run-disk-headless    # no window   + persistent disk
+make wipe-disk            # delete build/falcon.img → installer next time
+
+# ---- manually attach a disk image to a one-off run -----------------------
+qemu-system-x86_64 -cdrom build/FalconOS.iso -m 512M \
+    -drive file=build/falcon.img,format=raw,if=ide,index=0 \
+    -no-reboot -no-shutdown -display sdl -vga std -global VGA.vgamem_mb=64
 ```
+
+### First boot — what to expect
+
+1. **Boot splash** — animated rings + "starting Aurora", ≈ 700 ms.
+2. **Installer wizard** (only on the very first cold boot, or after
+   `make wipe-disk`):
+   1. Language ─ Türkçe / English
+   2. Theme ─ Light (Lumen) / Dark (Nox)
+   3. Accent ─ Blue / Purple / Green / Pink / Graphite
+   4. Keyboard ─ TR-Q / TR-F / US-QWERTY
+   5. User name (24 chars max, type → Enter)
+   6. User password (24 chars max — type → Enter; PBKDF2 hashed)
+   7. *"Add another user?"* — Yes opens steps 5–6 again, No commits
+      `SET.installed = true` and writes the whole settings + user
+      table to LBA0 via `diskdb_save()`.
+3. **Lock screen** — focused on the system-default user (the first
+   one created); ←/→ to switch user, type the password, Enter to
+   unlock. The desktop shell starts when `users_verify()` succeeds.
+4. **Desktop** — top menu bar, six widgets, dock, Launchpad on F2.
+   `Settings ▸ Diske kaydet` writes any subsequent changes back to
+   the disk; on the next cold boot the wizard is skipped entirely.
 
 ### Boot on real hardware
 
@@ -166,27 +228,51 @@ make run-headless         # no window — useful for screenshots / CI
 sudo dd if=build/FalconOS.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
-> ⚠️  Real-hardware boot has been tested only via Multiboot2 + GRUB;
-> UEFI systems must boot through the GRUB EFI image. The 2 K build
-> needs at least 32 MiB of usable RAM for the back buffer.
+> ⚠️  Tested via Multiboot2 + GRUB on BIOS hardware; UEFI systems must
+> boot through GRUB's EFI image. The 2 K build needs at least 32 MiB
+> of usable RAM for the back buffer. Long mode requires a 64-bit CPU
+> (CPUID.80000001:EDX bit 29) — the boot stub halts cleanly otherwise.
 
 ## Controls
 
-| Key            | Mode      | Action                                     |
-|----------------|-----------|--------------------------------------------|
-| **F1**         | any       | Toggle Personal ↔ Developer kernel         |
-| **F2**         | Personal  | Open / close the Launchpad                 |
-| **Esc**        | any       | Close active app or Launchpad              |
-| ← / → / ↑ / ↓  | Personal  | Navigate dock / Launchpad                  |
-| **Enter**      | Launchpad | Open the highlighted app                   |
-| Mouse click    | Personal  | Click dock tile or Launchpad tile          |
-| ↑ / ↓          | Developer | Page the memory inspector (± 0x80 / press) |
-| **L**          | Developer | Push a manual log line                     |
-| typing         | Developer | Forwarded to the REPL prompt               |
-| typing         | Apps      | Forwarded to the active app (Terminal,     |
-|                |           | Calculator, Settings, Notes)               |
+| Key            | Mode       | Action                                          |
+|----------------|------------|-------------------------------------------------|
+| **F1**         | desktop    | Toggle Personal ↔ Developer kernel              |
+| **F2**         | Personal   | Open / close the Launchpad                      |
+| **Esc**        | any        | Close active app or Launchpad                   |
+| ← / → / ↑ / ↓  | Personal   | Navigate dock / Launchpad                       |
+| **Enter**      | Launchpad  | Open the highlighted app                        |
+| **P**          | Launchpad  | Pin / unpin the highlighted app to the desktop  |
+| Mouse click    | Personal   | Click pinned shortcut, dock tile or Launchpad   |
+| Mouse right    | Personal   | Pin / unpin the dock tile under the cursor      |
+| typing         | installer  | Password & owner-name input                     |
+| typing         | lockscreen | Password input                                  |
+| ↑ / ↓          | Developer  | Page the memory inspector (± 0x80 / press)      |
+| **L**          | Developer  | Push a manual log line                          |
+| typing         | Developer  | Forwarded to the REPL prompt                    |
+| typing         | Apps       | Forwarded to the active app                     |
 
-### Built-in apps
+## prg package manager
+
+`prg` is a unified package manager that ships with FalconOS. Its CLI
+deliberately mirrors `apt` / `pacman` so future Linux-package
+compatibility layers drop in seamlessly. Inside the Developer Kernel
+REPL:
+
+```
+prg list                   # all known packages
+prg installed              # only installed ones
+prg search <term>          # substring filter on name + summary
+prg info <pkg>             # show metadata for one package
+prg install <pkg>          # mark installed
+prg remove  <pkg>          # mark removed (built-ins refuse)
+```
+
+The Personal Kernel ships a graphical **Store** app that wraps the
+same package database with category filters, install / uninstall
+buttons and a "yüklü" badge.
+
+## Built-in apps
 
 | # | App        | What it does                                                |
 |---|------------|-------------------------------------------------------------|
@@ -196,29 +282,84 @@ sudo dd if=build/FalconOS.iso of=/dev/sdX bs=4M status=progress oflag=sync
 | 4 | Stats      | tsc / uptime / ticks / RAM / FB resolution + pulse bar      |
 | 5 | Terminal   | Fake bash prompt that echoes typed input                    |
 | 6 | Calculator | 4-function arithmetic with a clickable keypad               |
-| 7 | Settings   | Theme accent picker (left/right) + dark mode toggle         |
+| 7 | Settings   | Theme, accent, language, **keyboard layout**, dock size,    |
+|   |            | animations, widgets, viewport, password change, **default**  |
+|   |            | **user picker, save-to-disk, lock now**                     |
 | 8 | Notes      | Free-form text pad with caret blink                         |
 | 9 | Calendar   | Month grid with "today" highlighted from uptime             |
-|10 | Gallery    | Lumen palette swatches with hex codes                       |
+|10 | Gallery    | Lumen / Nox palette swatches with hex codes                 |
 |11 | Browser    | Mock URL bar + bookmark cards                               |
-|12 | About      | Credits + version                                           |
+|12 | Store      | prg package browser — search, install, uninstall            |
+|13 | About      | Version, Linux integration summary, ATA probe results       |
 
-### Developer REPL
+## Linux integration
 
-Type at the REPL prompt in Developer mode. The same data the panels
-display is exposed as commands:
+The `linux/` directory is where every piece of Linux-flavoured code in
+FalconOS lives:
 
 ```
-help                       list verbs
-clear                      wipe the kernel log
-time                       uptime HH:MM:SS
-regs                       eax/ebx/ecx/edx + tsc
-peek <hex_addr> [N]        dump N bytes (default 16)
-poke <hex_addr> <hex_byte> write one byte
-mem  <hex_addr>            move the memory-inspector cursor
-apps                       list registered Personal-mode apps
-panic                      raise INT3 (test exception path)
-echo <text...>             echo args to the log
+linux/
+  README.md             ── what is and isn't ported, with credits
+  uapi.h                ── <linux/types.h>, <linux/ata.h>, <linux/hid.h>
+  ata_pio.c             ── libata-style PIO driver
+  hid_keymap.c          ── PS/2 set-1 → Linux KEY_* table
+```
+
+Every file has a banner comment explaining the derivation. None of
+them copy Linux source code; the goal is API compatibility so future
+ports of real Linux drivers (e.g. `drivers/net/ethernet/realtek/...`)
+can drop in against `linux/uapi.h` and link against the same
+helpers.
+
+## Architecture (≈ 5 900 LOC)
+
+```
+boot/
+  multiboot2.asm     32-bit GRUB header + long-mode bootstrap
+  isr.asm            32 exception + 16 IRQ stubs (IDT thunks)
+  grub.cfg           one-liner GRUB menu
+linker.ld            kernel loaded at 1 MiB (ELF64)
+kernel/
+  falcon.h           public types, runtime palette, module API
+  cpu.c              inb / outb / inw / outw / insw / outsw / rdtsc + libc
+  gfx.c              software renderer (AA circle, glass cards, text,
+                     viewport letterbox)
+  font_data.c        8 × 16 bitmap font (auto-generated)
+  gdt.c              GDT no-op on x86_64 (boot stub already loaded)
+  idt.c              IDT setup + dispatch table
+  pic.c              8259A remap (IRQs 32-47)
+  pit.c              100 Hz timer, HH:MM:SS uptime
+  kbd.c              IRQ1 PS/2 keyboard (async, ring buffer)
+  mouse.c            IRQ12 PS/2 mouse + cursor + right-click edge
+  mmap.c             Multiboot2 memory-map parser
+  settings.c         runtime SET + PAL() palette dispatcher + T()
+                     + diskdb_load() bootstrap on init
+  auth.c             SHA-256 + HMAC-SHA256 + PBKDF2 + TSC-seeded RNG
+                     (RFC 2898 §5.2 / FIPS 198-1 / FIPS 180-4)
+  users.c            multi-user database (≤ 8 accounts, default user
+                     promotion, constant-time hash compare)
+  diskdb.c           FalconFS superblock + Fletcher-16 checksum
+                     persisting SET to LBA0–3 via libata-style PIO
+  installer.c        first-boot wizard (lang/theme/accent/kbd/users)
+  lockscreen.c       multi-user picker + PBKDF2 verify + shake-on-error
+  widgets.c          6-card desktop widget grid
+  desktop_pins.c     pinned-app shortcuts down the left edge
+  prg.c              package database + CLI primitives
+  main.c             entry, framebuffer parse, mode dispatcher,
+                     menu bar, F1/F2 hot-keys, boot splash, modal loops
+  personal.c         Personal Kernel — uptime + res cards, widgets,
+                     pins, dock
+  launchpad.c        Full-screen 4 × 4 app grid (F2) with P-pin
+  apps.c             apps + window chrome + per-app input (Settings,
+                     Store, About now palette- and Linux-aware)
+  dev.c              Developer Kernel — CPU / MEM / MMAP / LOG / REPL
+  repl.c             Interactive command parser
+linux/
+  uapi.h             Linux UAPI shim (types, ATA, HID)
+  ata_pio.c          libata-style ATA PIO driver
+  hid_keymap.c       PS/2 set-1 → Linux KEY_* table
+tools/
+  genfont.py         regenerates font_data.c from DejaVu Sans Mono
 ```
 
 ## Roadmap
@@ -227,6 +368,8 @@ echo <text...>             echo args to the log
 - [ ] Userland processes + cooperative scheduler
 - [ ] UEFI loader (gnu-efi)
 - [ ] PCI bus walk + AHCI driver
+- [ ] Real Linux driver port — `drivers/input/keyboard/atkbd.c` →
+      hooked through `linux/hid_keymap.c`
 - [ ] Networking stack (RTL8139 + minimal TCP)
 
 ## License

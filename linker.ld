@@ -1,5 +1,11 @@
-/* FalconOS — kernel link script (loaded at 1 MiB by GRUB) */
+/* FalconOS — x86_64 kernel link script (loaded at 1 MiB by GRUB)
+ *
+ * The kernel is linked as a 64-bit ELF, but the multiboot2 boot stub is
+ * 32-bit and lives in `.multiboot`.  GRUB scans the first 32 KiB of the
+ * file for the magic, so we keep `.multiboot` first.
+ */
 ENTRY(_start)
+OUTPUT_FORMAT(elf64-x86-64)
 
 SECTIONS
 {
