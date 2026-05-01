@@ -573,8 +573,9 @@ static void render_calc(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 /*  Settings is a multi-row form; the user selects a row with up/down,
  *  and uses left/right (or Enter) to toggle / cycle the value.            */
 typedef enum {
-    SR_THEME = 0, SR_ACCENT, SR_LANG, SR_KBD, SR_DOCK, SR_ANIM,
-    SR_WIDGETS, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_SAVE, SR_LOCK, SR_COUNT
+    SR_THEME = 0, SR_ACCENT, SR_AERO, SR_LANG, SR_KBD, SR_TZ, SR_DOCK,
+    SR_ANIM, SR_WIDGETS, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_SAVE,
+    SR_LOCK, SR_COUNT
 } set_row_t;
 
 static i32 set_row = 0;
@@ -584,6 +585,33 @@ static const char *VIEWPORT_NAMES[] = {
 static const i32 VIEWPORT_W[] = { 0, 1280, 1920, 2560, 1024 };
 static const i32 VIEWPORT_H[] = { 0,  800, 1080, 1440,  768 };
 static i32 set_viewport_idx = 0;
+
+/* Curated timezone presets — covers the cities our target users live in
+ * without dragging in a full zoneinfo / DST database.                   */
+typedef struct { const char *label; i32 minutes; } tz_preset_t;
+static const tz_preset_t TZ_PRESETS[] = {
+    { "Honolulu (UTC-10)",  -600 },
+    { "Los Angeles (UTC-8)", -480 },
+    { "New York (UTC-5)",    -300 },
+    { "Sao Paulo (UTC-3)",   -180 },
+    { "London (UTC+0)",         0 },
+    { "Paris (UTC+1)",         60 },
+    { "Istanbul (UTC+3)",     180 },
+    { "Dubai (UTC+4)",        240 },
+    { "Mumbai (UTC+5:30)",    330 },
+    { "Bangkok (UTC+7)",      420 },
+    { "Beijing (UTC+8)",      480 },
+    { "Tokyo (UTC+9)",        540 },
+    { "Sydney (UTC+10)",      600 },
+};
+#define TZ_PRESET_COUNT ((i32)(sizeof TZ_PRESETS / sizeof *TZ_PRESETS))
+
+static i32 tz_preset_index(void)
+{
+    for (i32 i = 0; i < TZ_PRESET_COUNT; i++)
+        if (TZ_PRESETS[i].minutes == SET.tz_minutes) return i;
+    return 6; /* Istanbul */
+}
 
 static char set_pwd[24];
 static i32  set_pwd_len = 0;
@@ -622,6 +650,9 @@ static void set_input_key(i32 key)
               if (v >= ACC_COUNT)    v = 0;
               SET.accent = (accent_t)v; }
             break;
+        case SR_AERO:
+            SET.aero_enabled = !SET.aero_enabled;
+            break;
         case SR_LANG:
             SET.lang = (SET.lang == LANG_TR) ? LANG_EN : LANG_TR;
             break;
@@ -630,6 +661,10 @@ static void set_input_key(i32 key)
               if (v < 0)               v = KBD_COUNT - 1;
               if (v >= KBD_COUNT)      v = 0;
               SET.kbd_layout = (kbd_layout_t)v; }
+            break;
+        case SR_TZ:
+            { i32 v = (tz_preset_index() + d + TZ_PRESET_COUNT) % TZ_PRESET_COUNT;
+              SET.tz_minutes = TZ_PRESETS[v].minutes; }
             break;
         case SR_DOCK:
             { i32 v = SET.dock_size + d; if (v < 0) v = 0; if (v > 4) v = 4;
@@ -672,14 +707,16 @@ static void set_input_key(i32 key)
     }
 }
 
+#define SR_BOX_H 32
+
 static void s_row(i32 x, i32 y, i32 w, const char *label, const char *val,
                   bool active, u32 valcolor)
 {
-    gfx_round_rect_a(x, y, w, 38, 10,
+    gfx_round_rect_a(x, y, w, SR_BOX_H, 9,
                      active ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
-    gfx_round_outline(x, y, w, 38, 10, active ? PAL_ACCENT : PAL_HAIRLINE);
-    gfx_text(x + 14, y + 12, label, PAL_TEXT);
-    gfx_text(x + w - gfx_text_width(val) - 14, y + 12, val, valcolor);
+    gfx_round_outline(x, y, w, SR_BOX_H, 9, active ? PAL_ACCENT : PAL_HAIRLINE);
+    gfx_text(x + 14, y + 9, label, PAL_TEXT);
+    gfx_text(x + w - gfx_text_width(val) - 14, y + 9, val, valcolor);
 }
 
 static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
@@ -689,11 +726,12 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
                     T("up/down  pick row    left/right  change",
                       "yukari/asagi  satir   sol/sag  degistir"));
 
-    i32 sx = wx + 24, sy = wy + 60, sw = ww - 48;
+    i32 sx = wx + 24, sy = wy + 56, sw = ww - 48;
+    i32 step = 36;     /* row vertical pitch                            */
     char val[40];
 
     /* Theme ------------------------------------------------------------ */
-    s_row(sx, sy + 0 * 44, sw,
+    s_row(sx, sy + SR_THEME * step, sw,
           T("Theme", "Tema"),
           SET.theme == THEME_DARK ? T("Dark (Nox)", "Koyu (Nox)")
                                   : T("Light (Lumen)", "Acik (Lumen)"),
@@ -702,48 +740,61 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     /* Accent ----------------------------------------------------------- */
     {
         const char *names[ACC_COUNT] = { "Blue", "Purple", "Green", "Pink", "Graphite" };
-        s_row(sx, sy + 1 * 44, sw,
+        s_row(sx, sy + SR_ACCENT * step, sw,
               T("Accent", "Vurgu"), names[SET.accent],
               set_row == SR_ACCENT, PAL_ACCENT);
-        gfx_circle(sx + sw - 14, sy + 1 * 44 + 19, 6, PAL_ACCENT);
+        gfx_circle(sx + sw - 14, sy + SR_ACCENT * step + SR_BOX_H / 2, 6, PAL_ACCENT);
     }
 
+    /* Aero --- frosted glass toggle ------------------------------------ */
+    s_row(sx, sy + SR_AERO * step, sw,
+          T("Aero (transparency)", "Aero (seffaflik)"),
+          SET.aero_enabled ? T("on", "acik") : T("off", "kapali"),
+          set_row == SR_AERO,
+          SET.aero_enabled ? COL_OK : PAL_TEXT_DIM);
+
     /* Language --------------------------------------------------------- */
-    s_row(sx, sy + 2 * 44, sw,
+    s_row(sx, sy + SR_LANG * step, sw,
           T("Language", "Dil"),
           SET.lang == LANG_TR ? "Turkce" : "English",
           set_row == SR_LANG, PAL_TEXT);
 
     /* Keyboard layout -------------------------------------------------- */
-    s_row(sx, sy + 3 * 44, sw,
+    s_row(sx, sy + SR_KBD * step, sw,
           T("Keyboard layout", "Klavye duzeni"),
           kbd_layout_name(SET.kbd_layout),
           set_row == SR_KBD, PAL_TEXT);
+
+    /* Timezone --------------------------------------------------------- */
+    s_row(sx, sy + SR_TZ * step, sw,
+          T("Timezone", "Zaman dilimi"),
+          TZ_PRESETS[tz_preset_index()].label,
+          set_row == SR_TZ, PAL_TEXT);
 
     /* Dock size -------------------------------------------------------- */
     {
         char num[8]; k_itoa(50 + SET.dock_size * 9, num, 10);
         k_strcpy(val, num); k_strcat(val, " px");
-        s_row(sx, sy + 4 * 44, sw,
+        s_row(sx, sy + SR_DOCK * step, sw,
               T("Dock size", "Dock boyutu"), val,
               set_row == SR_DOCK, PAL_TEXT);
     }
 
     /* Animations ------------------------------------------------------- */
-    s_row(sx, sy + 5 * 44, sw,
+    s_row(sx, sy + SR_ANIM * step, sw,
           T("Animations", "Animasyonlar"),
           SET.animations ? T("on", "acik") : T("off", "kapali"),
           set_row == SR_ANIM, SET.animations ? COL_OK : PAL_TEXT_DIM);
 
     /* Widgets ---------------------------------------------------------- */
-    s_row(sx, sy + 6 * 44, sw,
+    s_row(sx, sy + SR_WIDGETS * step, sw,
           T("Desktop widgets", "Masaustu widgetlar"),
           SET.widgets_shown ? T("shown", "acik") : T("hidden", "gizli"),
           set_row == SR_WIDGETS,
           SET.widgets_shown ? COL_OK : PAL_TEXT_DIM);
 
     /* Viewport / resolution ------------------------------------------- */
-    s_row(sx, sy + 7 * 44, sw,
+    s_row(sx, sy + SR_VIEWPORT * step, sw,
           T("Resolution", "Cozunurluk"),
           VIEWPORT_NAMES[set_viewport_idx],
           set_row == SR_VIEWPORT, PAL_TEXT);
@@ -759,7 +810,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         } else {
             p = (k_strlen(SET.password) ? T("set", "var") : T("none", "yok"));
         }
-        s_row(sx, sy + 8 * 44, sw,
+        s_row(sx, sy + SR_PASSWORD * step, sw,
               T("Password", "Parola"), p,
               set_row == SR_PASSWORD,
               k_strlen(SET.password) ? COL_OK : PAL_TEXT_DIM);
@@ -776,19 +827,19 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         } else {
             k_strcat(ubuf, "?");
         }
-        s_row(sx, sy + 9 * 44, sw,
+        s_row(sx, sy + SR_USERS * step, sw,
               T("Users", "Kullanicilar"), ubuf,
               set_row == SR_USERS, PAL_ACCENT);
     }
 
     /* Save to disk ----------------------------------------------------- */
-    s_row(sx, sy + 10 * 44, sw,
+    s_row(sx, sy + SR_SAVE * step, sw,
           T("Save to disk", "Diske kaydet"),
           T("Enter", "Enter"),
           set_row == SR_SAVE, COL_OK);
 
     /* Lock ------------------------------------------------------------- */
-    s_row(sx, sy + 11 * 44, sw,
+    s_row(sx, sy + SR_LOCK * step, sw,
           T("Lock screen now", "Kilit ekrani"),
           T("Enter", "Enter"),
           set_row == SR_LOCK, COL_WARN);

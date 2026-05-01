@@ -113,15 +113,15 @@ static void draw_menu_bar(void)
         gfx_text(hx + 14, 7, hint, PAL_TEXT_DIM);
     }
 
-    /* right: HH:MM:SS  +  small lang badge */
-    u32 H_, M_, S_; pit_uptime(&H_, &M_, &S_);
+    /* right: HH:MM:SS local time (RTC + tz_minutes) + lang badge.   */
+    rtc_time_t now; rtc_local(&now);
     char clk[16]; char tmp[8];
     k_strcpy(clk, "");
-    k_itoa(H_, tmp, 10); if (H_ < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
     k_strcat(clk, ":");
-    k_itoa(M_, tmp, 10); if (M_ < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_itoa(now.min,  tmp, 10); if (now.min  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
     k_strcat(clk, ":");
-    k_itoa(S_, tmp, 10); if (S_ < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_itoa(now.sec,  tmp, 10); if (now.sec  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
 
     i32 cw = gfx_text_width(clk);
     gfx_text(W - cw - 18, 7, clk, PAL_TEXT);

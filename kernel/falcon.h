@@ -187,6 +187,19 @@ void pit_sleep(u32 ms);
 void pit_uptime(u32 *h, u32 *m, u32 *s);
 extern volatile u32 g_ticks;          /* 100 Hz, set by IRQ0 */
 
+/* ---- real-time clock (CMOS / MC146818) ----------------------------------- */
+typedef struct {
+    u32 year;     /* full 4-digit, e.g. 2026 */
+    u8  month;    /* 1..12  */
+    u8  day;      /* 1..31  */
+    u8  hour;     /* 0..23  */
+    u8  min;      /* 0..59  */
+    u8  sec;      /* 0..59  */
+} rtc_time_t;
+
+void rtc_now(rtc_time_t *t);     /* raw CMOS read (UTC on most BIOSes)   */
+void rtc_local(rtc_time_t *t);   /* CMOS + SET.tz_minutes, date rolled  */
+
 /* ---- gdt / idt / pic ------------------------------------------------------ */
 void gdt_install(void);
 void idt_install(void);
