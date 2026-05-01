@@ -1181,8 +1181,22 @@ void apps_render_active(u32 frame)
     if (active_app < 0) return;
     const app_def_t *a = &APPS[active_app];
 
-    /* dim the desktop behind the window */
-    gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 60);
+    /* dim + softly blur the desktop behind the window so the app card
+     * lifts off the wallpaper exactly like macOS sheets. We blur in
+     * horizontal strips to fit the BLUR scratch buffer; without Aero
+     * we just darken at a flat alpha as before.                       */
+    if (SET.aero_enabled) {
+        i32 W = (i32)FB.width;
+        i32 H = (i32)FB.height;
+        i32 strip = 320;
+        for (i32 y = 0; y < H; y += strip) {
+            i32 sh = (y + strip > H) ? H - y : strip;
+            gfx_blur_rect(0, y, W, sh, 5);
+        }
+        gfx_rect_a(0, 0, W, H, COL_SHADOW, 70);
+    } else {
+        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 60);
+    }
 
     /* window box — sized for HD+, scaled up for higher resolutions */
     i32 ww = (i32)FB.width  - 280;  if (ww > 920) ww = 920; if (ww < 600) ww = 600;
