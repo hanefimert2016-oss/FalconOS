@@ -434,43 +434,555 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     gfx_text(wx + 24, wy + wh - 22, foot, PAL_TEXT_FAINT);
 }
 
-/* --- Terminal (visual fake prompt) --------------------------------------- */
+/* --- Terminal (POSIX shell subset, FalconOS 1) ---------------------------
+ * A compact, real shell. Supports:
+ *   - built-ins: pwd cd ls cat echo env set unset clear help true false
+ *                exit uname whoami date rm touch cp mv
+ *   - variable assignment   X=value         (no spaces around =)
+ *   - variable expansion    $X              (single-token form)
+ *   - simple pipes          a | b
+ *   - output redirect       > file   >> file
+ *   - inline conditionals   if cmd; then cmd; fi
+ *   - inline loops          for x in a b c; do echo $x; done
+ *
+ * I/O backed by a tiny RAM filesystem (`shfs`) - 16 files * 512 bytes,
+ * single flat directory, fits trivially in BSS. */
 #define TERM_LINES 12
 #define TERM_COLS  80
-static char term_buf[TERM_LINES][TERM_COLS] = {
-    "FalconOS terminal v4 - bare metal, no shell",
-    "type something and press Enter (echo only)",
-    "this isn't a real shell - just a visual demo",
-    "for actual commands, switch to Developer Kernel (F1)",
-    "and use the REPL: help / peek / poke / regs / time",
-    "",
-    "user@falcon:~$ uname",
-    "FalconOS Lumen i386 freestanding",
-    "user@falcon:~$ echo hello",
-    "hello",
-    "user@falcon:~$ _",
-    ""
-};
-static i32 term_input_len = 0;
+#define SH_VARS    16
+#define SH_FILES   16
+#define SH_FBYTES  512
+
+typedef struct { char name[16]; u32 len; char data[SH_FBYTES]; bool used; } shfile_t;
+typedef struct { char name[16]; char value[64]; bool used; } shvar_t;
+
+static char term_buf[TERM_LINES][TERM_COLS];
+static i32  term_init_done = 0;
+static i32  term_input_len = 0;
 static char term_input[TERM_COLS];
+static char sh_cwd[32]   = "/home/falcon";
+static shfile_t sh_files[SH_FILES];
+static shvar_t  sh_vars [SH_VARS];
+
+static void term_push(const char *s)
+{
+    for (i32 i = 1; i < TERM_LINES; i++) k_strcpy(term_buf[i - 1], term_buf[i]);
+    k_strcpy(term_buf[TERM_LINES - 1], "");
+    /* truncate-copy */
+    char *d = term_buf[TERM_LINES - 1]; i32 n = 0;
+    while (s[n] && n < TERM_COLS - 1) { d[n] = s[n]; n++; }
+    d[n] = 0;
+}
+
+static void term_init(void)
+{
+    if (term_init_done) return;
+    term_init_done = 1;
+    for (i32 i = 0; i < TERM_LINES; i++) term_buf[i][0] = 0;
+    term_push("FalconOS shell  -  POSIX subset (cd/ls/cat/echo/if/for/| / > )");
+    term_push("type 'help' for the command list");
+    term_push("");
+    /* seed a couple of files so 'ls' / 'cat' have content out of the box */
+    k_strcpy(sh_files[0].name, "readme.txt");
+    k_strcpy(sh_files[0].data,
+        "Welcome to FalconOS 1.\nThis shell understands the basics:\n"
+        "  pwd, cd, ls, cat, echo, env, set X=val, $X expansion,\n"
+        "  | pipe, > redirect, if/then/fi, for ... in ... do ... done\n");
+    sh_files[0].len = k_strlen(sh_files[0].data);
+    sh_files[0].used = true;
+    k_strcpy(sh_files[1].name, "hello.sh");
+    k_strcpy(sh_files[1].data, "echo hello world\n");
+    sh_files[1].len  = k_strlen(sh_files[1].data);
+    sh_files[1].used = true;
+}
+
+static shvar_t *sh_var_find(const char *n)
+{
+    for (i32 i = 0; i < SH_VARS; i++)
+        if (sh_vars[i].used && k_strcmp(sh_vars[i].name, n) == 0)
+            return &sh_vars[i];
+    return 0;
+}
+static void sh_var_set(const char *n, const char *v)
+{
+    shvar_t *s = sh_var_find(n);
+    if (!s) {
+        for (i32 i = 0; i < SH_VARS; i++) if (!sh_vars[i].used) { s = &sh_vars[i]; break; }
+    }
+    if (!s) return;
+    s->used = true;
+    k_strcpy(s->name, n);
+    /* truncate to 63 */
+    i32 i = 0;
+    while (v[i] && i < 63) { s->value[i] = v[i]; i++; }
+    s->value[i] = 0;
+}
+static shfile_t *sh_file_find(const char *n)
+{
+    for (i32 i = 0; i < SH_FILES; i++)
+        if (sh_files[i].used && k_strcmp(sh_files[i].name, n) == 0)
+            return &sh_files[i];
+    return 0;
+}
+static shfile_t *sh_file_open_w(const char *n, bool append)
+{
+    shfile_t *f = sh_file_find(n);
+    if (!f) {
+        for (i32 i = 0; i < SH_FILES; i++) if (!sh_files[i].used) { f = &sh_files[i]; break; }
+        if (!f) return 0;
+        f->used = true;
+        k_strcpy(f->name, n);
+        f->len = 0;
+        f->data[0] = 0;
+    } else if (!append) {
+        f->len = 0;
+        f->data[0] = 0;
+    }
+    return f;
+}
+
+/* small helpers --------------------------------------------------------- */
+static bool sh_isspace(char c) { return c == ' ' || c == '\t'; }
+
+/* Tokenise a single command (no metachars). $X expanded inline. Tokens
+ * placed in `out[]`, returns token count. */
+static i32 sh_tokenise(const char *cmd, char out[][64], i32 max)
+{
+    i32 n = 0, i = 0;
+    while (cmd[i] && n < max) {
+        while (cmd[i] && sh_isspace(cmd[i])) i++;
+        if (!cmd[i]) break;
+        i32 j = 0;
+        while (cmd[i] && !sh_isspace(cmd[i]) && j < 63) {
+            if (cmd[i] == '$') {
+                /* expand variable */
+                i++;
+                char vn[16]; i32 k = 0;
+                while (cmd[i] && ((cmd[i] >= 'A' && cmd[i] <= 'Z') ||
+                                  (cmd[i] >= 'a' && cmd[i] <= 'z') ||
+                                  (cmd[i] >= '0' && cmd[i] <= '9') ||
+                                   cmd[i] == '_') && k < 15) {
+                    vn[k++] = cmd[i++];
+                }
+                vn[k] = 0;
+                shvar_t *v = sh_var_find(vn);
+                if (v) {
+                    i32 t = 0;
+                    while (v->value[t] && j < 63) out[n][j++] = v->value[t++];
+                }
+            } else {
+                out[n][j++] = cmd[i++];
+            }
+        }
+        out[n][j] = 0;
+        n++;
+    }
+    return n;
+}
+
+/* Run a single command (already tokenised). Output goes to `out` (cap
+ * `cap`). Returns exit status (0 == success). */
+static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
+{
+    if (argc == 0) return 0;
+    out[0] = 0;
+    const char *cmd = argv[0];
+
+    /* assignment X=val (only when first token has '=' and no command) */
+    {
+        i32 eq = -1;
+        for (i32 i = 0; cmd[i]; i++) if (cmd[i] == '=') { eq = i; break; }
+        if (eq > 0 && argc == 1) {
+            char name[16], val[64]; i32 k = 0;
+            for (i32 i = 0; i < eq && k < 15; i++) name[k++] = cmd[i];
+            name[k] = 0;
+            k = 0;
+            for (i32 i = eq + 1; cmd[i] && k < 63; i++) val[k++] = cmd[i];
+            val[k] = 0;
+            sh_var_set(name, val);
+            return 0;
+        }
+    }
+
+    if (k_strcmp(cmd, "true")  == 0) return 0;
+    if (k_strcmp(cmd, "false") == 0) return 1;
+    if (k_strcmp(cmd, "exit")  == 0) { apps_close(); return 0; }
+    if (k_strcmp(cmd, "clear") == 0) {
+        for (i32 i = 0; i < TERM_LINES; i++) term_buf[i][0] = 0;
+        return 0;
+    }
+    if (k_strcmp(cmd, "help") == 0) {
+        k_strcpy(out, "pwd cd ls cat echo env set X=v rm touch cp mv  | > >>  if/then/fi  for in do done");
+        return 0;
+    }
+    if (k_strcmp(cmd, "pwd") == 0)    { k_strcpy(out, sh_cwd); return 0; }
+    if (k_strcmp(cmd, "uname") == 0)  { k_strcpy(out, "FalconOS 1 x86_64 bare-metal"); return 0; }
+    if (k_strcmp(cmd, "whoami") == 0) {
+        const falcon_user_t *u = users_at(SET.active_user);
+        k_strcpy(out, u ? u->name : "falcon");
+        return 0;
+    }
+    if (k_strcmp(cmd, "date") == 0) {
+        rtc_time_t t; rtc_local(&t);
+        char num[16];
+        out[0] = 0;
+        loc_format_date(out, &t);
+        k_strcat(out, "  ");
+        if (t.hour < 10) k_strcat(out, "0");
+        k_itoa(t.hour, num, 10); k_strcat(out, num); k_strcat(out, ":");
+        if (t.min  < 10) k_strcat(out, "0");
+        k_itoa(t.min,  num, 10); k_strcat(out, num);
+        return 0;
+    }
+    if (k_strcmp(cmd, "cd") == 0) {
+        if (argc < 2) { k_strcpy(sh_cwd, "/home/falcon"); return 0; }
+        /* very simple: absolute path overrides, else append */
+        if (argv[1][0] == '/') k_strcpy(sh_cwd, argv[1]);
+        else if (k_strcmp(argv[1], "..") == 0) {
+            i32 n = k_strlen(sh_cwd);
+            while (n > 1 && sh_cwd[n - 1] != '/') n--;
+            if (n > 1) n--;
+            sh_cwd[n] = 0;
+        } else {
+            i32 n = k_strlen(sh_cwd);
+            if (n + 1 + (i32)k_strlen(argv[1]) < (i32)sizeof sh_cwd) {
+                if (sh_cwd[n - 1] != '/') sh_cwd[n++] = '/';
+                k_strcpy(sh_cwd + n, argv[1]);
+            }
+        }
+        return 0;
+    }
+    if (k_strcmp(cmd, "ls") == 0) {
+        out[0] = 0; i32 first = 1;
+        for (i32 i = 0; i < SH_FILES; i++) if (sh_files[i].used) {
+            if (!first) k_strcat(out, "  ");
+            k_strcat(out, sh_files[i].name);
+            first = 0;
+        }
+        return 0;
+    }
+    if (k_strcmp(cmd, "cat") == 0) {
+        if (argc < 2) return 1;
+        shfile_t *f = sh_file_find(argv[1]);
+        if (!f) { k_strcpy(out, "cat: not found: "); k_strcat(out, argv[1]); return 1; }
+        i32 k = 0;
+        while (f->data[k] && k < cap - 1) { out[k] = f->data[k]; k++; }
+        out[k] = 0;
+        return 0;
+    }
+    if (k_strcmp(cmd, "echo") == 0) {
+        out[0] = 0;
+        for (i32 i = 1; i < argc; i++) {
+            if (i > 1) k_strcat(out, " ");
+            k_strcat(out, argv[i]);
+        }
+        return 0;
+    }
+    if (k_strcmp(cmd, "env") == 0 || k_strcmp(cmd, "set") == 0) {
+        out[0] = 0;
+        for (i32 i = 0; i < SH_VARS; i++) if (sh_vars[i].used) {
+            k_strcat(out, sh_vars[i].name);
+            k_strcat(out, "=");
+            k_strcat(out, sh_vars[i].value);
+            k_strcat(out, " ");
+        }
+        return 0;
+    }
+    if (k_strcmp(cmd, "unset") == 0) {
+        if (argc < 2) return 1;
+        shvar_t *v = sh_var_find(argv[1]);
+        if (v) v->used = false;
+        return 0;
+    }
+    if (k_strcmp(cmd, "rm") == 0) {
+        if (argc < 2) return 1;
+        shfile_t *f = sh_file_find(argv[1]);
+        if (f) f->used = false;
+        return 0;
+    }
+    if (k_strcmp(cmd, "touch") == 0) {
+        if (argc < 2) return 1;
+        sh_file_open_w(argv[1], true);
+        return 0;
+    }
+    if (k_strcmp(cmd, "cp") == 0 || k_strcmp(cmd, "mv") == 0) {
+        if (argc < 3) return 1;
+        shfile_t *src = sh_file_find(argv[1]);
+        if (!src) { k_strcpy(out, "no such file"); return 1; }
+        shfile_t *dst = sh_file_open_w(argv[2], false);
+        if (!dst) return 1;
+        for (u32 i = 0; i < src->len && i < SH_FBYTES - 1; i++) dst->data[i] = src->data[i];
+        dst->len = src->len;
+        dst->data[dst->len] = 0;
+        if (k_strcmp(cmd, "mv") == 0) src->used = false;
+        return 0;
+    }
+    /* unknown */
+    k_strcpy(out, cmd); k_strcat(out, ": command not found");
+    return 127;
+}
+
+/* Find the first occurrence of needle in haystack, returning its index
+ * or -1.  We can't rely on libc.                                     */
+static i32 sh_find(const char *hay, const char *needle)
+{
+    i32 nl = k_strlen(needle);
+    for (i32 i = 0; hay[i]; i++) {
+        bool ok = true;
+        for (i32 j = 0; j < nl && ok; j++)
+            if (hay[i + j] != needle[j]) ok = false;
+        if (ok) return i;
+    }
+    return -1;
+}
+
+static void sh_emit(const char *s, char *out, i32 cap)
+{
+    if (!out) { term_push(s); return; }
+    i32 k = k_strlen(out);
+    while (*s && k < cap - 1) out[k++] = *s++;
+    out[k] = 0;
+}
+
+/* Run one statement (already split on ';'). Recurses for if/for. */
+static void sh_run_stmt(const char *line, char *out, i32 cap)
+{
+    /* skip leading spaces */
+    while (sh_isspace(*line)) line++;
+    if (!*line) return;
+
+    /* if cmd ; then cmd ; fi */
+    if (k_strncmp(line, "if ", 3) == 0) {
+        i32 t = sh_find(line, " then ");
+        i32 f = sh_find(line, " fi");
+        if (t > 0 && f > t) {
+            char cond[128], body[128];
+            i32 ci = 0;
+            for (i32 i = 3; i < t && ci < 127; i++) cond[ci++] = line[i];
+            cond[ci] = 0;
+            i32 bi = 0;
+            for (i32 i = t + 6; i < f && bi < 127; i++) body[bi++] = line[i];
+            body[bi] = 0;
+            char buf[64]; sh_run_stmt(cond, buf, sizeof buf);
+            /* exit status 0 from cond means "true": run body. We
+             * approximate by checking whether `true` / non-`false` was
+             * the cond first arg.                                    */
+            char tok[1][64];
+            i32 nt = sh_tokenise(cond, tok, 1);
+            i32 truthy = (nt > 0 && k_strcmp(tok[0], "false") != 0);
+            if (truthy) sh_run_stmt(body, out, cap);
+        }
+        return;
+    }
+    /* for x in a b c ; do cmd ; done */
+    if (k_strncmp(line, "for ", 4) == 0) {
+        i32 in_idx = sh_find(line, " in ");
+        i32 do_idx = sh_find(line, " do ");
+        i32 dn_idx = sh_find(line, " done");
+        if (in_idx > 0 && do_idx > in_idx && dn_idx > do_idx) {
+            char var[16]; i32 vi = 0;
+            for (i32 i = 4; i < in_idx && vi < 15; i++) var[vi++] = line[i];
+            var[vi] = 0;
+            char list[128]; i32 li = 0;
+            for (i32 i = in_idx + 4; i < do_idx && li < 127; i++) list[li++] = line[i];
+            list[li] = 0;
+            char body[128]; i32 bi = 0;
+            for (i32 i = do_idx + 4; i < dn_idx && bi < 127; i++) body[bi++] = line[i];
+            body[bi] = 0;
+            char items[8][64];
+            i32 nitems = sh_tokenise(list, items, 8);
+            for (i32 i = 0; i < nitems; i++) {
+                sh_var_set(var, items[i]);
+                sh_run_stmt(body, out, cap);
+            }
+        }
+        return;
+    }
+
+    /* pipe + redirect: split at first '|', then handle '>' on RHS too */
+    char left[128] = {0}, right[128] = {0};
+    bool has_pipe = false;
+    i32 pi = sh_find(line, "|");
+    if (pi >= 0) {
+        for (i32 i = 0; i < pi && i < 127; i++) left[i] = line[i];
+        i32 r = 0; for (i32 i = pi + 1; line[i] && r < 127; i++) right[r++] = line[i];
+        has_pipe = true;
+    } else {
+        k_strcpy(left, line);
+    }
+
+    /* output redirect on left side */
+    char redir_name[16] = {0};
+    bool append = false;
+    {
+        i32 gg = sh_find(left, ">>");
+        if (gg >= 0) {
+            append = true;
+            char fn[64]; i32 k = 0;
+            for (i32 i = gg + 2; left[i] && k < 63; i++) if (!sh_isspace(left[i]) || k) fn[k++] = left[i];
+            fn[k] = 0;
+            /* strip trailing spaces in name */
+            while (k > 0 && sh_isspace(fn[k - 1])) fn[--k] = 0;
+            k_strcpy(redir_name, fn);
+            left[gg] = 0;
+        } else {
+            i32 g = sh_find(left, ">");
+            if (g >= 0) {
+                char fn[64]; i32 k = 0;
+                for (i32 i = g + 1; left[i] && k < 63; i++) if (!sh_isspace(left[i]) || k) fn[k++] = left[i];
+                fn[k] = 0;
+                while (k > 0 && sh_isspace(fn[k - 1])) fn[--k] = 0;
+                k_strcpy(redir_name, fn);
+                left[g] = 0;
+            }
+        }
+    }
+
+    /* run left */
+    char larg[8][64];
+    i32 lac = sh_tokenise(left, larg, 8);
+    char lout[256];
+    sh_run_argv(lac, larg, lout, sizeof lout);
+
+    if (redir_name[0]) {
+        shfile_t *f = sh_file_open_w(redir_name, append);
+        if (f) {
+            u32 n = f->len;
+            for (i32 i = 0; lout[i] && n < SH_FBYTES - 2; i++) f->data[n++] = lout[i];
+            f->data[n++] = '\n';
+            f->data[n] = 0;
+            f->len = n;
+        }
+        return;
+    }
+
+    if (has_pipe) {
+        /* feed lout as $_ to right side */
+        sh_var_set("_", lout);
+        char rarg[8][64];
+        i32 rac = sh_tokenise(right, rarg, 8);
+        char rout[256];
+        /* if right is `cat`/`grep`/`wc`, treat lout as input. We
+         * simplify: if right is `wc`, count words; if `grep <pat>`,
+         * filter lines containing pat; otherwise fall back to running
+         * the right command and concatenating its own output.        */
+        if (rac > 0 && k_strcmp(rarg[0], "wc") == 0) {
+            i32 nw = 0; bool in = false;
+            for (i32 i = 0; lout[i]; i++) {
+                if (sh_isspace(lout[i])) in = false;
+                else if (!in) { in = true; nw++; }
+            }
+            char num[16]; k_itoa((u32)nw, num, 10);
+            sh_emit(num, out, cap);
+        } else if (rac >= 2 && k_strcmp(rarg[0], "grep") == 0) {
+            const char *pat = rarg[1];
+            i32 i = 0; bool any = false;
+            while (lout[i]) {
+                i32 j = i; while (lout[j] && lout[j] != '\n') j++;
+                /* line is lout[i..j) */
+                bool match = false;
+                for (i32 s = i; s < j && !match; s++) {
+                    bool ok = true;
+                    for (i32 t = 0; pat[t] && ok; t++)
+                        if (s + t >= j || lout[s + t] != pat[t]) ok = false;
+                    if (ok) match = true;
+                }
+                if (match) {
+                    if (any) sh_emit("\n", out, cap);
+                    char tmp[160]; i32 k = 0;
+                    for (i32 s = i; s < j && k < 159; s++) tmp[k++] = lout[s];
+                    tmp[k] = 0;
+                    sh_emit(tmp, out, cap);
+                    any = true;
+                }
+                i = j; if (lout[i]) i++;
+            }
+        } else {
+            sh_run_argv(rac, rarg, rout, sizeof rout);
+            sh_emit(rout, out, cap);
+        }
+        return;
+    }
+
+    sh_emit(lout, out, cap);
+}
+
+static void sh_run_line(const char *line)
+{
+    /* split on ';' */
+    char buf[128];
+    i32 bi = 0;
+    for (i32 i = 0; line[i] && i < 127; i++) {
+        if (line[i] == ';') {
+            buf[bi] = 0;
+            char outbuf[256]; outbuf[0] = 0;
+            sh_run_stmt(buf, outbuf, sizeof outbuf);
+            if (outbuf[0]) {
+                /* split on '\n' so multi-line output scrolls properly */
+                i32 s = 0;
+                for (i32 j = 0; ; j++) {
+                    if (outbuf[j] == '\n' || outbuf[j] == 0) {
+                        char tmp[TERM_COLS];
+                        i32 k = 0;
+                        for (i32 t = s; t < j && k < TERM_COLS - 1; t++) tmp[k++] = outbuf[t];
+                        tmp[k] = 0;
+                        if (k) term_push(tmp);
+                        if (outbuf[j] == 0) break;
+                        s = j + 1;
+                    }
+                }
+            }
+            bi = 0;
+        } else {
+            buf[bi++] = line[i];
+        }
+    }
+    buf[bi] = 0;
+    if (bi == 0) return;
+    char outbuf[256]; outbuf[0] = 0;
+    sh_run_stmt(buf, outbuf, sizeof outbuf);
+    if (outbuf[0]) {
+        i32 s = 0;
+        for (i32 j = 0; ; j++) {
+            if (outbuf[j] == '\n' || outbuf[j] == 0) {
+                char tmp[TERM_COLS];
+                i32 k = 0;
+                for (i32 t = s; t < j && k < TERM_COLS - 1; t++) tmp[k++] = outbuf[t];
+                tmp[k] = 0;
+                if (k) term_push(tmp);
+                if (outbuf[j] == 0) break;
+                s = j + 1;
+            }
+        }
+    }
+}
 
 static void render_term(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
+    term_init();
     /* dark terminal panel for contrast against light theme */
     gfx_round_rect_a(wx + 20, wy + 8, ww - 40, wh - 28, 10, 0x101218, 255);
     gfx_round_outline(wx + 20, wy + 8, ww - 40, wh - 28, 10, PAL_HAIRLINE);
 
-    gfx_text(wx + 30, wy + 18, "Terminal", 0xCFE6FF);
-    gfx_text(wx + 30, wy + 38, "bash-stub - press keys to type, Enter echoes back",
+    gfx_text(wx + 30, wy + 18, "FalconOS shell  -  POSIX subset", 0xCFE6FF);
+    gfx_text(wx + 30, wy + 38,
+             "type 'help' or 'cat readme.txt' to start",
              0x8AAACE);
 
     for (i32 i = 0; i < TERM_LINES; i++) {
-        gfx_text(wx + 32, wy + 64 + i * 18, term_buf[i],
-                 (i == TERM_LINES - 1) ? COL_OK : 0xDEEEFF);
+        gfx_text(wx + 32, wy + 64 + i * 18, term_buf[i], 0xDEEEFF);
     }
     /* current input line */
-    char line[TERM_COLS + 12] = "user@falcon:~$ ";
+    char line[TERM_COLS + 24];
+    k_strcpy(line, "[");
+    const falcon_user_t *u = users_at(SET.active_user);
+    k_strcat(line, u ? u->name : "falcon");
+    k_strcat(line, "@falcon ");
+    /* show only the basename of CWD to keep prompt short */
+    const char *base = sh_cwd; for (i32 i = 0; sh_cwd[i]; i++) if (sh_cwd[i] == '/') base = &sh_cwd[i + 1];
+    k_strcat(line, base[0] ? base : "/");
+    k_strcat(line, "]$ ");
     k_strcat(line, term_input);
     if ((g_ticks / 50) & 1) k_strcat(line, "_");
     gfx_text(wx + 32, wy + 64 + TERM_LINES * 18, line, COL_OK);
@@ -478,15 +990,15 @@ static void render_term(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 
 static void term_input_key(i32 key)
 {
+    term_init();
     if (key == KEY_ENTER) {
-        /* echo input back as new line in scroll */
-        for (i32 i = 1; i < TERM_LINES; i++)
-            k_strcpy(term_buf[i - 1], term_buf[i]);
-        char echo[TERM_COLS + 12] = "user@falcon:~$ ";
-        k_strcat(echo, term_input);
-        k_strcpy(term_buf[TERM_LINES - 1], echo);
+        char prompt[TERM_COLS];
+        k_strcpy(prompt, "$ ");
+        k_strcat(prompt, term_input);
+        term_push(prompt);
+        sh_run_line(term_input);
         term_input_len = 0;
-        term_input[0] = 0;
+        term_input[0]  = 0;
         return;
     }
     if (key == KEY_BACKSPACE) {
