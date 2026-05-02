@@ -50,87 +50,125 @@ i32  apps_active(void) { return active_app; }
 /* ===== icon glyphs ======================================================== */
 static void icon_home(i32 cx, i32 cy)
 {
-    /* roof + house */
-    gfx_line(cx - 14, cy - 2, cx,        cy - 14, PAL_PANEL);
-    gfx_line(cx,      cy - 14, cx + 14, cy - 2,  PAL_PANEL);
-    gfx_rect(cx - 11, cy - 2,  22, 14, PAL_PANEL);
-    gfx_rect(cx -  3, cy + 4,   6,  8, 0x000000);
+    /* solid rounded square + cleaner roofline + door */
+    gfx_round_rect(cx - 16, cy - 14, 32, 30, 6, PAL_ACCENT);
+    /* white roof triangle */
+    for (i32 dy = -14; dy <= -4; dy++) {
+        i32 half = 14 + dy;            /* widens as dy moves toward -4 */
+        gfx_rect(cx - half, cy + dy, half * 2 + 1, 1, 0xFFFFFF);
+    }
+    /* white door */
+    gfx_round_rect(cx - 4, cy + 2, 8, 12, 2, 0xFFFFFF);
+    gfx_pixel(cx + 2, cy + 8, PAL_ACCENT);
 }
 static void icon_files(i32 cx, i32 cy)
 {
-    gfx_round_rect(cx - 14, cy - 10, 28, 20, 3, PAL_PANEL);
-    gfx_rect(cx - 14, cy - 14, 14, 6, PAL_PANEL);
-    gfx_rect(cx - 10, cy - 4, 20, 1, PAL_ACCENT);
-    gfx_rect(cx - 10, cy + 0, 16, 1, PAL_ACCENT);
-    gfx_rect(cx - 10, cy + 4, 12, 1, PAL_ACCENT);
+    /* manila folder with tab + page peeking out */
+    gfx_round_rect(cx - 16, cy - 12, 14, 6, 3, 0xFFC56C);
+    gfx_round_rect(cx - 16, cy -  8, 32, 22, 4, 0xFFD58A);
+    gfx_round_rect(cx - 12, cy -  4, 24, 14, 3, 0xFFFFFF);
+    gfx_rect(cx - 9, cy +  0, 18, 1, 0xC8AA80);
+    gfx_rect(cx - 9, cy +  4, 14, 1, 0xC8AA80);
 }
 static void icon_clock(i32 cx, i32 cy)
 {
-    gfx_circle(cx, cy, 16, PAL_PANEL);
-    gfx_circle(cx, cy, 13, 0xFFFFFF);
-    gfx_line(cx, cy, cx, cy - 9, PAL_TEXT);
-    gfx_line(cx, cy, cx + 7, cy + 2, PAL_ACCENT);
-    gfx_circle(cx, cy, 2, PAL_TEXT);
+    /* circular dial with 12 tick marks + hour & minute hands */
+    gfx_circle(cx, cy, 17, PAL_TEXT);
+    gfx_circle(cx, cy, 15, 0xFFFFFF);
+    gfx_pixel(cx,      cy - 12, PAL_TEXT);
+    gfx_pixel(cx,      cy + 12, PAL_TEXT);
+    gfx_pixel(cx - 12, cy,      PAL_TEXT);
+    gfx_pixel(cx + 12, cy,      PAL_TEXT);
+    gfx_line(cx, cy, cx,     cy -  9, PAL_TEXT);   /* hour   */
+    gfx_line(cx, cy, cx + 8, cy +  3, COL_ERR);    /* minute */
+    gfx_circle(cx, cy, 2, COL_ERR);
 }
 static void icon_stats(i32 cx, i32 cy)
 {
+    /* tinted card behind stepped bars */
+    gfx_round_rect(cx - 16, cy - 14, 32, 28, 5, PAL_PANEL_DEEP);
     for (i32 i = 0; i < 5; i++) {
         i32 h = 4 + (i * 3);
-        gfx_rect(cx - 12 + i * 5, cy + 8 - h, 3, h, PAL_PANEL);
+        u32 c = (i == 4) ? COL_OK : (i >= 2 ? PAL_ACCENT : COL_WARN);
+        gfx_round_rect(cx - 12 + i * 5, cy + 9 - h, 3, h, 1, c);
     }
 }
 static void icon_about(i32 cx, i32 cy)
 {
-    gfx_circle(cx, cy, 16, PAL_PANEL);
-    gfx_text_centered(cx, cy - 7, "i", PAL_TEXT);
+    /* falcon emblem — accent-tinted disc with stylised wing */
+    gfx_circle(cx, cy, 17, PAL_ACCENT);
+    gfx_circle(cx, cy, 14, 0xFFFFFF);
+    gfx_line(cx - 8, cy + 4, cx + 4, cy - 6, PAL_ACCENT);
+    gfx_line(cx - 4, cy + 4, cx + 8, cy - 2, PAL_ACCENT);
+    gfx_pixel(cx + 6, cy - 4, COL_ERR);
 }
 static void icon_term(i32 cx, i32 cy)
 {
-    gfx_round_rect(cx - 16, cy - 12, 32, 24, 3, 0x101218);
-    gfx_text(cx - 12, cy - 6, ">_", COL_OK);
+    /* dark window with chrome strip + prompt cursor */
+    gfx_round_rect(cx - 16, cy - 13, 32, 26, 4, 0x10141C);
+    gfx_rect(cx - 16, cy - 13, 32, 5, 0x1B2129);
+    gfx_circle(cx - 12, cy - 11, 1, COL_ERR);
+    gfx_circle(cx -  8, cy - 11, 1, COL_WARN);
+    gfx_circle(cx -  4, cy - 11, 1, COL_OK);
+    gfx_text(cx - 12, cy - 4, ">_", COL_OK);
 }
 static void icon_calc(i32 cx, i32 cy)
 {
-    gfx_round_rect(cx - 14, cy - 14, 28, 28, 4, PAL_PANEL);
-    gfx_rect(cx - 10, cy - 10, 20, 6, PAL_TEXT);
+    /* rounded body with screen + 3x3 keypad + accent equals */
+    gfx_round_rect(cx - 15, cy - 15, 30, 30, 5, PAL_PANEL);
+    gfx_round_rect(cx - 11, cy - 11, 22,  7, 2, 0x202836);
     for (i32 i = 0; i < 3; i++)
-        for (i32 j = 0; j < 3; j++)
-            gfx_rect(cx - 10 + j * 7, cy - 1 + i * 5, 4, 3, PAL_ACCENT);
+        for (i32 j = 0; j < 3; j++) {
+            u32 c = (i == 2 && j == 2) ? PAL_ACCENT : PAL_TEXT_DIM;
+            gfx_round_rect(cx - 11 + j * 7, cy + 0 + i * 5, 5, 3, 1, c);
+        }
 }
 static void icon_settings(i32 cx, i32 cy)
 {
-    gfx_circle(cx, cy, 12, PAL_PANEL);
-    gfx_circle(cx, cy, 5, PAL_ACCENT);
-    /* gear teeth */
-    for (i32 a = 0; a < 8; a++) {
-        i32 ax = (a == 0 || a == 4) ? 0 : (a < 4 ? 12 : -12);
-        i32 ay = (a == 2 || a == 6) ? 0 : (a < 2 || a > 6 ? -12 : 12);
-        gfx_rect(cx + ax / 2 - 1, cy + ay / 2 - 1, 3, 3, PAL_PANEL);
-    }
+    /* 8-tooth gear: outer flange ring + inner accent core */
+    gfx_circle(cx, cy, 15, PAL_PANEL_DEEP);
+    /* teeth around 8 cardinal positions */
+    static const i32 TX[8] = { 0, 11, 14, 11,  0,-11,-14,-11 };
+    static const i32 TY[8] = {-14,-11, 0, 11, 14, 11,  0,-11 };
+    for (i32 a = 0; a < 8; a++)
+        gfx_round_rect(cx + TX[a] - 2, cy + TY[a] - 2, 5, 5, 1, PAL_PANEL_DEEP);
+    gfx_circle(cx, cy, 11, PAL_PANEL);
+    gfx_circle(cx, cy,  5, PAL_ACCENT);
+    gfx_circle(cx, cy,  2, 0xFFFFFF);
 }
 static void icon_notes(i32 cx, i32 cy)
 {
-    gfx_round_rect(cx - 13, cy - 14, 26, 28, 2, PAL_PANEL);
-    gfx_rect(cx - 10, cy - 9, 20, 1, PAL_TEXT_FAINT);
-    gfx_rect(cx - 10, cy - 5, 16, 1, PAL_TEXT_FAINT);
-    gfx_rect(cx - 10, cy - 1, 18, 1, PAL_TEXT_FAINT);
-    gfx_rect(cx - 10, cy + 3, 14, 1, PAL_TEXT_FAINT);
+    /* paper card with yellow highlight strip + ruled lines */
+    gfx_round_rect(cx - 14, cy - 14, 28, 28, 4, 0xFFFFFF);
+    gfx_rect(cx - 14, cy - 14, 28, 6, 0xFFE082);
+    gfx_rect(cx - 11, cy -  4, 22, 1, PAL_TEXT_FAINT);
+    gfx_rect(cx - 11, cy +  0, 18, 1, PAL_TEXT_FAINT);
+    gfx_rect(cx - 11, cy +  4, 22, 1, PAL_TEXT_FAINT);
+    gfx_rect(cx - 11, cy +  8, 14, 1, PAL_TEXT_FAINT);
 }
 static void icon_calendar(i32 cx, i32 cy)
 {
-    gfx_round_rect(cx - 14, cy - 13, 28, 26, 3, PAL_PANEL);
-    gfx_rect(cx - 14, cy - 13, 28, 8, COL_ERR);
-    /* day grid dots */
+    /* page with red header band + binding tabs + day grid */
+    gfx_round_rect(cx - 14, cy - 14, 28, 28, 4, 0xFFFFFF);
+    gfx_round_rect(cx - 14, cy - 14, 28,  9, 4, COL_ERR);
+    gfx_rect(cx - 9, cy - 16, 2, 4, PAL_TEXT);
+    gfx_rect(cx + 7, cy - 16, 2, 4, PAL_TEXT);
     for (i32 r = 0; r < 3; r++)
         for (i32 c = 0; c < 5; c++)
-            gfx_pixel(cx - 10 + c * 4, cy - 1 + r * 4, PAL_TEXT_DIM);
+            gfx_round_rect(cx - 11 + c * 5, cy - 2 + r * 5, 3, 3, 1,
+                            (r == 1 && c == 2) ? PAL_ACCENT : PAL_TEXT_FAINT);
 }
 static void icon_gallery(i32 cx, i32 cy)
 {
-    gfx_rect(cx - 14, cy - 12, 12, 12, PAL_ACCENT);
-    gfx_rect(cx +  2, cy - 12, 12, 12, COL_OK);
-    gfx_rect(cx - 14, cy + 0,  12, 12, COL_WARN);
-    gfx_rect(cx +  2, cy + 0,  12, 12, COL_PURPLE);
+    /* photo frame with mountains + sun */
+    gfx_round_rect(cx - 16, cy - 13, 32, 26, 4, 0xFFFFFF);
+    gfx_round_rect(cx - 14, cy - 11, 28, 22, 3, 0x9CC2EE);
+    gfx_circle(cx + 6, cy - 5, 3, 0xFFD580);
+    /* triangular mountains */
+    for (i32 i = 0; i < 8; i++)
+        gfx_rect(cx - 12 + i, cy + 1 - i, 3, i + 1, 0x4F6E92);
+    for (i32 i = 0; i < 6; i++)
+        gfx_rect(cx - 4 + i, cy + 3 - i, 3, i + 1, 0x344C6E);
 }
 static void icon_browser(i32 cx, i32 cy)
 {
