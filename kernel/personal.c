@@ -263,10 +263,15 @@ void mode_personal_render(u32 frame)
                       PAL_TEXT_DIM);
 
     /* desktop-pin clicks fire BEFORE active app render so a click on a pin
-     * launches an app immediately.                                          */
-    if (apps_active() < 0) {
-        i32 mx, my; bool ml; mouse_get(&mx, &my, &ml); (void)ml;
-        if (mouse_consume_click()) {
+     * launches an app immediately.  When an app IS active, hand the
+     * mouse stream to the window manager (drag / resize / traffic
+     * lights). It returns true when it consumed the click so the
+     * underlying app sees nothing.                                       */
+    {
+        i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
+        if (apps_active() >= 0) {
+            (void)apps_wm_handle_mouse(mx, my, ml, mouse_consume_click());
+        } else if (mouse_consume_click()) {
             desktop_pins_input_click(mx, my);
         }
     }

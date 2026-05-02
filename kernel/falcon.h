@@ -304,6 +304,8 @@ void         apps_close(void);
 i32          apps_active(void);
 void         apps_render_active(u32 frame);
 void         apps_input_active(i32 key);
+/* WM mouse handler — returns true when it consumed the click. */
+bool         apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge);
 
 /* ---- Launchpad (full-screen app grid, F2) --------------------------------- */
 void launchpad_open(void);

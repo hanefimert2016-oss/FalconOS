@@ -24,8 +24,27 @@
 static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
 
+/* ----- window manager state (FalconOS 1) ---------------------------------
+ * The dispatcher used to centre every app window on every frame. With
+ * a mouse-driven WM users expect:
+ *   - drag the title bar to relocate the window
+ *   - resize from the bottom-right corner
+ *   - traffic lights (red close / yellow minimise / green maximise)
+ * We keep a single window slot since we still only have one active app
+ * at a time; minimise just collapses to "no active app" but remembers
+ * the offset/size so re-opening the same app feels persistent.        */
+static i32  wm_dx = 0, wm_dy = 0;     /* persistent offset from centre  */
+static i32  wm_dw = 0, wm_dh = 0;     /* size delta (added to default)  */
+static bool wm_max = false;            /* maximised? overrides above    */
+static bool wm_dragging = false;
+static i32  wm_drag_grab_x = 0, wm_drag_grab_y = 0;
+static bool wm_resizing = false;
+static i32  wm_resize_grab_x = 0, wm_resize_grab_y = 0;
+static i32  wm_resize_start_w = 0, wm_resize_start_h = 0;
+
 void apps_open(i32 i)  { active_app = i; open_at_ms = pit_ms(); }
-void apps_close(void)  { active_app = -1; }
+void apps_close(void)  { active_app = -1; wm_max = false;
+                          wm_dragging = false; wm_resizing = false; }
 i32  apps_active(void) { return active_app; }
 
 /* ===== icon glyphs ======================================================== */
@@ -1184,6 +1203,92 @@ void apps_input_active(i32 key)
     if (APPS[active_app].input) APPS[active_app].input(key);
 }
 
+/* Compute the active window's rect, taking the WM state into account.
+ * Returns false when the rect is invalid (no active app).             */
+static bool wm_window_rect(i32 *out_x, i32 *out_y, i32 *out_w, i32 *out_h)
+{
+    if (active_app < 0) return false;
+    i32 W = (i32)FB.width, H = (i32)FB.height;
+    if (wm_max) {
+        *out_x = 8; *out_y = 36;                   /* below the menu bar */
+        *out_w = W - 16; *out_h = H - 76;          /* leave dock visible */
+        return true;
+    }
+    i32 ww = W - 280; if (ww > 920) ww = 920; if (ww < 600) ww = 600;
+    i32 wh = H - 220; if (wh > 580) wh = 580; if (wh < 380) wh = 380;
+    ww += wm_dw; wh += wm_dh;
+    if (ww < 480) ww = 480;
+    if (wh < 300) wh = 300;
+    if (ww > W - 32) ww = W - 32;
+    if (wh > H - 80) wh = H - 80;
+    i32 wx = (W - ww) / 2 + wm_dx;
+    i32 wy = (H - wh) / 2 - 10 + wm_dy;
+    if (wx < 4)  wx = 4;
+    if (wy < 32) wy = 32;
+    if (wx + ww > W - 4) wx = W - 4 - ww;
+    if (wy + wh > H - 4) wy = H - 4 - wh;
+    *out_x = wx; *out_y = wy; *out_w = ww; *out_h = wh;
+    return true;
+}
+
+/* Mouse-driven window manager. Called once per frame from main.c right
+ * after mouse_get(). Handles title-bar drag, corner resize and traffic
+ * lights. Returns true when it consumed the click (so the underlying
+ * app shouldn't see it).                                              */
+bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
+{
+    if (active_app < 0) return false;
+
+    i32 wx, wy, ww, wh;
+    if (!wm_window_rect(&wx, &wy, &ww, &wh)) return false;
+
+    /* Continue an in-flight gesture first.                              */
+    if (wm_dragging) {
+        if (!left_held) { wm_dragging = false; return true; }
+        wm_dx += mx - wm_drag_grab_x;
+        wm_dy += my - wm_drag_grab_y;
+        wm_drag_grab_x = mx; wm_drag_grab_y = my;
+        return true;
+    }
+    if (wm_resizing) {
+        if (!left_held) { wm_resizing = false; return true; }
+        wm_dw = (mx - wm_resize_grab_x) + (wm_resize_start_w - ((i32)FB.width  - 280));
+        wm_dh = (my - wm_resize_grab_y) + (wm_resize_start_h - ((i32)FB.height - 220));
+        return true;
+    }
+
+    if (!click_edge) return false;
+
+    /* traffic lights live at title-bar y ± 12px, x within radius 9 */
+    i32 ty = wy + 18;
+    if (my >= ty - 10 && my <= ty + 10) {
+        if (mx >= wx + 9  && mx <= wx + 27) { apps_close(); return true; }      /* red */
+        if (mx >= wx + 29 && mx <= wx + 47) { apps_close(); return true; }      /* yellow → minimise (close for now) */
+        if (mx >= wx + 49 && mx <= wx + 67) { wm_max = !wm_max; return true; }  /* green → maximise toggle */
+    }
+
+    /* resize handle: 18×18 square at the bottom-right, only visible
+     * when not maximised. Maximised windows are not resizable. */
+    if (!wm_max &&
+        mx >= wx + ww - 22 && mx <= wx + ww - 2 &&
+        my >= wy + wh - 22 && my <= wy + wh - 2) {
+        wm_resizing = true;
+        wm_resize_grab_x = mx; wm_resize_grab_y = my;
+        wm_resize_start_w = ww; wm_resize_start_h = wh;
+        return true;
+    }
+
+    /* title bar: anywhere in the top 36 px not covered by the buttons */
+    if (my >= wy && my <= wy + 36 &&
+        mx >= wx + 80 && mx <= wx + ww - 40) {
+        wm_dragging = true;
+        wm_drag_grab_x = mx; wm_drag_grab_y = my;
+        return true;
+    }
+
+    return false;
+}
+
 /* renders the active app's window with a slide-in animation */
 void apps_render_active(u32 frame)
 {
@@ -1207,17 +1312,16 @@ void apps_render_active(u32 frame)
         gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 60);
     }
 
-    /* window box — sized for HD+, scaled up for higher resolutions */
-    i32 ww = (i32)FB.width  - 280;  if (ww > 920) ww = 920; if (ww < 600) ww = 600;
-    i32 wh = (i32)FB.height - 220;  if (wh > 580) wh = 580; if (wh < 380) wh = 380;
-    i32 wx = ((i32)FB.width  - ww) / 2;
-    i32 wy = ((i32)FB.height - wh) / 2 - 10;
+    i32 wx, wy, ww, wh;
+    wm_window_rect(&wx, &wy, &ww, &wh);
 
-    /* slide-in: 200 ms */
-    u32 dt = pit_ms() - open_at_ms;
-    if (dt > 200) dt = 200;
-    i32 off = (i32)((200 - dt) * 60 / 200);
-    wy += off;
+    /* slide-in: 200 ms — only on first open, not while dragging */
+    if (!wm_dragging && !wm_resizing) {
+        u32 dt = pit_ms() - open_at_ms;
+        if (dt > 200) dt = 200;
+        i32 off = (i32)((200 - dt) * 60 / 200);
+        wy += off;
+    }
 
     /* card — Aero blurs the desktop / dock / widgets behind the
      * window so the chrome feels lifted; the body remains solid
@@ -1241,6 +1345,16 @@ void apps_render_active(u32 frame)
     /* body offset by 44 px for title strip */
     a->render(wx, wy + 44, ww, wh - 44, frame);
 
+    /* resize handle (bottom-right) — three little diagonal pips */
+    if (!wm_max) {
+        i32 hx = wx + ww - 14, hy = wy + wh - 14;
+        for (i32 i = 0; i < 3; i++) {
+            gfx_rect(hx - i*4, hy + i*4, 3, 3, PAL_TEXT_FAINT);
+        }
+    }
+
     /* hint */
-    gfx_text_centered(wx + ww / 2, wy + wh - 24, "press Esc to close", PAL_TEXT_FAINT);
+    gfx_text_centered(wx + ww / 2, wy + wh - 24,
+        "drag title-bar  ·  resize corner  ·  Esc / red close",
+        PAL_TEXT_FAINT);
 }
