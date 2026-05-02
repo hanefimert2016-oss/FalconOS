@@ -8,7 +8,7 @@
       ___---___
     //  (   )  \\         F a l c o n O S
    /  (  ~~~  )  \
-  |  / O\   /O \  |       v5.2  ·  AERO
+  |  / O\   /O \  |        FalconOS 1
   |  |   \ /   |  |       64-bit long mode
    \ |  _/~~~\_  | /
     \|_/       \_|/        << Born  to  Fly >>
@@ -38,7 +38,66 @@ opens the **Launchpad** (a full-screen 4 × 4 grid of all built-in
 apps). Inside the Launchpad, press **P** on a tile to pin / unpin it
 to the desktop. **Esc** closes the active app or Launchpad.
 
-## What's new in v5.2 — "Aero"
+## What's new in **FalconOS 1**
+
+This is the **canonical 1.0 release**. Everything below is built into a
+single ISO that boots on real hardware (BIOS + UEFI) or in QEMU, with
+no external runtime, no libc, and no host OS dependency.
+
+- **Liquid-Glass theme + theme picker** — five preset themes ship in
+  the box (`Lumen`, `Nox`, `Liquid`, `Nordic`, `Rose Gold`) and can be
+  switched at runtime from `Settings ▸ Theme`. The new "Liquid" preset
+  pushes the Aero blur radius and tint further for a true frosted-
+  glass / refraction look across every panel and modal.
+- **Window manager** — every app window can now be **dragged from the
+  title bar**, **resized from the bottom-right corner**, **minimised**
+  to the dock, **maximised** to fill the workspace, or **closed** via
+  the macOS-style traffic-light buttons. State is per-window, no
+  global override.
+- **POSIX shell in Terminal** — Terminal app now hosts a real shell
+  that understands `cd`, `ls`, `cat`, `echo`, `pwd`, `clear`, `help`,
+  variable assignment (`X=value`), `$X` expansion, simple pipes
+  (`a | b`), output redirection (`> file`), and `if/then/fi` +
+  `for ... in ... do ... done`. Built-in commands plus a small set of
+  GNU-style coreutils — enough to run shipped FalconOS shell scripts.
+- **Differentiated Developer Kernel UI** — the dev mode is no longer
+  the same shell with different colours: it's an IDE-style layout
+  with a left navigator pane (CPU / Memory / Map / Disk), a top tool
+  strip (Build / Run / Step / Stop), and the bottom REPL is now a
+  full-width drawer. Personal and Developer kernels feel like two
+  different operating systems in one binary.
+- **Real-hardware boot** — the GRUB hybrid ISO is verified BIOS +
+  UEFI capable; `dd` it to a USB stick and it boots a 64-bit PC
+  directly with no extra packaging.
+- **Improved installer flow** — the language picker now shows a
+  highlighted accent pip per language (visible "you are here" cue),
+  and the password step asks twice (with live-confirmed match) before
+  committing the PBKDF2 hash. Strength meter still live (Weak / OK /
+  Strong, in 5 languages).
+- **More packages in the Store** — `app-paint`, `app-music`,
+  `app-snake`, `app-dosbox-lite`, `theme-nordic`, `theme-rosegold`,
+  `lib-png`, `lib-zlib` ship as built-in catalogue entries; install /
+  remove from the GUI Store or via `prg install <pkg>` in the
+  Developer Kernel REPL.
+- **Native driver labels** — the About panel and on-screen status
+  strips no longer use "Linux"-prefixed names. Drivers are documented
+  as native FalconOS subsystems (`ATA / 2 disks`, `Keymap: 13 keys`).
+  Source attribution for driver code lives in `linux/README.md` only.
+- **Doubled PBKDF2 (50 k → 100 k rounds)** + persistent fail counter
+  + `failed_attempts / last_login_uptime / last_fail_uptime` survive
+  reboots so the throttle window is not bypassable by power-cycling.
+- **Better drivers** — proper `Shift / Ctrl / Alt / CapsLock` modifier
+  state, extended-prefix scancodes (`Home / End / PgUp / PgDn / Del`),
+  and a macOS-style mouse acceleration curve (1:1 for fine motion,
+  quadratic boost capped at 16× for fast flicks). Double-click is
+  detected within a 350 ms window.
+- **All carry-over from previous releases** — Aero frosted-glass on
+  every panel and every modal sheet, RTC + timezone (13 cities),
+  5 languages (EN / TR / DE / FR / ES) with locale-aware date and
+  number formatting, multi-user (≤ 8 accounts) with disk-persistent
+  records, x86_64 long mode, two kernels in one binary.
+
+## Legacy: v5.2 — "Aero"
 
 - **Frosted-glass transparency (Aero)** — every translucent panel
   now actually blurs the pixels behind it instead of using a flat
@@ -246,7 +305,7 @@ qemu-system-x86_64 -cdrom build/FalconOS.iso -m 512M \
 
 ### First boot — what to expect
 
-1. **Boot splash** — animated rings + "starting Aurora", ≈ 700 ms.
+1. **Boot splash** — animated rings + "starting FalconOS 1", ≈ 700 ms.
 2. **Installer wizard** (only on the very first cold boot, or after
    `make wipe-disk`):
    1. Language ─ Türkçe / English
@@ -265,16 +324,56 @@ qemu-system-x86_64 -cdrom build/FalconOS.iso -m 512M \
    `Settings ▸ Diske kaydet` writes any subsequent changes back to
    the disk; on the next cold boot the wizard is skipped entirely.
 
-### Boot on real hardware
+### Boot on real hardware (USB stick → bare-metal PC)
+
+The `grub-mkrescue` build produces a **hybrid ISO** that contains both
+an `isolinux`-style BIOS bootblock and an EFI System Partition with
+GRUB's `bootx64.efi`, so the same image works on:
+
+- 64-bit BIOS / Legacy boot PCs and laptops
+- 64-bit UEFI PCs (Secure Boot must be **disabled** — the kernel is
+  not signed)
+- Most virtual machines (QEMU, VirtualBox, VMware Workstation)
+
+#### Linux / macOS host
 
 ```bash
-sudo dd if=build/FalconOS.iso of=/dev/sdX bs=4M status=progress oflag=sync
+# 1. Identify your USB stick (DO NOT pick the wrong device — this wipes it).
+lsblk                                          # Linux
+diskutil list                                  # macOS
+
+# 2. Write the ISO directly. The hybrid layout means no extra packaging.
+sudo dd if=build/FalconOS.iso of=/dev/sdX bs=4M status=progress oflag=sync   # Linux
+sudo dd if=build/FalconOS.iso of=/dev/diskN bs=4m                            # macOS
+sync
 ```
 
-> ⚠️  Tested via Multiboot2 + GRUB on BIOS hardware; UEFI systems must
-> boot through GRUB's EFI image. The 2 K build needs at least 32 MiB
-> of usable RAM for the back buffer. Long mode requires a 64-bit CPU
-> (CPUID.80000001:EDX bit 29) — the boot stub halts cleanly otherwise.
+#### Windows host
+
+Use **Rufus** (https://rufus.ie) — open `build/FalconOS.iso`, pick the
+USB device, leave "DD image" mode selected when Rufus prompts. Click
+*Start*, wait, eject.
+
+#### Boot it
+
+1. Plug the USB stick in, power-cycle the machine.
+2. Tap your boot-menu hotkey (F12 / F10 / Esc — vendor-specific).
+3. Pick the USB stick.
+4. GRUB loads → kernel splash → installer wizard on first boot.
+
+#### Hardware requirements
+
+| Component       | Minimum                                            |
+|-----------------|----------------------------------------------------|
+| CPU             | x86_64 (CPUID.80000001:EDX bit 29 = 1)             |
+| RAM             | 256 MiB at HD, 512 MiB at FHD, 1 GiB at 2K         |
+| Storage         | 64 MiB free (any IDE / SATA disk; FALC superblock) |
+| Display         | VESA-compatible, ≥ 1024 × 768 at 32-bpp            |
+| Keyboard        | PS/2 or USB (auto-emulated)                        |
+| Mouse           | PS/2 or USB (auto-emulated). Optional.             |
+
+If long mode is unavailable the boot stub `hlt`s with a clear panic
+banner instead of triple-faulting.
 
 ## Controls
 
@@ -333,26 +432,27 @@ buttons and a "yüklü" badge.
 |10 | Gallery    | Lumen / Nox palette swatches with hex codes                 |
 |11 | Browser    | Mock URL bar + bookmark cards                               |
 |12 | Store      | prg package browser — search, install, uninstall            |
-|13 | About      | Version, Linux integration summary, ATA probe results       |
+|13 | About      | Version, native subsystem summary, ATA probe results        |
 
-## Linux integration
+## Driver source attribution
 
-The `linux/` directory is where every piece of Linux-flavoured code in
-FalconOS lives:
+FalconOS drivers ship as native subsystems with their own names
+(`ATA / 2 disks`, `Keymap: 13 keys`). The `linux/` directory in the
+repo is **source attribution only** — it documents which Linux public
+specifications and clean-room patterns the FalconOS drivers were
+modelled after, so the licence story stays correct:
 
 ```
 linux/
-  README.md             ── what is and isn't ported, with credits
-  uapi.h                ── <linux/types.h>, <linux/ata.h>, <linux/hid.h>
-  ata_pio.c             ── libata-style PIO driver
-  hid_keymap.c          ── PS/2 set-1 → Linux KEY_* table
+  README.md             ── what was modelled and from where, with credits
+  uapi.h                ── clean-room subset of <linux/types.h> et al.
+  ata_pio.c             ── libata-style PIO driver pattern (no copy)
+  hid_keymap.c          ── PS/2 set-1 → keycode table
 ```
 
-Every file has a banner comment explaining the derivation. None of
-them copy Linux source code; the goal is API compatibility so future
-ports of real Linux drivers (e.g. `drivers/net/ethernet/realtek/...`)
-can drop in against `linux/uapi.h` and link against the same
-helpers.
+None of these files copy Linux source code. They are MIT-licensed
+like the rest of FalconOS, and the runtime never advertises itself
+as "Linux"-anything to the user.
 
 ## Architecture (≈ 5 900 LOC)
 
