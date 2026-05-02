@@ -46,10 +46,18 @@ extern fb_t FB;
 u32  gfx_back_w(void);
 u32  gfx_back_h(void);
 
-/* ---- theme system (v5) ---------------------------------------------------- */
-/*  Palette is selected at runtime; call SET.theme = THEME_DARK and the
- *  next frame will render in the "Nox" palette.                            */
-typedef enum { THEME_LIGHT = 0, THEME_DARK = 1 } theme_t;
+/* ---- theme system (FalconOS 1) ------------------------------------------- */
+/*  Palette is selected at runtime; mutate SET.theme and the next frame
+ *  re-renders in the new palette. THEME_LIGHT(0) and THEME_DARK(1) keep
+ *  their v5 numeric values so existing on-disk SET records still load. */
+typedef enum {
+    THEME_LIGHT    = 0,    /* Lumen      - off-white macOS-Big-Sur            */
+    THEME_DARK     = 1,    /* Nox        - dark counterpart                   */
+    THEME_LIQUID   = 2,    /* Liquid     - frosted-glass / aqua / max-blur     */
+    THEME_NORDIC   = 3,    /* Nordic     - cool blue-grey, low-contrast        */
+    THEME_ROSEGOLD = 4,    /* Rose Gold  - warm pink-gold                     */
+    THEME_COUNT
+} theme_t;
 typedef enum {
     ACC_BLUE = 0,
     ACC_PURPLE,

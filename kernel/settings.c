@@ -59,42 +59,47 @@ void settings_init(void)
 }
 
 /* ---- runtime palette ----------------------------------------------------- */
+/* Palette table indexed by theme_t. Roles 0..12 correspond to PAL_BG_TOP ..
+ * PAL_GLASS (see falcon.h). Role 9 (accent) is overridden per-user from
+ * ACCENTS[SET.accent] except in Liquid where the accent is fixed to a
+ * frosted-aqua and in Rose-Gold where it's a warm rose. */
+typedef struct { u32 c[13]; } pal_set_t;
+
+static const pal_set_t THEMES[THEME_COUNT] = {
+    /* THEME_LIGHT — Lumen (default) */
+    { { 0xEAF0F8, 0xC8D5E6, 0xA8BBD3, 0xFFFFFF, 0xD8E1EC, 0xF1F4F9,
+        0x14181F, 0x4F5764, 0xA3ACB7, 0x3070FF, 0xB8CDFF, 0xC4CDD9,
+        0xFFFFFF } },
+    /* THEME_DARK — Nox */
+    { { 0x101418, 0x1B2129, 0x252C36, 0x1F252E, 0x2A3140, 0x171C24,
+        0xE8ECF1, 0xA0A8B5, 0x6F7785, 0x3070FF, 0x2A3D6A, 0x2A3140,
+        0x33405A } },
+    /* THEME_LIQUID — translucent aqua frosted-glass */
+    { { 0xDDE9F4, 0xC2D3E8, 0xB7CFE5, 0xF7FBFF, 0xCBDAEC, 0xEAF1F9,
+        0x10141C, 0x4A5364, 0x9CA6B5, 0x33B5E5, 0xB6E2F4, 0xC9D6E5,
+        0xFFFFFF } },
+    /* THEME_NORDIC — cool blue-grey, low-contrast */
+    { { 0xECEFF4, 0xD8DEE9, 0xC4CBD5, 0xFFFFFF, 0xE5E9F0, 0xF2F4F8,
+        0x2E3440, 0x4C566A, 0x6E7886, 0x5E81AC, 0xA9C0DE, 0xD8DEE9,
+        0xF5F8FB } },
+    /* THEME_ROSEGOLD — warm pink-gold */
+    { { 0xFAF1EE, 0xF1DCD7, 0xE6C2B9, 0xFFFFFF, 0xF7DDD4, 0xFBEDE7,
+        0x3A2A2E, 0x6E5358, 0xA08084, 0xD78E84, 0xF1C8C0, 0xE9D5CE,
+        0xFFFFFF } },
+};
+
 u32 PAL(u8 role)
 {
-    if (SET.theme == THEME_DARK) {
-        switch (role) {
-            case 0:  return DCOL_BG_TOP;
-            case 1:  return DCOL_BG_BOT;
-            case 2:  return DCOL_BG_HINT;
-            case 3:  return DCOL_PANEL;
-            case 4:  return DCOL_PANEL_HI;
-            case 5:  return DCOL_PANEL_DEEP;
-            case 6:  return DCOL_TEXT;
-            case 7:  return DCOL_TEXT_DIM;
-            case 8:  return DCOL_TEXT_FAINT;
-            case 9:  return ACCENTS[SET.accent];
-            case 10: return 0x2A3D6A;            /* dim accent for dark   */
-            case 11: return DCOL_HAIRLINE;
-            case 12: return DCOL_GLASS;
-        }
-    } else {
-        switch (role) {
-            case 0:  return COL_BG_TOP;
-            case 1:  return COL_BG_BOT;
-            case 2:  return COL_BG_HINT;
-            case 3:  return COL_PANEL;
-            case 4:  return COL_PANEL_HI;
-            case 5:  return COL_PANEL_DEEP;
-            case 6:  return COL_TEXT;
-            case 7:  return COL_TEXT_DIM;
-            case 8:  return COL_TEXT_FAINT;
-            case 9:  return ACCENTS[SET.accent];
-            case 10: return COL_ACCENT_DIM;
-            case 11: return COL_HAIRLINE;
-            case 12: return COL_GLASS;
-        }
+    if (role > 12) return 0xFF00FF;
+    theme_t t = SET.theme;
+    if ((u32)t >= THEME_COUNT) t = THEME_LIGHT;
+    /* Role 9 (PAL_ACCENT) is mostly user-tunable, but Liquid and
+     * Rose-Gold pin it for visual identity. */
+    if (role == 9) {
+        if (t == THEME_LIQUID || t == THEME_ROSEGOLD) return THEMES[t].c[9];
+        return ACCENTS[SET.accent];
     }
-    return 0xFF00FF;    /* unreachable: hot pink to flag bugs            */
+    return THEMES[t].c[role];
 }
 
 /* ---- tr/en translation helper -------------------------------------------- */

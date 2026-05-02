@@ -143,14 +143,35 @@ void installer_render(u32 frame)
         case INST_THEME: {
             headline = T("Pick a theme",
                           "Bir tema sec");
-            helptext = T("Light feels macOS-Big-Sur.   Dark is the Nox palette.",
-                          "Acik macOS havasi.   Koyu Nox paleti.");
-            const char *items[2] = {
-                T("Light", "Acik"),
-                T("Dark",  "Koyu"),
+            helptext = T("You can change this any time from Settings.",
+                          "Ayarlardan istedigin zaman degistirebilirsin.");
+            /* 5 themes shipped in the box. Tile width is shrunk so all
+             * five fit on a single row at FHD.                         */
+            const char *items[THEME_COUNT] = {
+                "Lumen", "Nox", "Liquid", "Nordic", "Rose Gold"
             };
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
-            draw_choice_row(cy - 40, items, 2, g_choice);
+            i32 W = (i32)FB.width, pad = 10, pw = 130, n = THEME_COUNT;
+            i32 row_w = n * pw + (n - 1) * pad;
+            i32 x0 = (W - row_w) / 2;
+            i32 y0 = cy - 40;
+            const u32 swatch[THEME_COUNT] = {
+                0xEAF0F8, 0x101418, 0xDDE9F4, 0xECEFF4, 0xFAF1EE
+            };
+            for (i32 i = 0; i < n; i++) {
+                i32 px = x0 + i * (pw + pad);
+                bool active = (i == g_choice);
+                if (active) {
+                    gfx_round_rect_a(px - 3, y0 - 3, pw + 6, 60 + 6, 14, PAL_ACCENT, 60);
+                    gfx_round_rect(px, y0, pw, 60, 12, PAL_ACCENT);
+                    gfx_text_centered(px + pw / 2, y0 + 22, items[i], 0xFFFFFF);
+                } else {
+                    gfx_round_rect_a(px, y0, pw, 60, 12, PAL_PANEL_DEEP, 240);
+                    gfx_round_outline(px, y0, pw, 60, 12, PAL_HAIRLINE);
+                    gfx_round_rect(px + 14, y0 + 22, 16, 16, 6, swatch[i]);
+                    gfx_text(px + 38, y0 + 22, items[i], PAL_TEXT_DIM);
+                }
+            }
             gfx_text_centered(cx, cy + 76, helptext, PAL_TEXT_DIM);
             break;
         }
@@ -371,9 +392,9 @@ void installer_input(i32 key)
         i32 max;
         switch (g_step) {
             case INST_LANG:     max = LANG_COUNT; break;
+            case INST_THEME:    max = THEME_COUNT; break;
             case INST_ACCENT:   max = 5; break;
             case INST_KBD:      max = 3; break;
-            case INST_THEME:
             case INST_USER_MORE:max = 2; break;
             default:            max = 2; break;
         }
@@ -389,7 +410,7 @@ void installer_input(i32 key)
                     else                     SET.kbd_layout = KBD_US;
                     g_step = INST_THEME;   g_choice = SET.theme;        return;
                 case INST_THEME:
-                    SET.theme = (g_choice == 0) ? THEME_LIGHT : THEME_DARK;
+                    SET.theme = (theme_t)g_choice;
                     g_step = INST_ACCENT;  g_choice = SET.accent;       return;
                 case INST_ACCENT:
                     SET.accent = (accent_t)g_choice;

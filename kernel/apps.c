@@ -641,9 +641,13 @@ static void set_input_key(i32 key)
     if (key == KEY_LEFT || key == KEY_RIGHT || key == KEY_ENTER || key == ' ') {
         i32 d = (key == KEY_LEFT) ? -1 : 1;
         switch (set_row) {
-        case SR_THEME:
-            SET.theme = (SET.theme == THEME_LIGHT) ? THEME_DARK : THEME_LIGHT;
+        case SR_THEME: {
+            i32 v = (i32)SET.theme + d;
+            if (v < 0)             v = THEME_COUNT - 1;
+            if (v >= THEME_COUNT)  v = 0;
+            SET.theme = (theme_t)v;
             break;
+        }
         case SR_ACCENT:
             { i32 v = (i32)SET.accent + d;
               if (v < 0)             v = ACC_COUNT - 1;
@@ -734,11 +738,16 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     char val[40];
 
     /* Theme ------------------------------------------------------------ */
-    s_row(sx, sy + SR_THEME * step, sw,
-          T("Theme", "Tema"),
-          SET.theme == THEME_DARK ? T("Dark (Nox)", "Koyu (Nox)")
-                                  : T("Light (Lumen)", "Acik (Lumen)"),
-          set_row == SR_THEME, PAL_TEXT);
+    {
+        const char *theme_names[THEME_COUNT] = {
+            "Lumen (Light)", "Nox (Dark)", "Liquid Glass",
+            "Nordic", "Rose Gold"
+        };
+        s_row(sx, sy + SR_THEME * step, sw,
+              T("Theme", "Tema"),
+              theme_names[SET.theme],
+              set_row == SR_THEME, PAL_TEXT);
+    }
 
     /* Accent ----------------------------------------------------------- */
     {
