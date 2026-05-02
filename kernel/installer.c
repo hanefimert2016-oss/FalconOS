@@ -27,6 +27,7 @@ typedef enum {
     INST_KBD,
     INST_USER_NAME,
     INST_USER_PASS,
+    INST_USER_PASS2,    /* confirm password — must match step 6           */
     INST_USER_MORE,     /* "create another user?" — y/n                   */
     INST_DONE
 } install_step_t;
@@ -38,6 +39,9 @@ static char g_uname[FALCON_NAME_BYTES];
 static i32  g_uname_len = 0;
 static char g_pwd[24];
 static i32  g_pwd_len = 0;
+static char g_pwd2[24];
+static i32  g_pwd2_len = 0;
+static bool g_pwd_mismatch = false;
 
 bool installer_is_done(void) { return g_step == INST_DONE; }
 
@@ -114,8 +118,25 @@ void installer_render(u32 frame)
             headline = "Choose your language  /  Dilini sec  /  Sprache  /  Langue  /  Idioma";
             helptext = "<-/->  switch    Enter  continue";
             const char *items[5] = { "Turkce", "English", "Deutsch", "Francais", "Espanol" };
+            /* Per-language accent dot — a visible "you are here" cue
+             * beyond the highlighted tile. Roughly evokes each flag.   */
+            const u32 lang_dot[5] = {
+                0xE30A17,   /* TR  red                                  */
+                0x012169,   /* EN  navy                                 */
+                0xFFCC00,   /* DE  gold                                 */
+                0x0055A4,   /* FR  blue                                 */
+                0xC60B1E,   /* ES  red                                  */
+            };
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
             draw_choice_row(cy - 40, items, 5, g_choice);
+            /* paint a 6 px coloured pip on top of every tile          */
+            i32 W = (i32)FB.width, pad = 14, pw = 180, n = 5;
+            i32 row_w = n * pw + (n - 1) * pad;
+            i32 x0 = (W - row_w) / 2;
+            for (i32 i = 0; i < n; i++) {
+                i32 px = x0 + i * (pw + pad);
+                gfx_round_rect(px + 12, cy - 40 + 8, 8, 8, 4, lang_dot[i]);
+            }
             gfx_text_centered(cx, cy + 76, helptext, PAL_TEXT_DIM);
             break;
         }
@@ -196,8 +217,8 @@ void installer_render(u32 frame)
         case INST_USER_PASS: {
             headline = T("Set a password",
                           "Bir parola belirle");
-            helptext = T("Hashed with PBKDF2-HMAC-SHA256, 100000 rounds + salt.",
-                          "PBKDF2-HMAC-SHA256, 100000 tur + salt ile hash.");
+            helptext = T("Step 1 of 2.  You'll confirm this on the next screen.",
+                          "Adim 1/2.  Sonraki ekranda tekrar yazacaksin.");
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
 
             char who[40]; k_strcpy(who, T("User: ", "Kullanici: "));
@@ -243,6 +264,46 @@ void installer_render(u32 frame)
             gfx_text_centered(cx, cy + 76, helptext, PAL_TEXT_DIM);
             break;
         }
+        case INST_USER_PASS2: {
+            headline = T("Confirm your password",
+                          "Parolani onayla");
+            helptext = g_pwd_mismatch
+                ? T("Passwords did not match. Try again.",
+                    "Parolalar eslesmedi. Tekrar dene.")
+                : T("Step 2 of 2.  Type the same password again.",
+                    "Adim 2/2.  Ayni parolayi tekrar yaz.");
+            gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
+
+            char who[40]; k_strcpy(who, T("User: ", "Kullanici: "));
+            k_strcat(who, g_uname);
+            gfx_text_centered(cx, cy - 78, who, PAL_TEXT_DIM);
+
+            i32 fw = 420, fh = 56;
+            i32 fx = cx - fw / 2, fy = cy - 18;
+            gfx_round_rect_a(fx, fy, fw, fh, 14, PAL_PANEL, 240);
+            u32 outline = g_pwd_mismatch ? COL_ERR : PAL_ACCENT;
+            gfx_round_outline(fx, fy, fw, fh, 14, outline);
+            char masked[24]; mask_password(masked, g_pwd2_len);
+            gfx_text(fx + 16, fy + 20, masked, PAL_TEXT);
+            i32 caret_x = fx + 16 + gfx_text_width(masked);
+            if ((frame / 30) & 1) gfx_rect(caret_x, fy + 16, 2, 22, outline);
+
+            /* live match indicator — green check when prefixes agree */
+            if (g_pwd2_len > 0) {
+                bool prefix_ok = (g_pwd2_len <= g_pwd_len);
+                for (i32 i = 0; i < g_pwd2_len && prefix_ok; i++)
+                    if (g_pwd[i] != g_pwd2[i]) prefix_ok = false;
+                u32 col = prefix_ok ? COL_OK : COL_ERR;
+                const char *lab = prefix_ok
+                    ? T("matches", "esit")
+                    : T("does not match", "eslesmiyor");
+                gfx_text(fx + fw - 130, fy + 20, lab, col);
+            }
+
+            gfx_text_centered(cx, cy + 76, helptext,
+                              g_pwd_mismatch ? COL_ERR : PAL_TEXT_DIM);
+            break;
+        }
         case INST_USER_MORE: {
             char hbuf[80];
             k_strcpy(hbuf, T("Add another user?  ", "Baska kullanici ekle?  "));
@@ -263,10 +324,10 @@ void installer_render(u32 frame)
         case INST_DONE: break;
     }
 
-    /* visual progress: 7 dots                                                */
+    /* visual progress: 8 dots (extra one for the password-confirm step)     */
     i32 step_idx = (i32)g_step;
-    if (step_idx > 6) step_idx = 6;
-    draw_progress(cx, cy + 124, step_idx, 7);
+    if (step_idx > 7) step_idx = 7;
+    draw_progress(cx, cy + 124, step_idx, 8);
 
     gfx_text_centered(cx, H - 30, "FalconOS 1  -  bare-metal x86_64", PAL_TEXT_FAINT);
 }
@@ -370,6 +431,38 @@ void installer_input(i32 key)
         if (key == KEY_BACKSPACE) { if (g_pwd_len) g_pwd[--g_pwd_len] = 0; return; }
         if (key == KEY_ENTER) {
             g_pwd[g_pwd_len] = 0;
+            /* Move to confirmation step instead of committing.        */
+            g_pwd2_len = 0;
+            g_pwd2[0]  = 0;
+            g_pwd_mismatch = false;
+            g_step = INST_USER_PASS2;
+            return;
+        }
+        if (key >= 0x20 && key < 0x7F && g_pwd_len < 23) {
+            g_pwd[g_pwd_len++] = (char)key;
+            g_pwd[g_pwd_len]   = 0;
+        }
+        return;
+    }
+    if (g_step == INST_USER_PASS2) {
+        if (key == KEY_BACKSPACE) { if (g_pwd2_len) g_pwd2[--g_pwd2_len] = 0; return; }
+        if (key == KEY_ENTER) {
+            g_pwd2[g_pwd2_len] = 0;
+            bool match = (g_pwd_len == g_pwd2_len);
+            for (i32 i = 0; i < g_pwd_len && match; i++)
+                if (g_pwd[i] != g_pwd2[i]) match = false;
+            if (!match) {
+                /* mismatch — wipe both buffers and bounce back to the
+                 * original password step with a red error banner.    */
+                g_pwd_mismatch = true;
+                k_explicit_bzero(g_pwd,  sizeof g_pwd);  g_pwd_len  = 0;
+                k_explicit_bzero(g_pwd2, sizeof g_pwd2); g_pwd2_len = 0;
+                g_step = INST_USER_PASS;
+                return;
+            }
+            /* match — wipe the confirm buffer and commit.            */
+            k_explicit_bzero(g_pwd2, sizeof g_pwd2); g_pwd2_len = 0;
+            g_pwd_mismatch = false;
             commit_user();
             if (SET.user_count >= FALCON_MAX_USERS) {
                 SET.installed   = true;
@@ -382,9 +475,9 @@ void installer_input(i32 key)
             }
             return;
         }
-        if (key >= 0x20 && key < 0x7F && g_pwd_len < 23) {
-            g_pwd[g_pwd_len++] = (char)key;
-            g_pwd[g_pwd_len]   = 0;
+        if (key >= 0x20 && key < 0x7F && g_pwd2_len < 23) {
+            g_pwd2[g_pwd2_len++] = (char)key;
+            g_pwd2[g_pwd2_len]   = 0;
         }
         return;
     }
