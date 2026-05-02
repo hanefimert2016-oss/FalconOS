@@ -1,5 +1,5 @@
 /* =============================================================================
- *  FalconOS — Personal Kernel UI (v5.3 "Continuum")
+ *  FalconOS — Personal Kernel UI (FalconOS 1)
  * -----------------------------------------------------------------------------
  *  v5 desktop layout (tema-aware Lumen *and* Nox):
  *    - top: 30px frosted menu bar  (handled in main.c)

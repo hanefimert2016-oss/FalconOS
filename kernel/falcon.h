@@ -1,5 +1,5 @@
 /* =============================================================================
- *  FalconOS — public kernel header  (v5.3 "Continuum")
+ *  FalconOS — public kernel header  (FalconOS 1)
  * =============================================================================
  *  All public types, theme palette functions and module-level entry points
  *  live here so the rest of the kernel can stay surgically small.
@@ -347,7 +347,7 @@ typedef struct {
     u8     hash[FALCON_HASH_BYTES];
     u8     no_password;                   /* 1 = empty pwd, hash unused     */
     accent_t accent;                      /* per-user accent for avatar    */
-    /* v5.3 — security audit / brute-force resistance.  Persistent so a
+    /* FalconOS 1 — security audit / brute-force resistance.  Persistent so a
      * reboot does not reset the throttle window mid-attack.            */
     u32    failed_attempts;               /* since last successful unlock   */
     u32    last_login_uptime_ms;          /* PIT ms at successful unlock    */
@@ -430,7 +430,7 @@ void hex_encode(const u8 *in, u32 n, char *out);   /* out >= n*2+1 chars   */
 
 /* ---- disk persistence: FalconFS superblock (kernel/diskdb.c) ------------- */
 #define FALCONFS_MAGIC      0x46414C43   /* 'FALC' */
-#define FALCONFS_VERSION    2            /* v5.3: per-user audit fields    */
+#define FALCONFS_VERSION    2            /* FalconOS 1: audit + theme rec   */
 #define FALCONFS_SECTOR     0            /* LBA0 of master ATA device      */
 
 void diskdb_load(void);          /* called from settings_init()             */

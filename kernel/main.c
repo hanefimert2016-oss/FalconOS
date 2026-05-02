@@ -1,5 +1,5 @@
 /* =============================================================================
- *  FalconOS — kernel entry & dispatcher  (v5.3 "Continuum", x86_64 long mode)
+ *  FalconOS — kernel entry & dispatcher  (FalconOS 1, x86_64 long mode)
  * -----------------------------------------------------------------------------
  *  Boot stub (boot/multiboot2.asm) flips the CPU into long mode and tail-calls
  *  `long_start` with the multiboot magic in EDI and the info-pointer in ESI
@@ -173,7 +173,7 @@ static void boot_splash(void)
         gfx_circle_a(cx, cy, r - 36, PAL_ACCENT,    alpha);
         gfx_text_centered(cx, cy + r + 22, "FalconOS",         PAL_TEXT);
         gfx_text_centered(cx, cy + r + 44,
-            T("starting Continuum", "Continuum baslatiliyor"),   PAL_TEXT_DIM);
+            T("starting FalconOS 1", "FalconOS 1 baslatiliyor"),   PAL_TEXT_DIM);
         gfx_text_centered(cx, cy + r + 64, "x86_64 long mode", PAL_TEXT_FAINT);
 
         gfx_present();

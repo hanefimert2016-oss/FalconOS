@@ -33,7 +33,7 @@ void hid_keymap_dump(char *buf, u32 max)
 {
     char num[16];
     u32  pos = 0;
-    const char *prefix = "PS/2 set1 -> Linux keycodes loaded: ";
+    const char *prefix = "Keymap: ";
     while (*prefix && pos + 1 < max) buf[pos++] = *prefix++;
 
     i32 mapped = 0;
@@ -41,7 +41,7 @@ void hid_keymap_dump(char *buf, u32 max)
     k_itoa((u32)mapped, num, 10);
     for (i32 i = 0; num[i] && pos + 1 < max; i++) buf[pos++] = num[i];
 
-    const char *suffix = " entries (Linux input-subsystem layout)";
+    const char *suffix = " keys (PS/2 set 1, FalconOS native)";
     while (*suffix && pos + 1 < max) buf[pos++] = *suffix++;
     buf[pos] = 0;
 }

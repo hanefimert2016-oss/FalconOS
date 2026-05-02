@@ -193,6 +193,6 @@ const char *linux_compat_summary(void)
     char num[16];
     k_strcpy(buf, "ATA: ");
     k_itoa((u32)N_DEV, num, 10); k_strcat(buf, num);
-    k_strcat(buf, "/2 devs, libata-style PIO ready");
+    k_strcat(buf, "/2 disks, FalconOS PIO driver");
     return buf;
 }

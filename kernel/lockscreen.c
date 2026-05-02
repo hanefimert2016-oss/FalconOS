@@ -259,7 +259,7 @@ void lockscreen_render(u32 frame)
 
     /* ---- footer hint ---------------------------------------------------- */
     gfx_text_centered(cx, H - 26,
-        "FalconOS v5.3 Continuum  -  bare-metal x86_64", PAL_TEXT_FAINT);
+        "FalconOS 1  -  bare-metal x86_64", PAL_TEXT_FAINT);
 }
 
 /* --------------------------------------------------------------------------- */

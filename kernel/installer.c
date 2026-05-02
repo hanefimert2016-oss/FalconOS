@@ -268,7 +268,7 @@ void installer_render(u32 frame)
     if (step_idx > 6) step_idx = 6;
     draw_progress(cx, cy + 124, step_idx, 7);
 
-    gfx_text_centered(cx, H - 30, "FalconOS v5.3 Continuum  -  bare-metal x86_64", PAL_TEXT_FAINT);
+    gfx_text_centered(cx, H - 30, "FalconOS 1  -  bare-metal x86_64", PAL_TEXT_FAINT);
 }
 
 /* --------------------------------------------------------------------------- */
