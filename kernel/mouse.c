@@ -139,6 +139,21 @@ bool mouse_consume_click(void)
     return e;
 }
 
+/* Peek at the click edge without consuming it (used by the menu-bar power
+ * button so the click can fall through to the rest of the pipeline if the
+ * user clicked elsewhere).                                                  */
+bool mouse_peek_click(void)
+{
+    return m_l_edge;
+}
+
+/* Re-publish a click edge — used when an early consumer (e.g. the power
+ * glyph hit-test) decides the click should still flow downstream.         */
+void mouse_inject_click(void)
+{
+    m_l_edge = true;
+}
+
 bool mouse_consume_right(void)
 {
     bool e = m_r_edge;

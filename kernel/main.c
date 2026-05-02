@@ -105,8 +105,8 @@ static void draw_menu_bar(void)
 
     /* hint pill (centered) */
     {
-        const char *hint = T("F1 kernel    F2 Launchpad    Esc closes",
-                             "F1 cekirdek    F2 Launchpad    Esc kapatir");
+        const char *hint = T("F1 kernel    F2 Launchpad    F12 Power    Esc closes",
+                             "F1 cekirdek    F2 Launchpad    F12 Guc    Esc kapatir");
         i32 hw = gfx_text_width(hint) + 28;
         i32 hx = (W - hw) / 2;
         gfx_round_rect_a(hx, 4, hw, H - 8, 11, PAL_PANEL_DEEP, 255);
@@ -139,6 +139,42 @@ static void draw_menu_bar(void)
     const char *lang = (SET.lang < LANG_COUNT) ? codes[SET.lang] : "EN";
     gfx_round_rect_a(W - cw - 56, 6, 28, 18, 9, PAL_PANEL_DEEP, 255);
     gfx_text(W - cw - 48, 8, lang, PAL_ACCENT);
+
+    /* power glyph at the far right (click to open Power options).        */
+    i32 px = W - cw - 88;
+    i32 py = H / 2;
+    gfx_circle_outline(px, py, 9, COL_ERR);
+    gfx_circle_outline(px, py, 8, COL_ERR);
+    gfx_rect(px - 1, py - 11, 3, 7, COL_ERR);
+    gfx_rect(px - 1, py - 11, 3, 3, PAL_PANEL); /* knock out the top */
+}
+
+/* Hit-test for the power glyph in the menu bar; returns true if (mx,my) is
+ * within the small clickable circle.                                       */
+static bool menu_bar_power_hit(i32 mx, i32 my)
+{
+    if (my < 0 || my > 30) return false;
+    i32 W = (i32)FB.width;
+    /* Re-derive the same x used in draw_menu_bar — must stay in sync.    */
+    rtc_time_t now; rtc_local(&now);
+    char clk[24]; char tmp[8];
+    k_strcpy(clk, "");
+    k_itoa(now.day, tmp, 10);
+    if (now.day < 10) k_strcat(clk, "0");
+    k_strcat(clk, tmp);
+    k_strcat(clk, " ");
+    k_strcat(clk, loc_month_short(now.month));
+    k_strcat(clk, "  ");
+    k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_strcat(clk, ":");
+    k_itoa(now.min,  tmp, 10); if (now.min  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_strcat(clk, ":");
+    k_itoa(now.sec,  tmp, 10); if (now.sec  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    i32 cw = gfx_text_width(clk);
+    i32 px = W - cw - 88;
+    i32 py = 15;
+    i32 dx = mx - px, dy = my - py;
+    return (dx * dx + dy * dy) <= 16 * 16;
 }
 
 /* --------------------------------------------------------------------------- */
@@ -268,8 +304,20 @@ void long_start(u64 magic, u64 info_ptr)
         if (g_panic) { render_panic_overlay(); gfx_present();
                        for (;;) __asm__ volatile ("hlt"); }
 
+        /* Sign out / Sleep from the power menu set lockscreen back to
+         * locked — re-enter the lockscreen modal until unlocked again.   */
+        if (!lockscreen_is_unlocked()) {
+            if (apps_active() >= 0) apps_close();
+            if (launchpad_is_open()) launchpad_close();
+            power_menu_close();
+            modal_loop(lockscreen_is_unlocked, lockscreen_render, lockscreen_input);
+            last = g_ticks;
+        }
+
         i32 k;
         while ((k = kbd_poll()) != -1) {
+            /* Power menu absorbs all keys while open (Esc / arrows / Enter). */
+            if (power_menu_is_open()) { power_menu_handle_key(k); continue; }
             if (k == KEY_F1) {
                 g_mode = (g_mode == MODE_PERSONAL) ? MODE_DEVELOPER : MODE_PERSONAL;
                 if (launchpad_is_open()) launchpad_close();
@@ -280,12 +328,33 @@ void long_start(u64 magic, u64 info_ptr)
                 else                     launchpad_open();
                 continue;
             }
+            if (k == KEY_F12) {
+                if (launchpad_is_open()) launchpad_close();
+                power_menu_open();
+                continue;
+            }
             if (launchpad_is_open()) {
                 launchpad_input(k);
                 continue;
             }
             if (g_mode == MODE_PERSONAL)  mode_personal_input(k);
             else                          mode_developer_input(k);
+        }
+
+        /* Mouse: route a fresh click to the power-menu first; if the click
+         * was on the menubar power glyph, open the menu and consume it.   */
+        {
+            i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
+            (void)ml;
+            if (power_menu_is_open()) {
+                bool edge = mouse_consume_click();
+                (void)power_menu_handle_mouse(mx, my, edge);
+            } else if (mouse_peek_click() && menu_bar_power_hit(mx, my)) {
+                (void)mouse_consume_click();   /* swallow */
+                power_menu_open();
+            }
+            /* else: leave the click in the queue; personal/dev paths will
+             * consume it themselves (desktop pins, WM, etc.).             */
         }
 
         gfx_wallpaper();
@@ -296,6 +365,7 @@ void long_start(u64 magic, u64 info_ptr)
         if (launchpad_is_open()) launchpad_render(g_tick);
 
         draw_menu_bar();
+        if (power_menu_is_open()) power_menu_render(g_tick);
         gfx_apply_viewport();
         draw_cursor();
 

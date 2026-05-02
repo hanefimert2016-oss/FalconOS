@@ -182,6 +182,7 @@ i32  kbd_poll(void);
 void kbd_set_focus_text(bool b);
 #define KEY_F1         0x101
 #define KEY_F2         0x102
+#define KEY_F12        0x10C
 #define KEY_F3         0x103
 #define KEY_F4         0x104
 #define KEY_ESC        0x01B
@@ -209,6 +210,8 @@ u32  kbd_mod_state(void);
 void mouse_init(void);
 void mouse_get(i32 *x, i32 *y, bool *left);
 bool mouse_consume_click(void);
+bool mouse_peek_click(void);
+void mouse_inject_click(void);
 bool mouse_consume_right(void);
 bool mouse_consume_double(void);
 
@@ -337,6 +340,14 @@ void lockscreen_render(u32 frame);
 void lockscreen_input(i32 key);
 bool lockscreen_is_unlocked(void);
 void lockscreen_lock(void);
+
+/* ---- Power menu (FalconOS 1) --------------------------------------------- */
+void power_menu_open(void);
+void power_menu_close(void);
+bool power_menu_is_open(void);
+void power_menu_render(u32 frame);
+void power_menu_handle_key(i32 key);
+bool power_menu_handle_mouse(i32 mx, i32 my, bool click_edge);
 
 /* ---- multi-user database (v5) -------------------------------------------- */
 /*  Up to FALCON_MAX_USERS accounts.  The first one created in the installer
