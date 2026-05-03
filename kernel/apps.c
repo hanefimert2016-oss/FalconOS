@@ -1419,21 +1419,26 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
      * reports retries or hard failures.                              */
     {
         u32 ks, kk, kd; kbd_stats(&ks, &kk, &kd);
+        u32 ms, md, mc; mouse_stats(&ms, &md, &mc);
         u32 ar, aw, art, af; ata_stats(&ar, &aw, &art, &af);
 
-        char dbuf[80];
+        char dbuf[120];
         char tmp[16];
+        /* K: keys (drops) | M: clicks (drops) | D: io (retries / FAIL)   */
         k_strcpy(dbuf, "K:");
         k_itoa(kk, tmp, 10); k_strcat(dbuf, tmp);
         if (kd) { k_strcat(dbuf, " drop "); k_itoa(kd, tmp, 10); k_strcat(dbuf, tmp); }
+        k_strcat(dbuf, "  M:");
+        k_itoa(mc, tmp, 10); k_strcat(dbuf, tmp);
+        if (md) { k_strcat(dbuf, " drop "); k_itoa(md, tmp, 10); k_strcat(dbuf, tmp); }
         k_strcat(dbuf, "  D:");
         k_itoa(ar + aw, tmp, 10); k_strcat(dbuf, tmp);
         if (art) { k_strcat(dbuf, " retry "); k_itoa(art, tmp, 10); k_strcat(dbuf, tmp); }
         if (af)  { k_strcat(dbuf, " FAIL ");  k_itoa(af,  tmp, 10); k_strcat(dbuf, tmp); }
 
         u32 status_color = COL_OK;
-        if (kd || art) status_color = COL_WARN;
-        if (af)        status_color = COL_ERR;
+        if (kd || md || art) status_color = COL_WARN;
+        if (af)              status_color = COL_ERR;
 
         s_row(sx, sy + SR_DRIVERS * step, sw,
               T("Drivers", "Suruculer"), dbuf,

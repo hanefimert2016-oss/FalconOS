@@ -230,6 +230,8 @@ void mouse_inject_click(void);
 void mouse_drain(void);
 bool mouse_consume_right(void);
 bool mouse_consume_double(void);
+/* Driver telemetry — packet seen / dropped (desync or overflow) / clicks. */
+void mouse_stats(u32 *seen, u32 *dropped, u32 *clicks);
 
 /* ---- timer / clock -------------------------------------------------------- */
 void pit_init(void);

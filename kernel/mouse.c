@@ -20,6 +20,12 @@ static volatile bool m_r_edge = false;
 static volatile bool m_l_double_edge = false;
 static volatile u32  m_last_click_ms = 0;
 
+/* Driver telemetry — surfaced in Settings ▸ Suruculer alongside the
+ * keyboard / disk counters so we have one glance-able health view.    */
+static volatile u32  m_pkt_count   = 0;
+static volatile u32  m_pkt_dropped = 0;
+static volatile u32  m_clicks      = 0;
+
 static u8 pkt[3];
 static i32 cyc = 0;
 
@@ -85,14 +91,18 @@ void mouse_irq(void)
     if (!(status & 1) || !(status & 0x20)) return;    /* not mouse data */
     u8 b = inb(PS2_DATA);
 
-    if (cyc == 0 && !(b & 0x08)) return;              /* desync — drop */
+    if (cyc == 0 && !(b & 0x08)) {                     /* desync — drop */
+        m_pkt_dropped++;
+        return;
+    }
     pkt[cyc++] = b;
     if (cyc < 3) return;
     cyc = 0;
 
     /* Drop packets the controller marks as overflow rather than letting
      * a stale 9th bit cause the cursor to jump across the screen.       */
-    if (pkt[0] & 0xC0) return;
+    if (pkt[0] & 0xC0) { m_pkt_dropped++; return; }
+    m_pkt_count++;
 
     /* Proper 9-bit sign extension: byte 0 carries the sign bits for the
      * deltas, and bytes 1/2 carry the lower 8 bits. The raw cast to i8
@@ -104,6 +114,7 @@ void mouse_irq(void)
     bool rn = (pkt[0] & 2) != 0;
     if (ln && !m_l) {
         m_l_edge = true;
+        m_clicks++;
         u32 now = pit_ms();
         if (now - m_last_click_ms < DOUBLE_CLICK_MS) m_l_double_edge = true;
         m_last_click_ms = now;
@@ -169,4 +180,13 @@ bool mouse_consume_right(void)
     bool e = m_r_edge;
     m_r_edge = false;
     return e;
+}
+
+/* Driver telemetry getters — settings.c renders these on the live
+ * Suruculer health row.                                                */
+void mouse_stats(u32 *seen, u32 *dropped, u32 *clicks)
+{
+    if (seen)    *seen    = m_pkt_count;
+    if (dropped) *dropped = m_pkt_dropped;
+    if (clicks)  *clicks  = m_clicks;
 }
