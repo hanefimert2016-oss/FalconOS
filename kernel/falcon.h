@@ -320,6 +320,15 @@ void launchpad_render(u32 frame);
 void launchpad_input(i32 key);
 i32  launchpad_cursor(void);
 
+/* ---- Help panel (slides in from the right, FalconOS 1) ------------------- */
+void helppanel_open(void);
+void helppanel_close(void);
+bool helppanel_is_open(void);
+void helppanel_render(u32 frame);
+bool helppanel_handle_key(i32 key);                    /* true = consumed */
+bool helppanel_handle_mouse(i32 mx, i32 my, bool click);
+bool menu_bar_help_hit(i32 mx, i32 my);                /* exposed for main */
+
 /* ---- desktop widgets + shortcuts (v5) ------------------------------------ */
 void widgets_render(u32 frame);
 void desktop_pins_render(u32 frame);
@@ -415,6 +424,11 @@ typedef struct {
      * primary IDE controller's master/slave enumeration produced by
      * linux/ata_pio.c.  diskdb_save() writes into this disk.          */
     i32         install_disk;
+    /* FalconOS 1 — sliding Help panel.  Auto-opens on the very first
+     * desktop session so a newcomer immediately sees the keyboard /
+     * mouse / window-management cheat-sheet, then never again unless
+     * the user clicks the ? glyph in the menu bar.                    */
+    bool        help_seen;
 } settings_t;
 
 extern settings_t SET;

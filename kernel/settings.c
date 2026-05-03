@@ -55,6 +55,8 @@ void settings_init(void)
      * "RAM only".  diskdb_load() may overwrite this from the
      * superblock if the saved settings already had a target.      */
     SET.install_disk  = -1;
+    /* FalconOS 1 — Help drawer; auto-opens on first desktop session. */
+    SET.help_seen     = false;
 
     /* Probe disk and try to restore the entire settings_t from LBA0. If a
      * superblock with matching magic+version+checksum is found, SET is

@@ -147,6 +147,13 @@ static void draw_menu_bar(void)
     gfx_circle_outline(px, py, 8, COL_ERR);
     gfx_rect(px - 1, py - 11, 3, 7, COL_ERR);
     gfx_rect(px - 1, py - 11, 3, 3, PAL_PANEL); /* knock out the top */
+
+    /* "?" help glyph — sits 26 px left of the power glyph, opens the
+     * sliding Help drawer.  Subtle outline so it doesn't compete with
+     * the power button visually.                                     */
+    i32 hpx = W - cw - 88 - 28;
+    gfx_circle_outline(hpx, py, 9, PAL_TEXT_DIM);
+    gfx_text_centered(hpx + 1, py - 7, "?", PAL_TEXT_DIM);
 }
 
 /* Hit-test for the power glyph in the menu bar; returns true if (mx,my) is
@@ -175,6 +182,32 @@ static bool menu_bar_power_hit(i32 mx, i32 my)
     i32 py = 15;
     i32 dx = mx - px, dy = my - py;
     return (dx * dx + dy * dy) <= 16 * 16;
+}
+
+/* Same shape, 28 px to the left — the menu-bar "?" help glyph.        */
+static bool main_help_glyph_hit(i32 mx, i32 my)
+{
+    if (my < 0 || my > 30) return false;
+    i32 W = (i32)FB.width;
+    rtc_time_t now; rtc_local(&now);
+    char clk[24]; char tmp[8];
+    k_strcpy(clk, "");
+    k_itoa(now.day, tmp, 10);
+    if (now.day < 10) k_strcat(clk, "0");
+    k_strcat(clk, tmp);
+    k_strcat(clk, " ");
+    k_strcat(clk, loc_month_short(now.month));
+    k_strcat(clk, "  ");
+    k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_strcat(clk, ":");
+    k_itoa(now.min,  tmp, 10); if (now.min  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_strcat(clk, ":");
+    k_itoa(now.sec,  tmp, 10); if (now.sec  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    i32 cw = gfx_text_width(clk);
+    i32 hpx = W - cw - 88 - 28;
+    i32 hpy = 15;
+    i32 dx = mx - hpx, dy = my - hpy;
+    return (dx * dx + dy * dy) <= 14 * 14;
 }
 
 /* --------------------------------------------------------------------------- */
@@ -306,6 +339,12 @@ void long_start(u64 magic, u64 info_ptr)
     /* Same for the lockscreen → desktop handoff.                          */
     kbd_drain(); mouse_drain();
 
+    /* First time the user reaches the desktop, slide the Help drawer
+     * open automatically so they discover the F1/F2/F12 shortcuts and
+     * mouse / window gestures immediately.  diskdb_save() in
+     * helppanel_handle_*() flips SET.help_seen so it stays dismissed.  */
+    if (!SET.help_seen) helppanel_open();
+
     /* main loop: paced to PIT — wait for at least 1 tick before next frame */
     u32 last = g_ticks;
     for (;;) {
@@ -328,6 +367,11 @@ void long_start(u64 magic, u64 info_ptr)
         while ((k = kbd_poll()) != -1) {
             /* Power menu absorbs all keys while open (Esc / arrows / Enter). */
             if (power_menu_is_open()) { power_menu_handle_key(k); continue; }
+            /* Help drawer absorbs everything except F-keys so the user
+             * can still reach Power / Launchpad / kernel toggle from it. */
+            if (helppanel_is_open() && k != KEY_F1 && k != KEY_F2 && k != KEY_F12) {
+                helppanel_handle_key(k); continue;
+            }
             if (k == KEY_F1) {
                 g_mode = (g_mode == MODE_PERSONAL) ? MODE_DEVELOPER : MODE_PERSONAL;
                 if (launchpad_is_open()) launchpad_close();
@@ -351,8 +395,7 @@ void long_start(u64 magic, u64 info_ptr)
             else                          mode_developer_input(k);
         }
 
-        /* Mouse: route a fresh click to the power-menu first; if the click
-         * was on the menubar power glyph, open the menu and consume it.   */
+        /* Mouse: power menu > help drawer > menubar glyphs > desktop.    */
         {
             i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
             (void)ml;
@@ -362,6 +405,13 @@ void long_start(u64 magic, u64 info_ptr)
             } else if (mouse_peek_click() && menu_bar_power_hit(mx, my)) {
                 (void)mouse_consume_click();   /* swallow */
                 power_menu_open();
+            } else if (mouse_peek_click() && main_help_glyph_hit(mx, my)) {
+                (void)mouse_consume_click();
+                if (helppanel_is_open()) helppanel_close();
+                else                     helppanel_open();
+            } else if (helppanel_is_open()) {
+                bool edge = mouse_consume_click();
+                (void)helppanel_handle_mouse(mx, my, edge);
             }
             /* else: leave the click in the queue; personal/dev paths will
              * consume it themselves (desktop pins, WM, etc.).             */
@@ -375,6 +425,7 @@ void long_start(u64 magic, u64 info_ptr)
         if (launchpad_is_open()) launchpad_render(g_tick);
 
         draw_menu_bar();
+        helppanel_render(g_tick);                /* slides in/out      */
         if (power_menu_is_open()) power_menu_render(g_tick);
         gfx_apply_viewport();
         draw_cursor();

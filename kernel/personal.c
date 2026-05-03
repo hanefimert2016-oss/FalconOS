@@ -178,6 +178,11 @@ static void draw_dock(void)
  *  never reappears.                                                       */
 static void draw_welcome_banner(void)
 {
+    /* Superseded by the sliding Help drawer (kernel/help.c) — that one
+     * auto-opens on the first desktop session and is reopenable any
+     * time from the menu-bar "?" glyph, so this central modal is no
+     * longer drawn even when SET.welcome_shown is false.            */
+    return;
     if (SET.welcome_shown) return;
     if (!SET.installed)    return;   /* installer is still active           */
 
