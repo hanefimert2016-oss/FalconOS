@@ -1836,12 +1836,19 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
 
     if (!click_edge) return false;
 
-    /* traffic lights live at title-bar y ± 12px, x within radius 9 */
+    /* traffic lights live at title-bar y ± 10px, x within radius 9.
+     *   red    → close (×)
+     *   yellow → recentre the window on the screen (-)  - poor man's
+     *            "minimise" until we have a proper dock-stash flow.
+     *   green  → toggle maximised (+)                                  */
     i32 ty = wy + 18;
     if (my >= ty - 10 && my <= ty + 10) {
-        if (mx >= wx + 9  && mx <= wx + 27) { apps_close(); return true; }      /* red */
-        if (mx >= wx + 29 && mx <= wx + 47) { apps_close(); return true; }      /* yellow → minimise (close for now) */
-        if (mx >= wx + 49 && mx <= wx + 67) { wm_max = !wm_max; return true; }  /* green → maximise toggle */
+        if (mx >= wx + 9  && mx <= wx + 27) { apps_close(); return true; }
+        if (mx >= wx + 29 && mx <= wx + 47) {
+            wm_dx = 0; wm_dy = 0;          /* recentre */
+            return true;
+        }
+        if (mx >= wx + 49 && mx <= wx + 67) { wm_max = !wm_max; return true; }
     }
 
     /* resize handle: 18×18 square at the bottom-right, only visible
@@ -1912,10 +1919,41 @@ void apps_render_active(u32 frame)
     }
     gfx_round_outline(wx, wy, ww, wh, 18, PAL_HAIRLINE);
 
-    /* title bar */
-    gfx_circle(wx + 18,  wy + 18, 7, COL_ERR);
-    gfx_circle(wx + 38,  wy + 18, 7, COL_WARN);
-    gfx_circle(wx + 58,  wy + 18, 7, COL_OK);
+    /* title bar — macOS-spec traffic lights on the left.
+     *   x+18  red    close       (#FF5F57)
+     *   x+38  yellow minimise/   (#FEBC2E)  — we use it as "centre"
+     *   x+58  green  maximise    (#28C840)
+     *
+     * Each light is rendered as a sphere: inner disc + soft top
+     * highlight + thin dark outline.  When the cursor is over the
+     * traffic-light cluster, the hover glyph (× / − / +) is drawn
+     * inside its circle — same as Big Sur.                          */
+    {
+        i32 mx, my; bool ml;
+        mouse_get(&mx, &my, &ml);
+        bool hover_cluster =
+            (my >= wy +  8 && my <= wy + 28 &&
+             mx >= wx +  8 && mx <= wx + 68);
+
+        const i32   LX[3]   = { wx + 18, wx + 38, wx + 58 };
+        const u32   FILL[3] = { 0xFF5F57u, 0xFEBC2Eu, 0x28C840u };
+        const u32   RIM[3]  = { 0xCB4B43u, 0xC79624u, 0x21A434u };
+        const char *GLYPH[3]= { "x", "-", "+" };
+
+        for (i32 b = 0; b < 3; b++) {
+            gfx_circle(LX[b], wy + 18, 7, FILL[b]);
+            /* faint inner highlight on top half so the disc reads as
+             * a sphere lit from above (the macOS look).              */
+            gfx_circle_a(LX[b], wy + 16, 4, 0xFFFFFFu, 90);
+            /* 1-px outer rim — slightly darker than the fill         */
+            gfx_circle_outline(LX[b], wy + 18, 7, RIM[b]);
+
+            if (hover_cluster) {
+                gfx_text_centered(LX[b], wy + 12, GLYPH[b], 0x202020u);
+            }
+        }
+    }
+    /* app-tint pip on the right keeps the chrome symmetric */
     gfx_circle(wx + ww - 26, wy + 18, 8, a->tint);
     gfx_text_centered(wx + ww / 2, wy + 12, a->name, PAL_TEXT_DIM);
 
