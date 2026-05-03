@@ -80,9 +80,11 @@ static const pal_set_t THEMES[THEME_COUNT] = {
     { { 0x101418, 0x1B2129, 0x252C36, 0x1F252E, 0x2A3140, 0x171C24,
         0xE8ECF1, 0xA0A8B5, 0x6F7785, 0x3070FF, 0x2A3D6A, 0x2A3140,
         0x33405A } },
-    /* THEME_LIQUID — translucent aqua frosted-glass */
-    { { 0xDDE9F4, 0xC2D3E8, 0xB7CFE5, 0xF7FBFF, 0xCBDAEC, 0xEAF1F9,
-        0x10141C, 0x4A5364, 0x9CA6B5, 0x33B5E5, 0xB6E2F4, 0xC9D6E5,
+    /* THEME_LIQUID — Liquid Glass: vivid underwater gradient,
+     * cyan accent, panels lean white-aqua so the new stronger blur
+     * inside gfx_round_glass shines through.                       */
+    { { 0x9DD8F2, 0x3E8EC0, 0x6FBFE0, 0xEFF7FD, 0xB7DAEE, 0xE3EEF7,
+        0x0A1420, 0x3F4D60, 0x8FA4B8, 0x00A0E5, 0x9CE4FA, 0xB6CEDF,
         0xFFFFFF } },
     /* THEME_NORDIC — cool blue-grey, low-contrast */
     { { 0xECEFF4, 0xD8DEE9, 0xC4CBD5, 0xFFFFFF, 0xE5E9F0, 0xF2F4F8,

@@ -250,19 +250,34 @@ void gfx_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c)
 void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r)
 {
     if (SET.aero_enabled) {
-        /* Aero look — slightly stronger tint than the flat glass so
-         * UI text on top of the panel remains legible against busy
-         * blurred backgrounds.                                     */
+        /* Liquid Glass leans into translucency: panel tint drops from
+         * 170 -> 120 alpha so the wallpaper genuinely glows through,
+         * and we pre-blur once more before the round rect so curved
+         * edges look refractive (the same trick Apple's UI uses for
+         * iOS Control Center sheets).                               */
+        if (SET.theme == THEME_LIQUID) {
+            gfx_round_drop_shadow(x, y, w, h, r);
+            gfx_blur_rect(x, y, w, h, 8);                   /* extra blur */
+            gfx_round_rect_a(x, y, w, h, r, PAL_GLASS, 110);
+            /* aqua tint stripe across the top — fakes refraction */
+            gfx_rect_a(x + r, y + 1, w - 2 * r, 2,
+                       0xB7E3F4, 95);
+            gfx_round_outline(x, y, w, h, r, PAL_HAIRLINE);
+            gfx_round_inset_highlight(x, y, w, h, r);
+            return;
+        }
+        /* Lumen / Nox / Nordic / Rose-Gold: stronger tint than flat
+         * glass so UI text on top of the panel remains legible
+         * against busy blurred backgrounds.                          */
         gfx_aero_round_rect(x, y, w, h, r, PAL_GLASS, 170);
         return;
     }
-    /* drop shadow (soft) */
-    gfx_round_rect_a(x + 2, y + 6, w, h, r, COL_SHADOW, 28);
-    gfx_round_rect_a(x + 1, y + 3, w, h, r, COL_SHADOW, 18);
-    /* glass body */
+    /* Aero off — flat overlay, but still benefit from the new layered
+     * shadow + inset highlight for visual lift.                      */
+    gfx_round_drop_shadow(x, y, w, h, r);
     gfx_round_rect_a(x, y, w, h, r, PAL_GLASS, 235);
-    /* hairline border */
     gfx_round_outline(x, y, w, h, r, PAL_HAIRLINE);
+    gfx_round_inset_highlight(x, y, w, h, r);
 }
 
 /* =============================================================================
