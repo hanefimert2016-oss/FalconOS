@@ -510,12 +510,44 @@ void gfx_line(i32 x0, i32 y0, i32 x1, i32 y1, u32 c)
 i32 gfx_text_width(const char *s)    { return k_strlen(s) * 8;  }
 i32 gfx_text_width_lg(const char *s) { return k_strlen(s) * 16; }
 
+/* Helper: read an alpha sample from the 8×16 grayscale font, clamping
+ * out-of-bounds reads to 0 so the halo loop below can sample neighbours
+ * across glyph boundaries without indexing junk.                       */
+static inline u8 _font8_at(const u8 *g, i32 i, i32 j)
+{
+    if (i < 0 || i > 7 || j < 0 || j > 15) return 0;
+    return g[j * 8 + i];
+}
+
 void gfx_text(i32 x, i32 y, const char *s, u32 c)
 {
     while (*s) {
         u8 ch = (u8)*s++;
         if (ch < 0x20 || ch > 0x7E) ch = '?';
         const u8 *g = FONT8X16[ch - 0x20];      /* 8 × 16 = 128 alpha bytes */
+
+        /* Two-tier render:
+         *  1. Soft halo first — for every transparent pixel adjacent to
+         *     an opaque-ish neighbour, drop a faint ~12% alpha sample.
+         *     This is the trick that turns 8×16 bitmaps into something
+         *     that *reads* as macOS-smooth at native pixel pitch — the
+         *     halo fills in the imaginary half-pixels antialiasing
+         *     would otherwise produce.
+         *  2. Then the actual glyph alpha map on top, so we never
+         *     dilute crisp full-coverage pixels.                       */
+        for (i32 j = 0; j < 16; j++) {
+            for (i32 i = 0; i < 8; i++) {
+                if (_font8_at(g, i, j)) continue;
+                u32 cov = _font8_at(g, i - 1, j) +
+                          _font8_at(g, i + 1, j) +
+                          _font8_at(g, i, j - 1) +
+                          _font8_at(g, i, j + 1);
+                if (cov < 200) continue;                   /* needs strong neighbour */
+                u8 halo = (u8)((cov / 8) > 38 ? 38 : (cov / 8));
+                gfx_pixel_a(x + i, y + j, c, halo);
+            }
+        }
+
         for (i32 j = 0; j < 16; j++) {
             const u8 *row = g + j * 8;
             for (i32 i = 0; i < 8; i++) {
