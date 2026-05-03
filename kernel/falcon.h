@@ -186,9 +186,18 @@ void kbd_drain(void);
 void kbd_set_focus_text(bool b);
 #define KEY_F1         0x101
 #define KEY_F2         0x102
-#define KEY_F12        0x10C
 #define KEY_F3         0x103
 #define KEY_F4         0x104
+#define KEY_F5         0x105
+#define KEY_F6         0x106
+#define KEY_F7         0x107
+#define KEY_F8         0x108
+#define KEY_F9         0x109
+#define KEY_F10        0x10A
+#define KEY_F11        0x10B
+#define KEY_F12        0x10C
+#define KEY_INSERT     0x110
+#define KEY_PRTSC      0x111
 #define KEY_ESC        0x01B
 #define KEY_TAB        0x009
 #define KEY_ENTER      0x00A
@@ -209,6 +218,8 @@ void kbd_set_focus_text(bool b);
 #define KMOD_ALT    (1u << 2)
 #define KMOD_CAPS   (1u << 3)
 u32  kbd_mod_state(void);
+/* Driver telemetry counters — surfaced in Settings ▸ Drivers.        */
+void kbd_stats(u32 *seen, u32 *keys, u32 *drops);
 
 /* ---- mouse ---------------------------------------------------------------- */
 void mouse_init(void);
@@ -514,6 +525,7 @@ const char *linux_compat_summary(void);
 i32    ata_probe_count(void);          /* 0..2 ATA devices detected      */
 const char *ata_model(i32 idx);
 u64    ata_sectors(i32 idx);
+void   ata_stats(u32 *reads, u32 *writes, u32 *retries, u32 *failed);
 void   hid_keymap_dump(char *buf, u32 max);
 
 /* tiny global tick (incremented by main loop, NOT real time — see g_ticks) */

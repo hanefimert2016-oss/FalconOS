@@ -1143,8 +1143,8 @@ static void render_calc(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
  *  and uses left/right (or Enter) to toggle / cycle the value.            */
 typedef enum {
     SR_THEME = 0, SR_ACCENT, SR_AERO, SR_LANG, SR_KBD, SR_TZ, SR_DOCK,
-    SR_ANIM, SR_WIDGETS, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_SAVE,
-    SR_LOCK, SR_COUNT
+    SR_ANIM, SR_WIDGETS, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_DRIVERS,
+    SR_SAVE, SR_LOCK, SR_COUNT
 } set_row_t;
 
 static i32 set_row = 0;
@@ -1411,6 +1411,33 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         s_row(sx, sy + SR_USERS * step, sw,
               T("Users", "Kullanicilar"), ubuf,
               set_row == SR_USERS, PAL_ACCENT);
+    }
+
+    /* Drivers status — one-line health summary built from runtime
+     * counters in kbd.c / linux/ata_pio.c.  The label gets a green dot
+     * when nothing has gone wrong, an amber/red one when a driver
+     * reports retries or hard failures.                              */
+    {
+        u32 ks, kk, kd; kbd_stats(&ks, &kk, &kd);
+        u32 ar, aw, art, af; ata_stats(&ar, &aw, &art, &af);
+
+        char dbuf[80];
+        char tmp[16];
+        k_strcpy(dbuf, "K:");
+        k_itoa(kk, tmp, 10); k_strcat(dbuf, tmp);
+        if (kd) { k_strcat(dbuf, " drop "); k_itoa(kd, tmp, 10); k_strcat(dbuf, tmp); }
+        k_strcat(dbuf, "  D:");
+        k_itoa(ar + aw, tmp, 10); k_strcat(dbuf, tmp);
+        if (art) { k_strcat(dbuf, " retry "); k_itoa(art, tmp, 10); k_strcat(dbuf, tmp); }
+        if (af)  { k_strcat(dbuf, " FAIL ");  k_itoa(af,  tmp, 10); k_strcat(dbuf, tmp); }
+
+        u32 status_color = COL_OK;
+        if (kd || art) status_color = COL_WARN;
+        if (af)        status_color = COL_ERR;
+
+        s_row(sx, sy + SR_DRIVERS * step, sw,
+              T("Drivers", "Suruculer"), dbuf,
+              set_row == SR_DRIVERS, status_color);
     }
 
     /* Save to disk ----------------------------------------------------- */

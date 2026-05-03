@@ -150,14 +150,40 @@ static bool ata_dev_pio28(i32 idx, u32 lba, u8 *buf, u32 sectors, bool is_write)
     return true;
 }
 
+/* Driver telemetry — visible from Settings ▸ Drivers and Developer mode. */
+static u32 g_ata_reads = 0, g_ata_writes = 0;
+static u32 g_ata_retries = 0, g_ata_failed = 0;
+
+void ata_stats(u32 *reads, u32 *writes, u32 *retries, u32 *failed)
+{
+    if (reads)   *reads   = g_ata_reads;
+    if (writes)  *writes  = g_ata_writes;
+    if (retries) *retries = g_ata_retries;
+    if (failed)  *failed  = g_ata_failed;
+}
+
+/* Up to 3 attempts per logical request; intermediate attempts bump the
+ * retry counter so the user can spot a flaky controller in Settings.   */
 bool ata_read_lba28(i32 dev, u32 lba, u8 *buf512, u32 sectors)
 {
-    return ata_dev_pio28(dev, lba, buf512, sectors, false);
+    g_ata_reads++;
+    for (i32 attempt = 0; attempt < 3; attempt++) {
+        if (ata_dev_pio28(dev, lba, buf512, sectors, false)) return true;
+        g_ata_retries++;
+    }
+    g_ata_failed++;
+    return false;
 }
 
 bool ata_write_lba28(i32 dev, u32 lba, const u8 *buf512, u32 sectors)
 {
-    return ata_dev_pio28(dev, lba, (u8 *)buf512, sectors, true);
+    g_ata_writes++;
+    for (i32 attempt = 0; attempt < 3; attempt++) {
+        if (ata_dev_pio28(dev, lba, (u8 *)buf512, sectors, true)) return true;
+        g_ata_retries++;
+    }
+    g_ata_failed++;
+    return false;
 }
 
 /* --------------------------------------------------------------------------- */

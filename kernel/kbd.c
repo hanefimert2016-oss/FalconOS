@@ -42,6 +42,21 @@ u32 kbd_mod_state(void)
     return m;
 }
 
+/* Driver telemetry — surfaced in Settings and Developer kernel.
+ * g_kbd_seen counts every scancode byte that hit the IRQ; g_kbd_keys
+ * counts the ones that survived translation; g_kbd_drop counts ring
+ * overruns (queue was full when we tried to enqueue).               */
+static volatile u32 g_kbd_seen = 0;
+static volatile u32 g_kbd_keys = 0;
+static volatile u32 g_kbd_drop = 0;
+
+void kbd_stats(u32 *seen, u32 *keys, u32 *drops)
+{
+    if (seen)  *seen  = g_kbd_seen;
+    if (keys)  *keys  = g_kbd_keys;
+    if (drops) *drops = g_kbd_drop;
+}
+
 /* ---- US-QWERTY tables (lower / upper) -----------------------------------*/
 static const i32 SC_US_LO[128] = {
     [0x01] = KEY_ESC,
@@ -49,7 +64,9 @@ static const i32 SC_US_LO[128] = {
     [0x0F] = KEY_TAB,
     [0x1C] = KEY_ENTER,
     [0x39] = ' ',
-    [0x3B] = KEY_F1,  [0x3C] = KEY_F2,  [0x3D] = KEY_F3,  [0x3E] = KEY_F4, [0x58] = KEY_F12,
+    [0x3B] = KEY_F1,  [0x3C] = KEY_F2,  [0x3D] = KEY_F3,  [0x3E] = KEY_F4,
+    [0x3F] = KEY_F5,  [0x40] = KEY_F6,  [0x41] = KEY_F7,  [0x42] = KEY_F8,
+    [0x43] = KEY_F9,  [0x44] = KEY_F10, [0x57] = KEY_F11, [0x58] = KEY_F12,
 
     [0x02]='1',[0x03]='2',[0x04]='3',[0x05]='4',[0x06]='5',
     [0x07]='6',[0x08]='7',[0x09]='8',[0x0A]='9',[0x0B]='0',
@@ -89,7 +106,9 @@ static const i32 SC_TRQ_LO[128] = {
     [0x0F] = KEY_TAB,
     [0x1C] = KEY_ENTER,
     [0x39] = ' ',
-    [0x3B] = KEY_F1,  [0x3C] = KEY_F2,  [0x3D] = KEY_F3,  [0x3E] = KEY_F4, [0x58] = KEY_F12,
+    [0x3B] = KEY_F1,  [0x3C] = KEY_F2,  [0x3D] = KEY_F3,  [0x3E] = KEY_F4,
+    [0x3F] = KEY_F5,  [0x40] = KEY_F6,  [0x41] = KEY_F7,  [0x42] = KEY_F8,
+    [0x43] = KEY_F9,  [0x44] = KEY_F10, [0x57] = KEY_F11, [0x58] = KEY_F12,
 
     [0x02]='1',[0x03]='2',[0x04]='3',[0x05]='4',[0x06]='5',
     [0x07]='6',[0x08]='7',[0x09]='8',[0x0A]='9',[0x0B]='0',
@@ -113,7 +132,9 @@ static const i32 SC_TRF_LO[128] = {
     [0x0F] = KEY_TAB,
     [0x1C] = KEY_ENTER,
     [0x39] = ' ',
-    [0x3B] = KEY_F1,  [0x3C] = KEY_F2,  [0x3D] = KEY_F3,  [0x3E] = KEY_F4, [0x58] = KEY_F12,
+    [0x3B] = KEY_F1,  [0x3C] = KEY_F2,  [0x3D] = KEY_F3,  [0x3E] = KEY_F4,
+    [0x3F] = KEY_F5,  [0x40] = KEY_F6,  [0x41] = KEY_F7,  [0x42] = KEY_F8,
+    [0x43] = KEY_F9,  [0x44] = KEY_F10, [0x57] = KEY_F11, [0x58] = KEY_F12,
 
     [0x02]='1',[0x03]='2',[0x04]='3',[0x05]='4',[0x06]='5',
     [0x07]='6',[0x08]='7',[0x09]='8',[0x0A]='9',[0x0B]='0',
@@ -162,15 +183,17 @@ const char *kbd_layout_name(kbd_layout_t l)
 static void kbd_push(i32 k)
 {
     u32 next = (KBD_HEAD + 1) % KBUF;
-    if (next == KBD_TAIL) return;          /* drop on overrun */
+    if (next == KBD_TAIL) { g_kbd_drop++; return; } /* ring full */
     KBD_BUF[KBD_HEAD] = k;
     KBD_HEAD = next;
+    g_kbd_keys++;
 }
 
 void kbd_irq(void)
 {
     static bool extended = false;
     u8 sc = inb(PS2_DATA);
+    g_kbd_seen++;
 
     /* PS/2 packet sentinels we never want to treat as keys */
     if (sc == 0x00 || sc == 0xFA || sc == 0xFE || sc == 0xAA || sc == 0xEE) return;
@@ -194,15 +217,17 @@ void kbd_irq(void)
     i32 k = 0;
     if (extended) {
         switch (sc) {
-            case 0x48: k = KEY_UP;    break;
-            case 0x50: k = KEY_DOWN;  break;
-            case 0x4B: k = KEY_LEFT;  break;
-            case 0x4D: k = KEY_RIGHT; break;
-            case 0x47: k = KEY_HOME;  break;
-            case 0x4F: k = KEY_END;   break;
-            case 0x49: k = KEY_PGUP;  break;
-            case 0x51: k = KEY_PGDN;  break;
-            case 0x53: k = KEY_DEL;   break;
+            case 0x48: k = KEY_UP;     break;
+            case 0x50: k = KEY_DOWN;   break;
+            case 0x4B: k = KEY_LEFT;   break;
+            case 0x4D: k = KEY_RIGHT;  break;
+            case 0x47: k = KEY_HOME;   break;
+            case 0x4F: k = KEY_END;    break;
+            case 0x49: k = KEY_PGUP;   break;
+            case 0x51: k = KEY_PGDN;   break;
+            case 0x53: k = KEY_DEL;    break;
+            case 0x52: k = KEY_INSERT; break;   /* Insert (0xE0 0x52) */
+            case 0x37: k = KEY_PRTSC;  break;   /* PrintScreen prefix */
             default:   break;
         }
         extended = false;
