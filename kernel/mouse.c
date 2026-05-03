@@ -32,24 +32,27 @@ static i32 cyc = 0;
 /* PS/2 sign convention: dy positive = "mouse moved up" (away from user).
  * Screen Y grows downward. The natural mapping is therefore
  *     m_y -= dy
- * Earlier builds had m_y += dy because someone assumed the SDL backend
- * pre-inverted Y; that was wrong, every cold boot felt reversed.
  * dx is straightforward: dx positive = "mouse moved right".
  *
- * Pointer acceleration (macOS-style): small motions stay 1:1 for
- * pixel-perfect precision, fast flicks get a smooth quadratic boost so
- * one wrist sweep crosses a 2K display. Per-axis so a diagonal flick
- * doesn't double-count.                                              */
-static i32 mouse_accel(i32 d)
+ * Pointer scaling: the previous build had a quadratic acceleration
+ * curve that felt nice on a 2K display BUT made the cursor jump in
+ * unpredictable bursts whenever the IRQ rate dipped (a single missed
+ * frame at 60 Hz would suddenly spit out a delta of 12, which the curve
+ * scaled to 12×6 = 72 pixels — the 'bozuk' lurch users complained
+ * about).  We replace it with a simple linear gain so motion stays
+ * predictable, then add a tiny boost for genuinely large flicks so a
+ * wrist sweep can still cross a 2K screen in one go.                */
+static i32 mouse_scale(i32 d)
 {
     i32 a = d < 0 ? -d : d;
-    /* baseline 1:1 — cursor never lies about a single-pixel move    */
-    i32 scale = 1;
-    /* slow growth above 2 counts, capped at 6x so 2K is reachable    */
-    if (a >= 3)  scale += (a - 2) / 2;          /* 3..4 → +1, 5..6 → +2 …      */
-    if (a >= 8)  scale += (a - 7);              /* big flick: extra punch      */
-    if (scale > 6) scale = 6;
-    return d * scale;
+    /* 1.5x baseline (round-half-up) — makes 1×1 movement reach the
+     * far corner of a 2K display in ~600 mickeys, which feels like a
+     * normal desk swipe.  Single-count moves still progress 1 px so
+     * fine pointing on tiny targets keeps working.                   */
+    i32 out = (d * 3 + (d > 0 ? 1 : -1)) / 2;
+    /* small extra punch on flicks (>= 6 counts in one packet)         */
+    if (a >= 6) out += d;
+    return out;
 }
 
 #define DOUBLE_CLICK_MS  350
@@ -123,8 +126,8 @@ void mouse_irq(void)
     m_l = ln;
     m_r = rn;
 
-    m_x += mouse_accel(dx);
-    m_y -= mouse_accel(dy);     /* PS/2 dy positive = up; flip for screen */
+    m_x += mouse_scale(dx);
+    m_y -= mouse_scale(dy);     /* PS/2 dy positive = up; flip for screen */
     if (m_x < 0) m_x = 0;
     if (m_y < 0) m_y = 0;
     if ((u32)m_x >= FB.width)  m_x = (i32)FB.width  - 1;
