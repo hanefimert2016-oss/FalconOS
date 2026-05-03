@@ -395,7 +395,16 @@ void long_start(u64 magic, u64 info_ptr)
             else                          mode_developer_input(k);
         }
 
-        /* Mouse: power menu > help drawer > menubar glyphs > desktop.    */
+        /* Mouse: power menu > help drawer > menubar glyphs > desktop.
+         *
+         * Important: the help drawer must NOT swallow clicks that fall
+         * outside its 420-px right-edge panel.  Earlier builds consumed
+         * any click while the drawer was up, which silently ate the
+         * very first traffic-light / dock click new users tried.  Now
+         * an outside click closes the drawer AND falls through to the
+         * normal WM / dock / desktop pipeline so the same click also
+         * does what the user expected (open Calculator, click a traffic
+         * light, etc.).                                                  */
         {
             i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
             (void)ml;
@@ -410,8 +419,20 @@ void long_start(u64 magic, u64 info_ptr)
                 if (helppanel_is_open()) helppanel_close();
                 else                     helppanel_open();
             } else if (helppanel_is_open()) {
-                bool edge = mouse_consume_click();
-                (void)helppanel_handle_mouse(mx, my, edge);
+                /* peek (don't consume) so an outside click can still
+                 * reach the WM / dock / desktop after dismissing the
+                 * drawer.                                                */
+                i32 panel_x = (i32)FB.width - 420;
+                bool inside = (mx >= panel_x);
+                bool edge   = mouse_peek_click();
+                if (inside && edge) {
+                    (void)mouse_consume_click();
+                    (void)helppanel_handle_mouse(mx, my, true);
+                } else if (edge) {
+                    /* outside click: dismiss drawer but DO NOT consume
+                     * the click — let the WM / dock see it normally.   */
+                    helppanel_close();
+                }
             }
             /* else: leave the click in the queue; personal/dev paths will
              * consume it themselves (desktop pins, WM, etc.).             */
