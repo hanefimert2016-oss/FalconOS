@@ -1,10 +1,10 @@
 # =============================================================================
-#  FalconOS — bare-metal build system  (v5 "Aurora")
+#  FalconOS — bare-metal build system  (FalconOS 1)
 # -----------------------------------------------------------------------------
 #  Targets:
 #    all          build the kernel ELF (default)
 #    iso          wrap kernel.elf into a bootable GRUB ISO
-#    run          boot the ISO in QEMU (windowed, default 1080p)
+#    run          boot the ISO in QEMU (windowed, 1080p screen)
 #    run-fb       boot kernel.elf directly via QEMU's -kernel  (faster iter)
 #    run-headless boot the ISO with `-display none -vga std` for QMP scripting
 #    font         regenerate kernel/font_data.c from DejaVu (requires Pillow)
@@ -14,15 +14,13 @@
 #    make iso ARCH=x86_64 (default)   →  64-bit long-mode kernel
 #    make iso ARCH=i386               →  32-bit legacy build (v4-compatible)
 #
-#  Resolution (build-time, controls Multiboot2 framebuffer request and the
-#  back-buffer size baked into the kernel):
-#    make iso RES=hd      → 1280×800
-#    make iso RES=fhd     → 1920×1080  (default)
-#    make iso RES=2k      → 2560×1440  (≈ 14 MB BSS)
+#  Resolution:
+#    The kernel always builds with a 2560 × 1440 back buffer so a single
+#    ISO can boot at HD / FHD / 2K — pick the size from the GRUB menu, or
+#    change it any time at runtime from Settings → Resolution.
 # =============================================================================
 
 ARCH        ?= x86_64
-RES         ?= fhd
 
 # ---- per-architecture toolchain & flags -------------------------------------
 ifeq ($(ARCH),x86_64)
@@ -46,19 +44,12 @@ else
 $(error ARCH must be one of: x86_64, i386 (got '$(ARCH)'))
 endif
 
-# ---- per-resolution geometry -------------------------------------------------
-ifeq ($(RES),hd)
-FB_W := 1280
-FB_H := 800
-else ifeq ($(RES),fhd)
-FB_W := 1920
-FB_H := 1080
-else ifeq ($(RES),2k)
+# ---- back-buffer geometry  (fixed at the maximum we ship) -------------------
+#  GRUB picks the actual screen mode at boot and the kernel auto-adapts;
+#  baking the back buffer at 2K means HD / FHD / 2K all render correctly
+#  out of a single ISO. ~14 MB BSS, harmless on the 4 GiB QEMU box.
 FB_W := 2560
 FB_H := 1440
-else
-$(error RES must be one of: hd, fhd, 2k (got '$(RES)'))
-endif
 
 BUILD       := build
 ISO_DIR     := $(BUILD)/iso
@@ -106,7 +97,7 @@ $(BUILD)/boot/%.o: boot/%.asm | $(BUILD)/boot
 # ---- link kernel --------------------------------------------------------------
 $(KERNEL): $(ASM_OBJS) $(C_OBJS) linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(ASM_OBJS) $(C_OBJS)
-	@echo "[OK] linked $@  ($$(wc -c < $@) bytes, ARCH=$(ARCH), RES=$(RES) → $(FB_W)×$(FB_H))"
+	@echo "[OK] linked $@  ($$(wc -c < $@) bytes, ARCH=$(ARCH), back-buffer $(FB_W)×$(FB_H))"
 
 # ---- ISO ----------------------------------------------------------------------
 iso: $(ISO)
@@ -117,7 +108,7 @@ $(ISO): $(KERNEL) boot/grub.cfg
 	cp $(KERNEL)        $(ISO_DIR)/boot/falcon.elf
 	cp boot/grub.cfg    $(ISO_DIR)/boot/grub/grub.cfg
 	grub-mkrescue -o $@ $(ISO_DIR) 2>/dev/null
-	@echo "[OK] ISO   $@  (ARCH=$(ARCH), RES=$(RES))"
+	@echo "[OK] ISO   $@  (ARCH=$(ARCH), single ISO supports HD/FHD/2K via GRUB menu)"
 
 # ---- run ----------------------------------------------------------------------
 run: $(ISO)

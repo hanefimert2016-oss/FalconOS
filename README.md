@@ -266,15 +266,12 @@ sudo apt install -y gcc nasm grub-pc-bin grub-common xorriso mtools \
 ### Build the kernel and ISO
 
 ```bash
-# default — 1920 × 1080
+# Single ISO — supports HD / FHD / 2K resolutions out of the same image.
+# Pick the resolution from the GRUB boot menu, or change it any time
+# at runtime from Settings → Resolution.
 make iso                  # build/FalconOS.iso
 
-# explicit resolution
-make iso RES=hd           # 1280 × 800
-make iso RES=fhd          # 1920 × 1080  (default)
-make iso RES=2k           # 2560 × 1440
-
-make            # just build/falcon.elf  (~84 kB ELF64)
+make            # just build/falcon.elf  (~150 kB ELF64)
 make font       # regenerate kernel/font_data.c from DejaVu
 make clean
 ```
@@ -283,9 +280,7 @@ make clean
 
 ```bash
 # ---- ephemeral (no disk; installer wizard runs every cold boot) ----------
-make run                  # SDL window (default RES=fhd, x86_64)
-make run RES=hd           # SDL window at 1280 × 800
-make run RES=2k           # SDL window at 2560 × 1440
+make run                  # SDL window — pick resolution at the GRUB menu
 make run-headless         # no window — useful for screenshots / CI
 make run-fb               # boot the ELF directly via -kernel (faster iter)
 
