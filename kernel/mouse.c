@@ -23,26 +23,26 @@ static volatile u32  m_last_click_ms = 0;
 static u8 pkt[3];
 static i32 cyc = 0;
 
-/* User feedback: mouse felt slow + Y axis inverted. The PS/2 spec sends
- * dy positive = "away from user" (== up on screen) so most kernels do
- *   m_y -= dy
- * but QEMU's input pipeline already inverts Y for the SDL backend, so
- * the screen ends up moving the wrong way. We do the natural mapping
- *   m_y += dy
- * which matches the user's pointer motion 1:1.
+/* PS/2 sign convention: dy positive = "mouse moved up" (away from user).
+ * Screen Y grows downward. The natural mapping is therefore
+ *     m_y -= dy
+ * Earlier builds had m_y += dy because someone assumed the SDL backend
+ * pre-inverted Y; that was wrong, every cold boot felt reversed.
+ * dx is straightforward: dx positive = "mouse moved right".
  *
- * Pointer acceleration curve (macOS-like): small motions stay 1:1
- * for precision, but fast flicks get a quadratic boost so crossing a
- * 4K screen takes a single sweep rather than four. We compute the
- * scale-up per-axis so a diagonal flick doesn't double-count.        */
+ * Pointer acceleration (macOS-style): small motions stay 1:1 for
+ * pixel-perfect precision, fast flicks get a smooth quadratic boost so
+ * one wrist sweep crosses a 2K display. Per-axis so a diagonal flick
+ * doesn't double-count.                                              */
 static i32 mouse_accel(i32 d)
 {
     i32 a = d < 0 ? -d : d;
-    /* base sensitivity 2x at all speeds, plus quadratic above 4 counts */
-    i32 boost = 0;
-    if (a > 4)  boost = (a - 4) * (a - 4) / 8;     /* small */
-    if (boost > 14) boost = 14;                     /* hard cap */
-    i32 scale = 2 + boost;
+    /* baseline 1:1 — cursor never lies about a single-pixel move    */
+    i32 scale = 1;
+    /* slow growth above 2 counts, capped at 6x so 2K is reachable    */
+    if (a >= 3)  scale += (a - 2) / 2;          /* 3..4 → +1, 5..6 → +2 …      */
+    if (a >= 8)  scale += (a - 7);              /* big flick: extra punch      */
+    if (scale > 6) scale = 6;
     return d * scale;
 }
 
@@ -113,7 +113,7 @@ void mouse_irq(void)
     m_r = rn;
 
     m_x += mouse_accel(dx);
-    m_y += mouse_accel(dy);
+    m_y -= mouse_accel(dy);     /* PS/2 dy positive = up; flip for screen */
     if (m_x < 0) m_x = 0;
     if (m_y < 0) m_y = 0;
     if ((u32)m_x >= FB.width)  m_x = (i32)FB.width  - 1;
