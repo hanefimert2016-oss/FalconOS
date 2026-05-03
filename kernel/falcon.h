@@ -154,6 +154,9 @@ void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r);
 void gfx_blur_rect(i32 x, i32 y, i32 w, i32 h, i32 radius);
 void gfx_aero_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r,
                           u32 tint, u8 tint_alpha);
+/* FalconOS 1 — visual lift helpers used by panels / windows / dialogs. */
+void gfx_round_drop_shadow(i32 x, i32 y, i32 w, i32 h, i32 r);
+void gfx_round_inset_highlight(i32 x, i32 y, i32 w, i32 h, i32 r);
 void gfx_circle(i32 cx, i32 cy, i32 r, u32 c);
 void gfx_circle_a(i32 cx, i32 cy, i32 r, u32 c, u8 alpha);
 void gfx_circle_outline(i32 cx, i32 cy, i32 r, u32 c);

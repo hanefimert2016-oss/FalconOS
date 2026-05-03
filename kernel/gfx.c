@@ -276,8 +276,14 @@ void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r)
  *  largest panel we ever blur (full-width dock at 1920×120 ≈ 0.9 MiB).
  *  Static allocation in BSS keeps the code allocator-free.
  * ============================================================================= */
-#define BLUR_MAX_W 1920
-#define BLUR_MAX_H 480
+/* Scratch sized for a full-screen 2K blur — needed by the new sliding
+ * Help drawer (full panel height) and any future right-edge / left-edge
+ * panels.  ~14 MB BSS; combined with the 2K back-buffer this brings the
+ * static footprint to ~29 MB, harmless on the 4 GiB QEMU box and on
+ * any modern PC.  Smaller blurs (menu bar, dock, widgets) still pay
+ * just for the rectangle they actually touch.                        */
+#define BLUR_MAX_W 2560
+#define BLUR_MAX_H 1440
 static u32 BLUR_SCRATCH[BLUR_MAX_W * BLUR_MAX_H];
 
 void gfx_blur_rect(i32 x, i32 y, i32 w, i32 h, i32 r)
@@ -333,6 +339,29 @@ void gfx_blur_rect(i32 x, i32 y, i32 w, i32 h, i32 r)
     }
 }
 
+/* Layered soft drop shadow for any panel: 4 progressively-larger,
+ * progressively-fainter copies of the same rounded rect offset down.
+ * Gives surfaces a tangible "lift" without baking the shadow into
+ * every render path.                                                  */
+void gfx_round_drop_shadow(i32 x, i32 y, i32 w, i32 h, i32 r)
+{
+    gfx_round_rect_a(x + 5, y + 14, w, h, r, COL_SHADOW, 18);
+    gfx_round_rect_a(x + 3, y + 10, w, h, r, COL_SHADOW, 28);
+    gfx_round_rect_a(x + 2, y + 6,  w, h, r, COL_SHADOW, 36);
+    gfx_round_rect_a(x + 1, y + 3,  w, h, r, COL_SHADOW, 28);
+}
+
+/* 1-pixel inner highlight along the top + left edges of a rounded
+ * rect.  Shipped as a thin white stroke at low alpha so glass panels
+ * pick up the same "polished" look real macOS sheets get.            */
+void gfx_round_inset_highlight(i32 x, i32 y, i32 w, i32 h, i32 r)
+{
+    if (r * 2 > w) r = w / 2;
+    if (r * 2 > h) r = h / 2;
+    gfx_rect_a(x + r,     y + 1,         w - 2 * r, 1,           0xFFFFFF, 110);
+    gfx_rect_a(x + 1,     y + r,         1,         h - 2 * r,   0xFFFFFF,  60);
+}
+
 /* Blurs the rect under (x,y,w,h,r) then overlays a translucent rounded
  * tint with a hairline border. The corner mask is applied by drawing a
  * full-alpha rectangle of TRANSPARENT pixels outside the rounded shape —
@@ -341,9 +370,8 @@ void gfx_blur_rect(i32 x, i32 y, i32 w, i32 h, i32 r)
 void gfx_aero_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r,
                           u32 tint, u8 tint_alpha)
 {
-    /* drop shadow first so the blur doesn't smear it */
-    gfx_round_rect_a(x + 2, y + 6, w, h, r, COL_SHADOW, 28);
-    gfx_round_rect_a(x + 1, y + 3, w, h, r, COL_SHADOW, 18);
+    /* drop shadow (richer) first so the blur doesn't smear it */
+    gfx_round_drop_shadow(x, y, w, h, r);
 
     /* blur the area now (after shadow, so the shadow contributes a soft
      * darkening at the panel edges — looks natural).                  */
@@ -352,8 +380,9 @@ void gfx_aero_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r,
     /* translucent tint on top of the blurred pixels */
     gfx_round_rect_a(x, y, w, h, r, tint, tint_alpha);
 
-    /* hairline border for crispness */
+    /* hairline border + inset highlight for crispness + lift          */
     gfx_round_outline(x, y, w, h, r, PAL_HAIRLINE);
+    gfx_round_inset_highlight(x, y, w, h, r);
 }
 
 void gfx_round_outline(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c)
