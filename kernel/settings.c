@@ -51,6 +51,10 @@ void settings_init(void)
      * the lock screen still shows a sensible local time.                */
     SET.tz_minutes    = 180;
     SET.welcome_shown = false;
+    /* FalconOS 1 — install target picked by the wizard. -1 means
+     * "RAM only".  diskdb_load() may overwrite this from the
+     * superblock if the saved settings already had a target.      */
+    SET.install_disk  = -1;
 
     /* Probe disk and try to restore the entire settings_t from LBA0. If a
      * superblock with matching magic+version+checksum is found, SET is

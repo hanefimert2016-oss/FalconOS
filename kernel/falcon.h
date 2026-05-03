@@ -408,6 +408,11 @@ typedef struct {
     /* v5.2 first-run welcome banner — shown once on the desktop after
      * the initial install completes, dismissable.                         */
     bool        welcome_shown;
+    /* FalconOS 1 — installer disk-target picked at setup. -1 means
+     * "RAM only" (no persistent disk attached); 0..3 indexes into the
+     * primary IDE controller's master/slave enumeration produced by
+     * linux/ata_pio.c.  diskdb_save() writes into this disk.          */
+    i32         install_disk;
 } settings_t;
 
 extern settings_t SET;

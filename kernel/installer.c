@@ -25,6 +25,7 @@ typedef enum {
     INST_THEME,
     INST_ACCENT,
     INST_KBD,
+    INST_DISK,          /* FalconOS 1 — pick where to install the OS      */
     INST_USER_NAME,
     INST_USER_PASS,
     INST_USER_PASS2,    /* confirm password — must match step 6           */
@@ -214,6 +215,85 @@ void installer_render(u32 frame)
             gfx_text_centered(cx, cy + 76, helptext, PAL_TEXT_DIM);
             break;
         }
+        case INST_DISK: {
+            headline = T("Choose where to install FalconOS 1",
+                          "FalconOS 1'i nereye kuralim?");
+            helptext = T("User database + settings will be written to this disk.",
+                          "Kullanici + ayarlar bu diske yazilacak.");
+            gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
+
+            /* Build a list: each detected ATA drive + a final "RAM only"
+             * fallback for users booting off a CDROM with no disk.   */
+            i32 n_ata    = ata_probe_count();
+            i32 n_total  = n_ata + 1;            /* +1 = RAM-only       */
+            if (g_choice >= n_total) g_choice = n_total - 1;
+
+            i32 row_h = 60, gap = 10;
+            i32 list_h = n_total * row_h + (n_total - 1) * gap;
+            i32 y0 = cy - list_h / 2;
+
+            for (i32 i = 0; i < n_total; i++) {
+                i32 yy   = y0 + i * (row_h + gap);
+                i32 rw   = 620;
+                i32 rx   = cx - rw / 2;
+                bool act = (i == g_choice);
+                if (act) {
+                    gfx_round_rect_a(rx - 3, yy - 3, rw + 6, row_h + 6, 14,
+                                     PAL_ACCENT, 60);
+                    gfx_round_rect (rx, yy, rw, row_h, 12, PAL_ACCENT);
+                } else {
+                    gfx_round_rect_a(rx, yy, rw, row_h, 12, PAL_PANEL_DEEP, 240);
+                    gfx_round_outline(rx, yy, rw, row_h, 12, PAL_HAIRLINE);
+                }
+
+                /* HDD glyph (left edge) */
+                u32 ic_col = act ? 0xFFFFFF : PAL_TEXT_DIM;
+                i32 ix = rx + 16, iy = yy + row_h / 2 - 10;
+                gfx_round_rect(ix, iy, 28, 20, 4, ic_col);
+                gfx_round_rect(ix + 4, iy + 4, 20, 12, 2, act ? PAL_ACCENT : PAL_PANEL);
+                gfx_circle(ix + 22, iy + 14, 2, act ? PAL_ACCENT : PAL_PANEL);
+
+                /* Title + subtitle. Last entry = RAM-only sentinel.       */
+                u32 title_c = act ? 0xFFFFFF : PAL_TEXT;
+                u32 sub_c   = act ? 0xC8DBFF : PAL_TEXT_DIM;
+                if (i < n_ata) {
+                    char title[80]; k_strcpy(title, T("Disk ", "Disk "));
+                    char num[8]; k_itoa((u32)i, num, 10); k_strcat(title, num);
+                    k_strcat(title, "  -  ");
+                    k_strcat(title, ata_model(i));
+
+                    char sub[80];
+                    /* sectors * 512 / 1024 / 1024 = MiB */
+                    u64 sect = ata_sectors(i);
+                    u32 mib  = (u32)((sect * 512ull) >> 20);
+                    if (mib >= 1024) {
+                        u32 gib_x10 = (mib * 10) / 1024;
+                        char b[8]; k_itoa(gib_x10 / 10, b, 10);
+                        k_strcpy(sub, b);
+                        k_strcat(sub, ".");
+                        k_itoa(gib_x10 % 10, b, 10); k_strcat(sub, b);
+                        k_strcat(sub, " GiB");
+                    } else {
+                        char b[8]; k_itoa(mib, b, 10);
+                        k_strcpy(sub, b); k_strcat(sub, " MiB");
+                    }
+                    k_strcat(sub, T("   primary IDE", "   birincil IDE"));
+                    gfx_text(rx + 56, yy + 14, title, title_c);
+                    gfx_text(rx + 56, yy + 36, sub,   sub_c);
+                } else {
+                    gfx_text(rx + 56, yy + 14,
+                             T("RAM only  -  do not write to a disk",
+                               "Sadece RAM  -  diske yazma"),
+                             title_c);
+                    gfx_text(rx + 56, yy + 36,
+                             T("Settings + users will reset on every cold boot.",
+                               "Ayarlar ve kullanicilar her acilista sifirlanir."),
+                             sub_c);
+                }
+            }
+            gfx_text_centered(cx, cy + list_h / 2 + 24, helptext, PAL_TEXT_DIM);
+            break;
+        }
         case INST_USER_NAME: {
             headline = T("Create your account",
                           "Hesabini olustur");
@@ -345,10 +425,10 @@ void installer_render(u32 frame)
         case INST_DONE: break;
     }
 
-    /* visual progress: 8 dots (extra one for the password-confirm step)     */
+    /* visual progress: 9 dots (extra one for the disk-target step)         */
     i32 step_idx = (i32)g_step;
-    if (step_idx > 7) step_idx = 7;
-    draw_progress(cx, cy + 124, step_idx, 8);
+    if (step_idx > 8) step_idx = 8;
+    draw_progress(cx, cy + 124, step_idx, 9);
 
     gfx_text_centered(cx, H - 30, "FalconOS 1  -  bare-metal x86_64", PAL_TEXT_FAINT);
 }
@@ -388,15 +468,21 @@ void installer_input(i32 key)
     /* horizontal-choice steps -------------------------------------------- */
     if (g_step == INST_LANG  || g_step == INST_THEME  ||
         g_step == INST_ACCENT|| g_step == INST_KBD    ||
-        g_step == INST_USER_MORE) {
+        g_step == INST_DISK  || g_step == INST_USER_MORE) {
         i32 max;
         switch (g_step) {
             case INST_LANG:     max = LANG_COUNT; break;
             case INST_THEME:    max = THEME_COUNT; break;
             case INST_ACCENT:   max = 5; break;
             case INST_KBD:      max = 3; break;
+            case INST_DISK:     max = ata_probe_count() + 1; break; /* +RAM */
             case INST_USER_MORE:max = 2; break;
             default:            max = 2; break;
+        }
+        /* Disk picker is a vertical list: Up/Down also navigate.    */
+        if (g_step == INST_DISK) {
+            if (key == KEY_UP)    { if (--g_choice < 0)    g_choice = max - 1; return; }
+            if (key == KEY_DOWN)  { if (++g_choice >= max) g_choice = 0;       return; }
         }
         if (key == KEY_LEFT)  { if (--g_choice < 0)    g_choice = max - 1; return; }
         if (key == KEY_RIGHT) { if (++g_choice >= max) g_choice = 0;       return; }
@@ -417,7 +503,18 @@ void installer_input(i32 key)
                     g_step = INST_KBD;     g_choice = SET.kbd_layout;   return;
                 case INST_KBD:
                     SET.kbd_layout = (kbd_layout_t)g_choice;
-                    g_step = INST_USER_NAME; g_choice = 0;               return;
+                    g_step = INST_DISK;
+                    /* default-pick: first detected disk if any, else
+                     * the RAM-only sentinel (last index).         */
+                    g_choice = (ata_probe_count() > 0) ? 0
+                                                       : ata_probe_count();
+                    return;
+                case INST_DISK: {
+                    i32 n_ata = ata_probe_count();
+                    SET.install_disk = (g_choice < n_ata) ? g_choice : -1;
+                    g_step = INST_USER_NAME; g_choice = 0;
+                    return;
+                }
                 case INST_USER_MORE:
                     if (g_choice == 0 && SET.user_count < FALCON_MAX_USERS) {
                         g_step = INST_USER_NAME; g_choice = 0;
