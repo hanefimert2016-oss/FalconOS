@@ -219,3 +219,16 @@ i32 kbd_poll(void)
     KBD_TAIL = (KBD_TAIL + 1) % KBUF;
     return k;
 }
+
+/* Discard everything queued in the keyboard ring + reset modifier latches
+ * so a modal transition (installer→lockscreen→desktop, sign-out, theme
+ * switch) starts with a clean input state. Without this, a Shift held
+ * during the previous modal can stick into the next one or stale Esc
+ * presses race ahead of the new render pass.                         */
+void kbd_drain(void)
+{
+    KBD_TAIL = KBD_HEAD;
+    g_shift = false;
+    g_ctrl  = false;
+    g_alt   = false;
+}

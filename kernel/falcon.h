@@ -179,6 +179,7 @@ i32  gfx_text_width_lg(const char *s);
 
 /* ---- keyboard ------------------------------------------------------------- */
 i32  kbd_poll(void);
+void kbd_drain(void);
 void kbd_set_focus_text(bool b);
 #define KEY_F1         0x101
 #define KEY_F2         0x102
@@ -212,6 +213,7 @@ void mouse_get(i32 *x, i32 *y, bool *left);
 bool mouse_consume_click(void);
 bool mouse_peek_click(void);
 void mouse_inject_click(void);
+void mouse_drain(void);
 bool mouse_consume_right(void);
 bool mouse_consume_double(void);
 

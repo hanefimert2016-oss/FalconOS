@@ -292,11 +292,19 @@ void long_start(u64 magic, u64 info_ptr)
 
     /* installer: only on the very first boot                                */
     if (!SET.installed) {
+        kbd_drain(); mouse_drain();
         modal_loop(installer_is_done, installer_render, installer_input);
     }
 
+    /* Drain any keys/clicks queued during the installer so the lockscreen
+     * does not see a stale Enter from the final wizard step.            */
+    kbd_drain(); mouse_drain();
+
     /* lock screen — must enter the password to reach the desktop           */
     modal_loop(lockscreen_is_unlocked, lockscreen_render, lockscreen_input);
+
+    /* Same for the lockscreen → desktop handoff.                          */
+    kbd_drain(); mouse_drain();
 
     /* main loop: paced to PIT — wait for at least 1 tick before next frame */
     u32 last = g_ticks;
@@ -310,7 +318,9 @@ void long_start(u64 magic, u64 info_ptr)
             if (apps_active() >= 0) apps_close();
             if (launchpad_is_open()) launchpad_close();
             power_menu_close();
+            kbd_drain(); mouse_drain();
             modal_loop(lockscreen_is_unlocked, lockscreen_render, lockscreen_input);
+            kbd_drain(); mouse_drain();
             last = g_ticks;
         }
 

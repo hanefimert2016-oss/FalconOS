@@ -430,6 +430,18 @@ void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c)
     gfx_text(cx - gfx_text_width(s) / 2, y, s, c);
 }
 
+/* Pixel-edge anti-aliasing for the 16×32 1-bit headline font.
+ * For every "off" pixel adjacent to one or more "on" pixels we emit a
+ * faint intermediate alpha so diagonal edges and curves stop looking
+ * stair-stepped — a cheap stand-in for true 2× super-sampling that
+ * keeps the font binary tiny.                                       */
+static inline u8 fontlg_at(const u8 *g, i32 i, i32 j)
+{
+    if (i < 0 || i > 15 || j < 0 || j > 31) return 0;
+    u16 row = ((u16)g[j * 2] << 8) | g[j * 2 + 1];
+    return (row & (0x8000 >> i)) ? 1 : 0;
+}
+
 void gfx_text_lg(i32 x, i32 y, const char *s, u32 c)
 {
     while (*s) {
@@ -437,9 +449,28 @@ void gfx_text_lg(i32 x, i32 y, const char *s, u32 c)
         if (ch < 0x20 || ch > 0x7E) ch = '?';
         const u8 *g = FONT16X32[ch - 0x20];     /* 16 × 32 = 64 bytes (1-bit) */
         for (i32 j = 0; j < 32; j++) {
-            u16 row = ((u16)g[j * 2] << 8) | g[j * 2 + 1];
-            for (i32 i = 0; i < 16; i++)
-                if (row & (0x8000 >> i)) gfx_pixel(x + i, y + j, c);
+            for (i32 i = 0; i < 16; i++) {
+                if (fontlg_at(g, i, j)) {
+                    gfx_pixel(x + i, y + j, c);
+                    continue;
+                }
+                /* edge feather: alpha based on cardinal + diagonal
+                 * neighbour coverage. card=2*hit, diag=1*hit, max 8. */
+                i32 cov = 0;
+                cov += 2 * (fontlg_at(g, i - 1, j) +
+                            fontlg_at(g, i + 1, j) +
+                            fontlg_at(g, i, j - 1) +
+                            fontlg_at(g, i, j + 1));
+                cov +=     (fontlg_at(g, i - 1, j - 1) +
+                            fontlg_at(g, i + 1, j - 1) +
+                            fontlg_at(g, i - 1, j + 1) +
+                            fontlg_at(g, i + 1, j + 1));
+                if (cov) {
+                    if (cov > 8) cov = 8;
+                    u8 a = (u8)((cov * 96) / 8);
+                    gfx_pixel_a(x + i, y + j, c, a);
+                }
+            }
         }
         x += 16;
     }

@@ -154,6 +154,16 @@ void mouse_inject_click(void)
     m_l_edge = true;
 }
 
+/* Discard any pending click edges + scroll deltas so a modal transition
+ * (installer→lockscreen→desktop, theme switch, sign-out) starts with no
+ * stale clicks racing into the new screen.                            */
+void mouse_drain(void)
+{
+    m_l_edge        = false;
+    m_l_double_edge = false;
+    m_r_edge        = false;
+}
+
 bool mouse_consume_right(void)
 {
     bool e = m_r_edge;
