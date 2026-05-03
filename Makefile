@@ -69,17 +69,18 @@ ASM_OBJS    := $(BUILD)/boot/multiboot2.o $(BUILD)/boot/isr.o
 KERNEL      := $(BUILD)/falcon.elf
 ISO         := $(BUILD)/FalconOS.iso
 
-# 4 GB main RAM, 4 vCPUs, 128 MB VRAM — keeps the system snappy at 2K @ 32 bpp.
-# (FalconOS itself only uses ~16 MB; the headroom is so guests can later run
-#  bigger workloads without bumping the Makefile.)
-QEMU_FLAGS    := -m 4096M -smp 4 -no-reboot -no-shutdown -serial stdio \
+# 8 GB main RAM by default (override with `make run RAM=16384` for 16 GiB),
+# 4 vCPUs, 128 MB VRAM — keeps 2K @ 32 bpp snappy and gives the planned
+# in-memory FS a lot of headroom.  FalconOS itself only uses ~30 MB BSS.
+RAM           ?= 8192
+QEMU_FLAGS    := -m $(RAM)M -smp 4 -no-reboot -no-shutdown -serial stdio \
                  -display sdl -vga std -global VGA.vgamem_mb=128 \
                  -accel kvm -accel tcg
-HEADLESS_FLAGS:= -m 4096M -smp 4 -no-reboot -no-shutdown -serial stdio \
+HEADLESS_FLAGS:= -m $(RAM)M -smp 4 -no-reboot -no-shutdown -serial stdio \
                  -display none -vga std -global VGA.vgamem_mb=128 \
                  -accel kvm -accel tcg
 
-.PHONY: all iso run run-fb run-headless run-disk run-disk-headless wipe-disk font clean
+.PHONY: all iso run run-cdrom run-fb run-headless run-disk run-disk-headless wipe-disk font clean
 
 all: $(KERNEL)
 
@@ -111,14 +112,18 @@ $(ISO): $(KERNEL) boot/grub.cfg
 	@echo "[OK] ISO   $@  (ARCH=$(ARCH), single ISO supports HD/FHD/2K via GRUB menu)"
 
 # ---- run ----------------------------------------------------------------------
-run: $(ISO)
+# `make run` now boots with a persistent 4 GiB disk attached so the installer
+# actually has somewhere to write to — exactly like installing on real hardware.
+# `make run-cdrom` keeps the old liveCD-only behaviour for quick smoke tests.
+run: run-disk
+
+run-cdrom: $(ISO)
 	$(QEMU) -cdrom $< $(QEMU_FLAGS)
 
 run-fb: $(KERNEL)
 	$(QEMU) -kernel $< $(QEMU_FLAGS)
 
-run-headless: $(ISO)
-	$(QEMU) -cdrom $< $(HEADLESS_FLAGS)
+run-headless: run-disk-headless
 
 # ---- persistent disk image: 4 GiB raw IDE drive on the primary master.
 #  diskdb.c writes the user database + settings_t to LBA0 (4 sectors) so
