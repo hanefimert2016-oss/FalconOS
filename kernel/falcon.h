@@ -450,6 +450,12 @@ typedef struct {
      * mouse / window-management cheat-sheet, then never again unless
      * the user clicks the ? glyph in the menu bar.                    */
     bool        help_seen;
+    /* FalconOS 1 — `prg install` persistence.  Bit i (0/1) tracks whether
+     * CATALOG[i] is currently installed.  Built-ins live in CATALOG slots
+     * 0..N-1 and are forced to 1 on every boot regardless of disk state.
+     * 64 entries gives roughly 2× headroom over today's catalogue without
+     * bumping the on-disk format again.                                */
+    u8          prg_installed[64];
 } settings_t;
 
 extern settings_t SET;
@@ -493,7 +499,7 @@ void hex_encode(const u8 *in, u32 n, char *out);   /* out >= n*2+1 chars   */
 
 /* ---- disk persistence: FalconFS superblock (kernel/diskdb.c) ------------- */
 #define FALCONFS_MAGIC      0x46414C43   /* 'FALC' */
-#define FALCONFS_VERSION    2            /* FalconOS 1: audit + theme rec   */
+#define FALCONFS_VERSION    3            /* FalconOS 1.1: prg install state  */
 #define FALCONFS_SECTOR     0            /* LBA0 of master ATA device      */
 
 void diskdb_load(void);          /* called from settings_init()             */

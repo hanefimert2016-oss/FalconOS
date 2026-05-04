@@ -77,15 +77,30 @@ static const prg_pkg_t CATALOG[] = {
 
 #define N_CATALOG ((i32)(sizeof(CATALOG) / sizeof(CATALOG[0])))
 
-/* runtime install bitmap — index i ↔ CATALOG[i] ------------------------*/
-static u8 g_installed[N_CATALOG];
-
+/* The on-disk install bitmap lives in SET.prg_installed[] so that an
+ * `install vim-tiny` survives a cold reboot.  init_once() folds three
+ * sources together on first access:
+ *
+ *   1. Built-ins — always 1 regardless of what disk says.  Removing the
+ *      kernel by editing a sector should not be possible.
+ *   2. Disk state — whatever diskdb_load() pulled out of LBA0..3 (this
+ *      is already in SET by the time settings_init() returns).
+ *   3. New catalogue entries — slots beyond what an older disk knew about
+ *      default to 0 (uninstalled), preserving forward compatibility when
+ *      the catalogue grows between OS releases.
+ *
+ * After the merge SET.prg_installed[] is the single source of truth and
+ * every install/remove syncs the new value back to disk via diskdb_save(). */
 static bool g_inited = false;
 static void init_once(void)
 {
     if (g_inited) return;
     for (i32 i = 0; i < N_CATALOG; i++) {
-        g_installed[i] = CATALOG[i].builtin ? 1 : 0;
+        if (CATALOG[i].builtin) {
+            SET.prg_installed[i] = 1;
+        }
+        /* non-built-ins keep whatever value diskdb_load() restored
+         * (0 by default if no disk / fresh install).               */
     }
     g_inited = true;
 }
@@ -112,14 +127,16 @@ bool prg_is_installed(i32 i)
 {
     init_once();
     if (i < 0 || i >= N_CATALOG) return false;
-    return g_installed[i] != 0;
+    return SET.prg_installed[i] != 0;
 }
 
 bool prg_install(i32 i)
 {
     init_once();
     if (i < 0 || i >= N_CATALOG) return false;
-    g_installed[i] = 1;
+    if (SET.prg_installed[i]) return true;          /* already installed */
+    SET.prg_installed[i] = 1;
+    diskdb_save();                                  /* persist immediately */
     return true;
 }
 
@@ -128,7 +145,9 @@ bool prg_remove(i32 i)
     init_once();
     if (i < 0 || i >= N_CATALOG) return false;
     if (CATALOG[i].builtin)      return false;
-    g_installed[i] = 0;
+    if (!SET.prg_installed[i]) return true;
+    SET.prg_installed[i] = 0;
+    diskdb_save();
     return true;
 }
 
@@ -136,6 +155,6 @@ i32 prg_installed_count(void)
 {
     init_once();
     i32 n = 0;
-    for (i32 i = 0; i < N_CATALOG; i++) if (g_installed[i]) n++;
+    for (i32 i = 0; i < N_CATALOG; i++) if (SET.prg_installed[i]) n++;
     return n;
 }
