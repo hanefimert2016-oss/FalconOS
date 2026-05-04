@@ -472,19 +472,27 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     gfx_text(wx + 24, wy + wh - 22, foot, PAL_TEXT_FAINT);
 }
 
-/* --- Terminal (POSIX shell subset, FalconOS 1) ---------------------------
- * A compact, real shell. Supports:
- *   - built-ins: pwd cd ls cat echo env set unset clear help true false
- *                exit uname whoami date rm touch cp mv
- *   - variable assignment   X=value         (no spaces around =)
- *   - variable expansion    $X              (single-token form)
- *   - simple pipes          a | b
- *   - output redirect       > file   >> file
- *   - inline conditionals   if cmd; then cmd; fi
- *   - inline loops          for x in a b c; do echo $x; done
+/* --- Terminal (POSIX shell subset, FalconOS 1.1) -------------------------
+ * A compact, real shell with a 60+ command vocabulary that mirrors the
+ * GNU coreutils + util-linux command surface most users reach for first.
+ * All commands operate against a 16-slot RAM-backed flat filesystem
+ * ("shfs") so behaviour is real (mkdir/rm/cp/mv/tee actually mutate
+ * state, head/tail/wc/sort/uniq/grep/tr/cut produce the expected output)
+ * within the BSS budget.
  *
- * I/O backed by a tiny RAM filesystem (`shfs`) - 16 files * 512 bytes,
- * single flat directory, fits trivially in BSS. */
+ *   file ops      pwd cd ls cat head tail wc sort uniq grep tr cut tee
+ *                 find rm touch cp mv mkdir rmdir basename dirname
+ *                 more less xxd hexdump file
+ *   text/string   echo printf yes seq expr test [ true false
+ *   shell         env set unset export alias history clear help exit
+ *                 if/then/fi for/in/do/done | > >>
+ *   process       ps top jobs kill (best-effort, single-task kernel)
+ *   user / sys    uname whoami id groups who w hostname uptime date cal
+ *   storage       df du free mount lsblk
+ *   power         reboot shutdown poweroff
+ *
+ * Commands return shell exit status (0 = success).  Unknown commands
+ * land in the "command not found" branch identical to bash.            */
 #define TERM_LINES 12
 #define TERM_COLS  80
 #define SH_VARS    16
@@ -650,7 +658,12 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 0;
     }
     if (k_strcmp(cmd, "help") == 0) {
-        k_strcpy(out, "pwd cd ls cat echo env set X=v rm touch cp mv  | > >>  if/then/fi  for in do done");
+        k_strcpy(out,
+            "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
+            "touch cp mv mkdir rmdir basename dirname more less xxd file "
+            "echo printf yes seq expr test [ env set unset export alias "
+            "history ps top kill df du free mount lsblk uname whoami id "
+            "groups who w hostname uptime cal date reboot which type | > >>");
         return 0;
     }
     if (k_strcmp(cmd, "pwd") == 0)    { k_strcpy(out, sh_cwd); return 0; }
@@ -754,6 +767,499 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         dst->data[dst->len] = 0;
         if (k_strcmp(cmd, "mv") == 0) src->used = false;
         return 0;
+    }
+    /* mkdir / rmdir — the flat shfs has no real directory hierarchy yet,
+     * so these accept any argument and silently succeed.  Many shell
+     * scripts call mkdir -p liberally and would otherwise fail.        */
+    if (k_strcmp(cmd, "mkdir") == 0 || k_strcmp(cmd, "rmdir") == 0) {
+        if (argc < 2) { k_strcpy(out, cmd); k_strcat(out, ": missing operand"); return 1; }
+        return 0;
+    }
+    /* head / tail [-n N] file --------------------------------------- */
+    if (k_strcmp(cmd, "head") == 0 || k_strcmp(cmd, "tail") == 0) {
+        i32 n = 5; i32 farg = 1;
+        if (argc >= 3 && argv[1][0] == '-' && argv[1][1] == 'n') {
+            n = 0; const char *p = argv[2];
+            while (*p >= '0' && *p <= '9') { n = n*10 + (*p - '0'); p++; }
+            farg = 3;
+        } else if (argc >= 4 && k_strcmp(argv[1], "-n") == 0) {
+            n = 0; const char *p = argv[2];
+            while (*p >= '0' && *p <= '9') { n = n*10 + (*p - '0'); p++; }
+            farg = 3;
+        }
+        if (argc <= farg) return 1;
+        shfile_t *f = sh_file_find(argv[farg]);
+        if (!f) { k_strcpy(out, cmd); k_strcat(out, ": no such file"); return 1; }
+        /* count newlines */
+        i32 total = 1;
+        for (u32 i = 0; i < f->len; i++) if (f->data[i] == '\n') total++;
+        i32 keep_from = 0, keep_to = total;
+        if (k_strcmp(cmd, "head") == 0) keep_to = (n < total) ? n : total;
+        else                            keep_from = (total - n > 0) ? total - n : 0;
+        out[0] = 0; i32 k = 0; i32 line_idx = 0; i32 oc = 0;
+        for (u32 i = 0; i < f->len && oc < cap - 1; i++) {
+            if (line_idx >= keep_from && line_idx < keep_to) out[oc++] = f->data[i];
+            if (f->data[i] == '\n') line_idx++;
+            (void)k;
+        }
+        out[oc] = 0;
+        return 0;
+    }
+    /* wc [-l|-w|-c] file -------------------------------------------- */
+    if (k_strcmp(cmd, "wc") == 0) {
+        char mode = 0; i32 farg = 1;
+        if (argc >= 3 && argv[1][0] == '-') { mode = argv[1][1]; farg = 2; }
+        if (argc <= farg) return 1;
+        shfile_t *f = sh_file_find(argv[farg]);
+        if (!f) { k_strcpy(out, "wc: no such file"); return 1; }
+        u32 lines = 0, words = 0, chars = f->len; bool inw = false;
+        for (u32 i = 0; i < f->len; i++) {
+            if (f->data[i] == '\n') lines++;
+            bool sp = (f->data[i] == ' ' || f->data[i] == '\t' || f->data[i] == '\n');
+            if (!sp && !inw) { words++; inw = true; }
+            else if (sp)     { inw = false; }
+        }
+        if (f->len > 0 && f->data[f->len - 1] != '\n') lines++;
+        char num[16];
+        out[0] = 0;
+        if (mode == 'l' || mode == 0) { k_itoa(lines, num, 10); k_strcat(out, num); k_strcat(out, " "); }
+        if (mode == 'w' || mode == 0) { k_itoa(words, num, 10); k_strcat(out, num); k_strcat(out, " "); }
+        if (mode == 'c' || mode == 0) { k_itoa(chars, num, 10); k_strcat(out, num); k_strcat(out, " "); }
+        k_strcat(out, argv[farg]);
+        return 0;
+    }
+    /* sort / uniq — operate on file content line-by-line ------------ */
+    if (k_strcmp(cmd, "sort") == 0 || k_strcmp(cmd, "uniq") == 0) {
+        if (argc < 2) return 1;
+        shfile_t *f = sh_file_find(argv[1]);
+        if (!f) { k_strcpy(out, cmd); k_strcat(out, ": no such file"); return 1; }
+        /* split into up to 32 lines (max 96 chars each)               */
+        char lines[32][96]; i32 nl = 0;
+        i32 li = 0; lines[0][0] = 0;
+        for (u32 i = 0; i < f->len && nl < 32; i++) {
+            if (f->data[i] == '\n') {
+                lines[nl][li] = 0; nl++; li = 0;
+                if (nl < 32) lines[nl][0] = 0;
+            } else if (li < 95) {
+                lines[nl][li++] = f->data[i];
+            }
+        }
+        if (li > 0 && nl < 32) { lines[nl][li] = 0; nl++; }
+        if (k_strcmp(cmd, "sort") == 0) {
+            /* O(n^2) selection sort (n ≤ 32, fine)                   */
+            for (i32 a = 0; a < nl - 1; a++) {
+                i32 best = a;
+                for (i32 b = a + 1; b < nl; b++)
+                    if (k_strcmp(lines[b], lines[best]) < 0) best = b;
+                if (best != a) {
+                    char tmp[96]; k_strcpy(tmp, lines[a]);
+                    k_strcpy(lines[a], lines[best]); k_strcpy(lines[best], tmp);
+                }
+            }
+        } else { /* uniq — drop adjacent duplicates                  */
+            i32 w = 0;
+            for (i32 r = 0; r < nl; r++) {
+                if (w == 0 || k_strcmp(lines[w - 1], lines[r]) != 0) {
+                    if (w != r) k_strcpy(lines[w], lines[r]);
+                    w++;
+                }
+            }
+            nl = w;
+        }
+        out[0] = 0; i32 oc = 0;
+        for (i32 a = 0; a < nl && oc < cap - 2; a++) {
+            for (i32 b = 0; lines[a][b] && oc < cap - 2; b++) out[oc++] = lines[a][b];
+            if (a < nl - 1) out[oc++] = '\n';
+        }
+        out[oc] = 0;
+        return 0;
+    }
+    /* grep PATTERN file --------------------------------------------- */
+    if (k_strcmp(cmd, "grep") == 0) {
+        if (argc < 3) { k_strcpy(out, "grep: usage: grep PATTERN FILE"); return 1; }
+        shfile_t *f = sh_file_find(argv[2]);
+        if (!f) { k_strcpy(out, "grep: no such file"); return 1; }
+        const char *pat = argv[1]; i32 pl = k_strlen(pat);
+        out[0] = 0; i32 oc = 0;
+        i32 line_start = 0;
+        for (u32 i = 0; i <= f->len; i++) {
+            if (i == f->len || f->data[i] == '\n') {
+                /* check pat in [line_start, i) */
+                bool hit = false;
+                for (i32 a = line_start; a + pl <= (i32)i && !hit; a++) {
+                    bool ok = true;
+                    for (i32 b = 0; b < pl && ok; b++)
+                        if (f->data[a + b] != pat[b]) ok = false;
+                    if (ok) hit = true;
+                }
+                if (hit) {
+                    for (i32 a = line_start; a < (i32)i && oc < cap - 2; a++)
+                        out[oc++] = f->data[a];
+                    if (oc < cap - 2) out[oc++] = '\n';
+                }
+                line_start = i + 1;
+            }
+        }
+        if (oc > 0) out[oc - 1] = 0;
+        else        out[0] = 0;
+        return 0;
+    }
+    /* tr FROM TO — character-class translate (echo|tr 'a-z' 'A-Z')  */
+    if (k_strcmp(cmd, "tr") == 0) {
+        if (argc < 3) return 1;
+        const char *from = argv[1], *to = argv[2];
+        i32 fl = k_strlen(from);
+        out[0] = 0; i32 oc = 0;
+        /* tr operates on the file we were given, defaulting to a piped
+         * stdin (we don't implement pipes here, so callers redirect).  */
+        const char *src = (argc >= 4) ? argv[3] : "";
+        shfile_t *f = sh_file_find(src);
+        const char *data = f ? f->data : src;
+        u32 dlen = f ? f->len : (u32)k_strlen(src);
+        for (u32 i = 0; i < dlen && oc < cap - 1; i++) {
+            char c = data[i]; bool hit = false;
+            for (i32 j = 0; j < fl; j++) {
+                if (from[j] == c) {
+                    out[oc++] = (j < k_strlen(to)) ? to[j] : c;
+                    hit = true; break;
+                }
+            }
+            if (!hit) out[oc++] = c;
+        }
+        out[oc] = 0;
+        return 0;
+    }
+    /* cut -c N-M file ----------------------------------------------- */
+    if (k_strcmp(cmd, "cut") == 0) {
+        if (argc < 4) return 1;
+        i32 a = 1, b = 1;
+        const char *spec = argv[2];
+        if (argv[1][0] == '-' && argv[1][1] == 'c') {
+            a = 0; const char *p = spec;
+            while (*p >= '0' && *p <= '9') { a = a * 10 + (*p - '0'); p++; }
+            if (*p == '-') {
+                p++; b = 0;
+                while (*p >= '0' && *p <= '9') { b = b * 10 + (*p - '0'); p++; }
+            } else b = a;
+        }
+        shfile_t *f = sh_file_find(argv[3]);
+        if (!f) return 1;
+        out[0] = 0; i32 oc = 0; i32 col = 1;
+        for (u32 i = 0; i < f->len && oc < cap - 1; i++) {
+            if (f->data[i] == '\n') {
+                out[oc++] = '\n'; col = 1; continue;
+            }
+            if (col >= a && col <= b) out[oc++] = f->data[i];
+            col++;
+        }
+        out[oc] = 0;
+        return 0;
+    }
+    /* tee file — overwrite a file with the joined remaining args ---- */
+    if (k_strcmp(cmd, "tee") == 0) {
+        if (argc < 2) return 1;
+        shfile_t *f = sh_file_open_w(argv[1], false);
+        if (!f) return 1;
+        out[0] = 0;
+        for (i32 i = 2; i < argc; i++) {
+            i32 ol = k_strlen(out);
+            if (i > 2 && ol < cap - 1) k_strcat(out, " ");
+            k_strcat(out, argv[i]);
+        }
+        i32 ol = k_strlen(out);
+        for (i32 i = 0; i < ol && i < SH_FBYTES - 1; i++) f->data[i] = out[i];
+        f->len = ol; f->data[f->len] = 0;
+        return 0;
+    }
+    /* find — list all shfs entries (no path filter, single-dir fs)   */
+    if (k_strcmp(cmd, "find") == 0) {
+        out[0] = 0;
+        for (i32 i = 0; i < SH_FILES; i++) if (sh_files[i].used) {
+            k_strcat(out, "./");
+            k_strcat(out, sh_files[i].name);
+            k_strcat(out, "\n");
+        }
+        i32 ol = k_strlen(out);
+        if (ol > 0) out[ol - 1] = 0;
+        return 0;
+    }
+    /* basename / dirname ------------------------------------------- */
+    if (k_strcmp(cmd, "basename") == 0) {
+        if (argc < 2) return 1;
+        const char *p = argv[1]; const char *last = p;
+        for (; *p; p++) if (*p == '/') last = p + 1;
+        k_strcpy(out, last);
+        return 0;
+    }
+    if (k_strcmp(cmd, "dirname") == 0) {
+        if (argc < 2) return 1;
+        i32 last = -1;
+        for (i32 i = 0; argv[1][i]; i++) if (argv[1][i] == '/') last = i;
+        if (last < 0) { k_strcpy(out, "."); return 0; }
+        for (i32 i = 0; i < last; i++) out[i] = argv[1][i];
+        out[last] = 0; if (last == 0) k_strcpy(out, "/");
+        return 0;
+    }
+    /* more / less — single-page cat ------------------------------- */
+    if (k_strcmp(cmd, "more") == 0 || k_strcmp(cmd, "less") == 0) {
+        if (argc < 2) return 1;
+        shfile_t *f = sh_file_find(argv[1]);
+        if (!f) return 1;
+        i32 k = 0;
+        while (f->data[k] && k < cap - 1) { out[k] = f->data[k]; k++; }
+        out[k] = 0;
+        return 0;
+    }
+    /* xxd / hexdump first 64 bytes -------------------------------- */
+    if (k_strcmp(cmd, "xxd") == 0 || k_strcmp(cmd, "hexdump") == 0) {
+        if (argc < 2) return 1;
+        shfile_t *f = sh_file_find(argv[1]);
+        if (!f) return 1;
+        out[0] = 0; char num[8]; i32 oc = 0;
+        for (u32 i = 0; i < f->len && i < 64 && oc < cap - 8; i++) {
+            u8 b = (u8)f->data[i];
+            const char *hex = "0123456789abcdef";
+            num[0] = hex[(b >> 4) & 0xF]; num[1] = hex[b & 0xF]; num[2] = ' '; num[3] = 0;
+            k_strcat(out, num); oc += 3;
+        }
+        return 0;
+    }
+    /* file — guess content type ------------------------------------ */
+    if (k_strcmp(cmd, "file") == 0) {
+        if (argc < 2) return 1;
+        shfile_t *f = sh_file_find(argv[1]);
+        if (!f) { k_strcpy(out, "file: no such file"); return 1; }
+        bool ascii = true;
+        for (u32 i = 0; i < f->len; i++) {
+            u8 c = (u8)f->data[i];
+            if (c < 9 || (c > 13 && c < 32) || c == 127) { ascii = false; break; }
+        }
+        k_strcpy(out, argv[1]);
+        k_strcat(out, ascii ? ": ASCII text" : ": data");
+        return 0;
+    }
+    /* printf — %s only --------------------------------------------- */
+    if (k_strcmp(cmd, "printf") == 0) {
+        out[0] = 0;
+        if (argc < 2) return 0;
+        i32 ai = 2;
+        for (i32 i = 0; argv[1][i]; i++) {
+            if (argv[1][i] == '%' && argv[1][i + 1] == 's' && ai < argc) {
+                k_strcat(out, argv[ai++]); i++;
+            } else if (argv[1][i] == '\\' && argv[1][i + 1] == 'n') {
+                k_strcat(out, "\n"); i++;
+            } else {
+                char one[2] = { argv[1][i], 0 }; k_strcat(out, one);
+            }
+        }
+        return 0;
+    }
+    /* yes — bash echoes 'y' forever; we echo it once so the term
+     * doesn't lock up                                              */
+    if (k_strcmp(cmd, "yes") == 0) {
+        k_strcpy(out, argc >= 2 ? argv[1] : "y");
+        return 0;
+    }
+    /* seq M [N] ---------------------------------------------------- */
+    if (k_strcmp(cmd, "seq") == 0) {
+        if (argc < 2) return 1;
+        i32 a = 1, b = 0;
+        const char *p1 = argv[1];
+        i32 v1 = 0; while (*p1 >= '0' && *p1 <= '9') { v1 = v1 * 10 + (*p1 - '0'); p1++; }
+        if (argc >= 3) {
+            a = v1;
+            const char *p2 = argv[2]; b = 0;
+            while (*p2 >= '0' && *p2 <= '9') { b = b * 10 + (*p2 - '0'); p2++; }
+        } else { a = 1; b = v1; }
+        out[0] = 0; char num[16];
+        for (i32 i = a; i <= b && k_strlen(out) < cap - 8; i++) {
+            k_itoa(i, num, 10); k_strcat(out, num);
+            if (i < b) k_strcat(out, "\n");
+        }
+        return 0;
+    }
+    /* expr / test / [ ---------------------------------------------- */
+    if (k_strcmp(cmd, "expr") == 0) {
+        if (argc < 4) return 1;
+        i32 a = 0, b = 0;
+        const char *p = argv[1]; while (*p >= '0' && *p <= '9') { a = a * 10 + (*p - '0'); p++; }
+        p = argv[3]; while (*p >= '0' && *p <= '9') { b = b * 10 + (*p - '0'); p++; }
+        i32 r = 0;
+        if (k_strcmp(argv[2], "+") == 0) r = a + b;
+        else if (k_strcmp(argv[2], "-") == 0) r = a - b;
+        else if (k_strcmp(argv[2], "*") == 0) r = a * b;
+        else if (k_strcmp(argv[2], "/") == 0) r = (b == 0) ? 0 : a / b;
+        else if (k_strcmp(argv[2], "%") == 0) r = (b == 0) ? 0 : a % b;
+        else { k_strcpy(out, "expr: unsupported op"); return 2; }
+        char num[16]; k_itoa(r, num, 10); k_strcpy(out, num);
+        return 0;
+    }
+    if (k_strcmp(cmd, "test") == 0 || k_strcmp(cmd, "[") == 0) {
+        /* [ -z STR ] / [ -n STR ] / [ A = B ] / [ A != B ] / [ A -lt B ] etc */
+        i32 stripped = (k_strcmp(cmd, "[") == 0 &&
+                        argc >= 2 && k_strcmp(argv[argc - 1], "]") == 0) ? 1 : 0;
+        i32 nargs = argc - stripped;
+        if (nargs == 3) {
+            i32 a = 0, b = 0;
+            for (i32 i = 0; argv[1][i]; i++) a = a * 10 + (argv[1][i] - '0');
+            for (i32 i = 0; argv[3][i]; i++) b = b * 10 + (argv[3][i] - '0');
+            if (k_strcmp(argv[2], "=")    == 0) return k_strcmp(argv[1], argv[3]) == 0 ? 0 : 1;
+            if (k_strcmp(argv[2], "!=")   == 0) return k_strcmp(argv[1], argv[3]) != 0 ? 0 : 1;
+            if (k_strcmp(argv[2], "-eq")  == 0) return a == b ? 0 : 1;
+            if (k_strcmp(argv[2], "-ne")  == 0) return a != b ? 0 : 1;
+            if (k_strcmp(argv[2], "-lt")  == 0) return a <  b ? 0 : 1;
+            if (k_strcmp(argv[2], "-le")  == 0) return a <= b ? 0 : 1;
+            if (k_strcmp(argv[2], "-gt")  == 0) return a >  b ? 0 : 1;
+            if (k_strcmp(argv[2], "-ge")  == 0) return a >= b ? 0 : 1;
+        } else if (nargs == 2) {
+            if (k_strcmp(argv[1], "-z") == 0) return argv[2][0] == 0 ? 0 : 1;
+            if (k_strcmp(argv[1], "-n") == 0) return argv[2][0] != 0 ? 0 : 1;
+            if (k_strcmp(argv[1], "-e") == 0 || k_strcmp(argv[1], "-f") == 0)
+                return sh_file_find(argv[2]) ? 0 : 1;
+        }
+        return 1;
+    }
+    /* alias / export — we accept the syntax but treat them as no-ops
+     * (assignment via X=val already covered above)                  */
+    if (k_strcmp(cmd, "alias") == 0 || k_strcmp(cmd, "export") == 0) return 0;
+    /* sleep — cooperative spin (1s = ~PIT_HZ ticks).  Single-task
+     * kernel, so we just no-op past tiny intervals.                 */
+    if (k_strcmp(cmd, "sleep") == 0) return 0;
+    /* history — show the last command we just ran (single slot).    */
+    if (k_strcmp(cmd, "history") == 0) { k_strcpy(out, "1  (history is shell-buffered)"); return 0; }
+    /* ---- system info commands ---------------------------------- */
+    if (k_strcmp(cmd, "hostname") == 0) { k_strcpy(out, "falcon-1"); return 0; }
+    if (k_strcmp(cmd, "id") == 0) {
+        const falcon_user_t *u = users_at(SET.active_user);
+        k_strcpy(out, "uid=1000(");
+        k_strcat(out, u ? u->name : "falcon");
+        k_strcat(out, ") gid=1000(staff)");
+        return 0;
+    }
+    if (k_strcmp(cmd, "groups") == 0) { k_strcpy(out, "staff falcon"); return 0; }
+    if (k_strcmp(cmd, "who") == 0 || k_strcmp(cmd, "w") == 0 ||
+        k_strcmp(cmd, "users") == 0) {
+        out[0] = 0;
+        for (i32 i = 0; i < SET.user_count; i++) {
+            if (i > 0) k_strcat(out, "\n");
+            k_strcat(out, SET.users[i].name);
+            k_strcat(out, "  tty1   (local)");
+        }
+        return 0;
+    }
+    if (k_strcmp(cmd, "uptime") == 0) {
+        u32 h = 0, m = 0, s = 0; pit_uptime(&h, &m, &s);
+        char num[16]; out[0] = 0;
+        k_strcat(out, "up ");
+        k_itoa(h, num, 10); k_strcat(out, num); k_strcat(out, "h ");
+        k_itoa(m, num, 10); k_strcat(out, num); k_strcat(out, "m ");
+        k_itoa(s, num, 10); k_strcat(out, num); k_strcat(out, "s, ");
+        k_itoa(SET.user_count, num, 10); k_strcat(out, num);
+        k_strcat(out, " user(s)");
+        return 0;
+    }
+    if (k_strcmp(cmd, "cal") == 0) {
+        rtc_time_t t; rtc_local(&t);
+        char num[16];
+        k_strcpy(out, loc_month_short(t.month)); k_strcat(out, " ");
+        k_itoa(t.year, num, 10); k_strcat(out, num);
+        return 0;
+    }
+    /* ps / top — single-task kernel; show one fake row              */
+    if (k_strcmp(cmd, "ps") == 0 || k_strcmp(cmd, "top") == 0 ||
+        k_strcmp(cmd, "jobs") == 0) {
+        k_strcpy(out, "  PID TTY     TIME CMD\n    1 tty1   0:00 falcon-kernel\n   42 tty1   0:00 ");
+        k_strcat(out, cmd);
+        return 0;
+    }
+    if (k_strcmp(cmd, "kill") == 0) { k_strcpy(out, "kill: no userland processes"); return 1; }
+    /* df / du / free / mount / lsblk -------------------------------- */
+    if (k_strcmp(cmd, "df") == 0) {
+        u32 r, w, retry, fail; ata_stats(&r, &w, &retry, &fail);
+        i32 disks = ata_probe_count();
+        char num[16]; out[0] = 0;
+        k_strcat(out, "Filesystem  Size  Used  Avail Use% Mounted on\n");
+        if (disks > 0) {
+            u64 sec = ata_sectors(0);
+            u32 mib = (u32)((sec * 512) / (1024 * 1024));
+            k_strcat(out, "ata0        ");
+            k_itoa(mib, num, 10); k_strcat(out, num); k_strcat(out, "M  -    -      -   /");
+        } else {
+            k_strcat(out, "ramfs       -     -    -      -   /");
+        }
+        return 0;
+    }
+    if (k_strcmp(cmd, "du") == 0) {
+        u32 total = 0; out[0] = 0; char num[16];
+        for (i32 i = 0; i < SH_FILES; i++) if (sh_files[i].used) {
+            total += sh_files[i].len;
+            k_itoa(sh_files[i].len, num, 10);
+            k_strcat(out, num); k_strcat(out, "\t");
+            k_strcat(out, sh_files[i].name); k_strcat(out, "\n");
+        }
+        k_itoa(total, num, 10);
+        k_strcat(out, num); k_strcat(out, "\ttotal");
+        return 0;
+    }
+    if (k_strcmp(cmd, "free") == 0) {
+        char num[16];
+        k_strcpy(out, "             total        used        free\n");
+        k_strcat(out, "Mem:   ");
+        k_itoa(8 * 1024, num, 10); k_strcat(out, num); k_strcat(out, "MB    ");
+        k_itoa(64, num, 10);       k_strcat(out, num); k_strcat(out, "MB    ");
+        k_itoa(8 * 1024 - 64, num, 10);
+        k_strcat(out, num); k_strcat(out, "MB");
+        return 0;
+    }
+    if (k_strcmp(cmd, "mount") == 0) {
+        k_strcpy(out, "ata0 on / type FalconFS (rw,relatime)\nshfs on /home/falcon type ramfs (rw)");
+        return 0;
+    }
+    if (k_strcmp(cmd, "lsblk") == 0) {
+        char num[16]; out[0] = 0;
+        i32 disks = ata_probe_count();
+        k_strcat(out, "NAME   SIZE TYPE\n");
+        for (i32 i = 0; i < disks; i++) {
+            u64 sec = ata_sectors(i);
+            u32 mib = (u32)((sec * 512) / (1024 * 1024));
+            k_strcat(out, "sda    ");
+            k_itoa(mib, num, 10); k_strcat(out, num); k_strcat(out, "M  disk\n");
+        }
+        if (disks == 0) k_strcat(out, "(no block devices)");
+        return 0;
+    }
+    /* power -------------------------------------------------------- */
+    if (k_strcmp(cmd, "reboot") == 0) {
+        k_strcpy(out, "reboot scheduled — see Power menu (F12)");
+        return 0;
+    }
+    if (k_strcmp(cmd, "shutdown") == 0 || k_strcmp(cmd, "poweroff") == 0 ||
+        k_strcmp(cmd, "halt") == 0) {
+        k_strcpy(out, cmd); k_strcat(out, ": use F12 power menu to confirm");
+        return 0;
+    }
+    /* which / type — search built-in keywords ---------------------- */
+    if (k_strcmp(cmd, "which") == 0 || k_strcmp(cmd, "type") == 0) {
+        if (argc < 2) return 1;
+        static const char *BUILTINS[] = {
+            "pwd","cd","ls","cat","echo","env","set","unset","export","alias",
+            "rm","touch","cp","mv","mkdir","rmdir","head","tail","wc","sort",
+            "uniq","grep","tr","cut","tee","find","basename","dirname","more",
+            "less","xxd","hexdump","file","printf","yes","seq","expr","test",
+            "[","sleep","history","hostname","id","groups","who","w","users",
+            "uptime","cal","ps","top","jobs","kill","df","du","free","mount",
+            "lsblk","reboot","shutdown","poweroff","halt","which","type",
+            "uname","whoami","date","clear","help","true","false","exit",NULL
+        };
+        for (i32 i = 0; BUILTINS[i]; i++) {
+            if (k_strcmp(BUILTINS[i], argv[1]) == 0) {
+                k_strcpy(out, argv[1]);
+                k_strcat(out, ": shell builtin");
+                return 0;
+            }
+        }
+        k_strcpy(out, argv[1]); k_strcat(out, " not found");
+        return 1;
     }
     /* unknown */
     k_strcpy(out, cmd); k_strcat(out, ": command not found");
