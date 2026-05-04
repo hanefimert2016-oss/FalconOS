@@ -113,7 +113,7 @@ void launchpad_render(u32 frame)
     gfx_text_centered((i32)FB.width / 2, grid_y - 60, "Launchpad", PAL_TEXT);
     gfx_text_centered((i32)FB.width / 2, grid_y - 36,
                       T("arrows + Enter to open, click to launch, P pins to desktop, Esc closes",
-                        "ok ile gez Enter ile ac, tikla, P masaustune sabitler, Esc kapatir"),
+                        "ok ile gez Enter ile aç, tıkla, P masaüstüne sabitler, Esc kapatır"),
                       PAL_TEXT_DIM);
 
     i32 mx, my; bool ml; mouse_get(&mx, &my, &ml); (void)ml;

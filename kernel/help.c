@@ -101,7 +101,7 @@ void helppanel_render(u32 frame)
     i32 cx = panel_x + PANEL_W / 2;
     gfx_text_lg(cx - 110, 60, "FalconOS 1", PAL_TEXT);
     gfx_text(panel_x + 28, 110,
-             T("Quick start guide", "Hizli baslangic rehberi"),
+             T("Quick start guide", "Hızlı başlangıç rehberi"),
              PAL_TEXT_DIM);
 
     /* sections */
@@ -111,47 +111,47 @@ void helppanel_render(u32 frame)
     draw_section(x, y,
         T("Keyboard",  "Klavye"),
         T("F1   toggle Personal / Developer kernel",
-          "F1   Personal / Developer cekirdek"),
+          "F1   Personal / Developer çekirdek"),
         T("F2   open the Launchpad (all apps)",
-          "F2   Launchpad'i ac (tum uygulamalar)"),
+          "F2   Launchpad'i aç (tüm uygulamalar)"),
         T("F12  open the Power menu",
-          "F12  Guc menusunu ac"),
+          "F12  Güç menüsünü aç"),
         T("Esc  close the active app or dialog",
-          "Esc  acik uygulamayi / dialogu kapat"));
+          "Esc  açık uygulamayı / dialogu kapat"));
 
     y += 116;
     draw_section(x, y,
         T("Mouse",  "Fare"),
         T("Left click   open / select",
-          "Sol tik      ac / sec"),
+          "Sol tık      aç / seç"),
         T("Right click  pin to desktop",
-          "Sag tik      masaustune sabitle"),
+          "Sağ tık      masaüstüne sabitle"),
         T("Double click open quickly",
-          "Cift tik     hizli ac"),
+          "Çift tık     hızlı aç"),
         NULL);
 
     y += 100;
     draw_section(x, y,
         T("Windows",  "Pencere"),
         T("Drag the title bar    move",
-          "Basliktan suruke      tasi"),
+          "Başlıktan sürükle      taşı"),
         T("Drag the bottom-right resize",
-          "Sag-alttan suruke     boyutlandir"),
+          "Sağ-alttan sürükle     boyutlandır"),
         T("Traffic lights        close / min / max",
-          "Trafik isiklari       kapat / kucult / buyut"),
+          "Trafik ışıkları       kapat / küçült / büyüt"),
         NULL);
 
     y += 100;
     draw_section(x, y,
         T("Settings",  "Ayarlar"),
         T("Theme, language, resolution, password",
-          "Tema, dil, cozunurluk, parola"),
+          "Tema, dil, çözünürlük, parola"),
         T("Open from the dock or via Launchpad",
           "Dock veya Launchpad'den acabilirsin"),
         NULL, NULL);
 
     /* close pill at the bottom */
-    const char *ok = T("Got it",  "Anladim");
+    const char *ok = T("Got it",  "Anladım");
     i32 ow = gfx_text_width(ok) + 36;
     i32 ox = panel_x + (PANEL_W - ow) / 2;
     i32 oy = H - 60;
@@ -161,7 +161,7 @@ void helppanel_render(u32 frame)
     /* footer hint */
     gfx_text_centered(panel_x + PANEL_W / 2, H - 22,
         T("Esc closes — find me again at the ? in the top bar",
-          "Esc ile kapat — tekrar ust cubuktaki ? den ac"),
+          "Esc ile kapat — tekrar üst çubuktaki ? den aç"),
         PAL_TEXT_FAINT);
 }
 
@@ -189,7 +189,7 @@ bool helppanel_handle_mouse(i32 mx, i32 my, bool click)
     i32 panel_x = W - PANEL_W;
 
     /* close pill */
-    const char *ok = T("Got it", "Anladim");
+    const char *ok = T("Got it", "Anladım");
     i32 ow = gfx_text_width(ok) + 36;
     i32 ox = panel_x + (PANEL_W - ow) / 2;
     i32 oy = H - 60;

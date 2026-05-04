@@ -52,10 +52,10 @@ static void draw_uptime_card(void)
 
     gfx_circle(x + w - 22, y + 22, 5, COL_OK);
     gfx_text(x + w - 92, y + 38,
-             T("online", "calisiyor"), COL_OK);
+             T("online", "çalışıyor"), COL_OK);
     gfx_text(x + 18, y + 62,
              T("all systems nominal",
-               "tum sistemler normal"), PAL_TEXT_FAINT);
+               "tüm sistemler normal"), PAL_TEXT_FAINT);
 }
 
 /* --- top-right display card ----------------------------------------------- */
@@ -198,7 +198,7 @@ static void draw_welcome_banner(void)
     /* personalised greeting in the active language */
     char greet[64];
     k_strcpy(greet,
-             TX("Welcome",  "Hosgeldin",  "Willkommen",  "Bienvenue",  "Bienvenido"));
+             TX("Welcome",  "Hoşgeldin",  "Willkommen",  "Bienvenue",  "Bienvenido"));
     if (SET.user_count > 0 &&
         SET.active_user >= 0 && SET.active_user < FALCON_MAX_USERS &&
         SET.users[SET.active_user].in_use) {
@@ -211,27 +211,27 @@ static void draw_welcome_banner(void)
     /* three actionable hints — same order in every language */
     gfx_text_centered(x + w / 2, y + 56,
         TX("F2 opens the Launchpad with all your apps",
-           "F2 tum uygulamalari Launchpad'de acar",
+           "F2 tüm uygulamalari Launchpad'de acar",
            "F2 oeffnet das Launchpad mit allen Apps",
            "F2 ouvre le Launchpad avec toutes vos apps",
            "F2 abre el Launchpad con todas tus apps"), PAL_TEXT_DIM);
 
     gfx_text_centered(x + w / 2, y + 78,
         TX("F1 toggles to the Developer kernel",
-           "F1 ile Developer cekirdegine gecersin",
+           "F1 ile Developer çekirdeğine geçersin",
            "F1 schaltet zum Developer-Kernel",
            "F1 bascule sur le noyau Developer",
            "F1 cambia al kernel Developer"), PAL_TEXT_DIM);
 
     gfx_text_centered(x + w / 2, y + 100,
         TX("Esc closes any open app",
-           "Esc acik uygulamayi kapatir",
+           "Esc açık uygulamayı kapatır",
            "Esc schliesst geoeffnete Apps",
            "Esc ferme l'app ouverte",
            "Esc cierra cualquier app abierta"), PAL_TEXT_DIM);
 
     /* dismiss pill */
-    const char *ok = TX("OK, got it", "Anladim", "Verstanden", "C'est compris", "Entendido");
+    const char *ok = TX("OK, got it", "Anladım", "Verstanden", "C'est compris", "Entendido");
     i32 ow = gfx_text_width(ok) + 32;
     i32 ox = x + (w - ow) / 2;
     i32 oy = y + h - 38;
@@ -264,7 +264,7 @@ void mode_personal_render(u32 frame)
     gfx_text_centered((i32)FB.width / 2,
                       (i32)FB.height - 18,
                       T("<- ->  navigate    Enter open    F2 Launchpad    right-click pins to desktop",
-                        "<- ->  gez    Enter ac    F2 Launchpad    sag-tik masaustune sabitle"),
+                        "<- ->  gez    Enter aç    F2 Launchpad    sağ-tık masaüstüne sabitle"),
                       PAL_TEXT_DIM);
 
     /* desktop-pin clicks fire BEFORE active app render so a click on a pin

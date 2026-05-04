@@ -116,7 +116,7 @@ void installer_render(u32 frame)
 
     switch (g_step) {
         case INST_LANG: {
-            headline = "Choose your language  /  Dilini sec  /  Sprache  /  Langue  /  Idioma";
+            headline = "Choose your language  /  Dilini seç  /  Sprache  /  Langue  /  Idioma";
             helptext = "<-/->  switch    Enter  continue";
             const char *items[5] = { "Turkce", "English", "Deutsch", "Francais", "Espanol" };
             /* Per-language accent dot — a visible "you are here" cue
@@ -143,9 +143,9 @@ void installer_render(u32 frame)
         }
         case INST_THEME: {
             headline = T("Pick a theme",
-                          "Bir tema sec");
+                          "Bir tema seç");
             helptext = T("You can change this any time from Settings.",
-                          "Ayarlardan istedigin zaman degistirebilirsin.");
+                          "Ayarlardan istediğin zaman değiştirebilirsin.");
             /* 5 themes shipped in the box. Tile width is shrunk so all
              * five fit on a single row at FHD.                         */
             const char *items[THEME_COUNT] = {
@@ -178,9 +178,9 @@ void installer_render(u32 frame)
         }
         case INST_ACCENT: {
             headline = T("Pick an accent color",
-                          "Vurgu rengi sec");
+                          "Vurgu rengi seç");
             helptext = T("Used for buttons, badges and highlights.",
-                          "Butonlar, rozetler ve vurgular icin.");
+                          "Butonlar, rozetler ve vurgular için.");
             const char *items[5] = { "Blue", "Purple", "Green", "Pink", "Graphite" };
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
             i32 pw = 130, pad = 10, n = 5;
@@ -206,9 +206,9 @@ void installer_render(u32 frame)
         }
         case INST_KBD: {
             headline = T("Choose your keyboard layout",
-                          "Klavye duzenini sec");
+                          "Klavye düzenini seç");
             helptext = T("Used for typing in apps. Affects scancode -> char.",
-                          "Uygulamada yazma icin. Scancode -> karakter etkilenir.");
+                          "Uygulamada yazma için. Scancode -> karakter etkilenir.");
             const char *items[3] = { "TR-Q", "TR-F", "US-QWERTY" };
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
             draw_choice_row(cy - 40, items, 3, g_choice);
@@ -219,7 +219,7 @@ void installer_render(u32 frame)
             headline = T("Choose where to install FalconOS 1",
                           "FalconOS 1'i nereye kuralim?");
             helptext = T("User database + settings will be written to this disk.",
-                          "Kullanici + ayarlar bu diske yazilacak.");
+                          "Kullanıcı + ayarlar bu diske yazilacak.");
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
 
             /* Build a list: each detected ATA drive + a final "RAM only"
@@ -287,7 +287,7 @@ void installer_render(u32 frame)
                              title_c);
                     gfx_text(rx + 56, yy + 36,
                              T("Settings + users will reset on every cold boot.",
-                               "Ayarlar ve kullanicilar her acilista sifirlanir."),
+                               "Ayarlar ve kullanıcılar her açılışta sıfırlanır."),
                              sub_c);
                 }
             }
@@ -296,8 +296,8 @@ void installer_render(u32 frame)
         }
         case INST_USER_NAME: {
             headline = T("Create your account",
-                          "Hesabini olustur");
-            char hbuf[64]; k_strcpy(hbuf, T("User ", "Kullanici "));
+                          "Hesabını oluştur");
+            char hbuf[64]; k_strcpy(hbuf, T("User ", "Kullanıcı "));
             char num[8]; k_itoa((u32)(SET.user_count + 1), num, 10); k_strcat(hbuf, num);
             k_strcat(hbuf, T(" of up to 8.   Type a name, Enter to continue.",
                               "/8.   Bir ad yaz, Enter ile devam."));
@@ -322,7 +322,7 @@ void installer_render(u32 frame)
                           "Adim 1/2.  Sonraki ekranda tekrar yazacaksin.");
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
 
-            char who[40]; k_strcpy(who, T("User: ", "Kullanici: "));
+            char who[40]; k_strcpy(who, T("User: ", "Kullanıcı: "));
             k_strcat(who, g_uname);
             gfx_text_centered(cx, cy - 78, who, PAL_TEXT_DIM);
 
@@ -349,11 +349,11 @@ void installer_render(u32 frame)
             }
             const char *strength_label;
             switch (strength) {
-                case 0: strength_label = TX("(empty)", "(bos)",
+                case 0: strength_label = TX("(empty)", "(boş)",
                                              "(leer)", "(vide)", "(vacio)"); break;
                 case 1: strength_label = TX("Weak", "Zayif",
                                              "Schwach","Faible","Debil"); break;
-                case 2: strength_label = TX("OK",   "Iyi",
+                case 2: strength_label = TX("OK",   "İyi",
                                              "OK",  "OK",     "OK"); break;
                 default:strength_label = TX("Strong","Guclu",
                                              "Stark","Forte", "Fuerte"); break;
@@ -367,7 +367,7 @@ void installer_render(u32 frame)
         }
         case INST_USER_PASS2: {
             headline = T("Confirm your password",
-                          "Parolani onayla");
+                          "Parolanı onayla");
             helptext = g_pwd_mismatch
                 ? T("Passwords did not match. Try again.",
                     "Parolalar eslesmedi. Tekrar dene.")
@@ -375,7 +375,7 @@ void installer_render(u32 frame)
                     "Adim 2/2.  Ayni parolayi tekrar yaz.");
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
 
-            char who[40]; k_strcpy(who, T("User: ", "Kullanici: "));
+            char who[40]; k_strcpy(who, T("User: ", "Kullanıcı: "));
             k_strcat(who, g_uname);
             gfx_text_centered(cx, cy - 78, who, PAL_TEXT_DIM);
 
@@ -407,15 +407,15 @@ void installer_render(u32 frame)
         }
         case INST_USER_MORE: {
             char hbuf[80];
-            k_strcpy(hbuf, T("Add another user?  ", "Baska kullanici ekle?  "));
+            k_strcpy(hbuf, T("Add another user?  ", "Baska kullanıcı ekle?  "));
             char num[8]; k_itoa((u32)SET.user_count, num, 10); k_strcat(hbuf, num);
             k_strcat(hbuf, "/8");
             headline = hbuf;
             helptext = T("First created user becomes the default (auto on boot).",
-                          "Ilk olusturulan varsayilan olur (boot'ta otomatik).");
+                          "İlk oluşturulan varsayılan olur (boot'ta otomatik).");
             const char *items[2] = {
                 T("Yes, add another", "Evet, ekle"),
-                T("No, finish setup", "Hayir, bitir")
+                T("No, finish setup", "Hayır, bitir")
             };
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
             draw_choice_row(cy - 40, items, 2, g_choice);

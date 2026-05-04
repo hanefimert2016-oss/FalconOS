@@ -128,7 +128,7 @@ static void compute_tiles(tile_t out[4])
     i32 row1_y = row0_y + th + gap;
 
     static const char *L0[] = { "Shut down", "Restart", "Sleep", "Sign out" };
-    static const char *L0_TR[] = { "Kapat", "Yeniden baslat", "Uyku", "Oturumu kapat" };
+    static const char *L0_TR[] = { "Kapat", "Yeniden başlat", "Uyku", "Oturumu kapat" };
     static const char *S0[] = {
         "Power off the system",
         "Reboot the kernel",
@@ -137,8 +137,8 @@ static void compute_tiles(tile_t out[4])
     };
     static const char *S0_TR[] = {
         "Sistemi tamamen kapat",
-        "Cekirdegi yeniden yukle",
-        "Ekrani karart ve kilitle",
+        "Çekirdeği yeniden yükle",
+        "Ekranı karart ve kilitle",
         "Kilit ekranina don",
     };
     bool tr = (SET.lang == LANG_TR);
@@ -207,9 +207,9 @@ void power_menu_render(u32 frame)
 
     /* Header */
     {
-        const char *title = T("Power options",     "Guc secenekleri");
+        const char *title = T("Power options",     "Güç seçenekleri");
         const char *sub   = T("Pick what to do — Esc to cancel",
-                              "Yapmak istedigini sec — Esc ile iptal");
+                              "Yapmak istediğini seç — Esc ile iptal");
         i32 tw = gfx_text_width(title);
         i32 sw = gfx_text_width(sub);
         gfx_text(mx + (mw - tw) / 2, my + 26, title, PAL_TEXT);
@@ -248,7 +248,7 @@ void power_menu_render(u32 frame)
     {
         const char *hint = T(
             "Arrow keys to choose   Enter to confirm   Esc to cancel",
-            "Ok tuslari ile sec   Enter ile onayla   Esc ile iptal");
+            "Ok tuslari ile seç   Enter ile onayla   Esc ile iptal");
         i32 hw = gfx_text_width(hint);
         gfx_text(mx + (mw - hw) / 2, my + mh - 30, hint, PAL_TEXT_DIM);
     }

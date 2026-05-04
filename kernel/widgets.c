@@ -40,7 +40,7 @@ static void w_weather(i32 x, i32 y, i32 w, i32 h)
     gfx_text(x + w - 36, y + 60, "C",   PAL_TEXT_DIM);
     gfx_text(x + 18, y + h - 38,
              T("Mostly sunny",
-               "Cogunlukla gunesli"), PAL_TEXT_DIM);
+               "Çoğunlukla güneşli"), PAL_TEXT_DIM);
     gfx_text(x + 18, y + h - 22, "Istanbul", PAL_TEXT_FAINT);
 }
 
@@ -131,7 +131,7 @@ static void w_system(i32 x, i32 y, i32 w, i32 h)
     gfx_text(x + 18, y + h - 38, "x86_64 long mode", PAL_TEXT_DIM);
     gfx_text(x + 18, y + h - 22,
              T("Multiboot2 boot",
-               "Multiboot2 acilis"), PAL_TEXT_FAINT);
+               "Multiboot2 açılış"), PAL_TEXT_FAINT);
 
     /* CPU bar */
     i32 bar = (i32)(g_tick / 4) % 100;
@@ -173,12 +173,12 @@ static void w_recents(i32 x, i32 y, i32 w, i32 h)
     }
     gfx_text(x + 18, y + h - 22,
              T("Click any in Files",
-               "Files icinden ac"), PAL_TEXT_FAINT);
+               "Files icinden aç"), PAL_TEXT_FAINT);
 }
 
 static void w_quick(i32 x, i32 y, i32 w, i32 h)
 {
-    w_card(x, y, w, h, T("Quick", "Hizli"), 0x16B5A8);
+    w_card(x, y, w, h, T("Quick", "Hızlı"), 0x16B5A8);
     /* 4 mini tile grid: F2 Launchpad, F1 Dev, Theme, Lock */
     const char *labels[4] = {
         "F2",
@@ -189,7 +189,7 @@ static void w_quick(i32 x, i32 y, i32 w, i32 h)
     const char *subs[4] = {
         T("Launchpad",   "Launchpad"),
         T("Developer",   "Gelistirici"),
-        T("light/dark",  "acik/koyu"),
+        T("light/dark",  "açık/koyu"),
         T("from Set...", "ayardan..."),
     };
     u32 colors[4] = { 0x3070FF, 0xA45EE5, 0xE85D9C, 0xF59F1A };
@@ -238,7 +238,7 @@ void widgets_render(u32 frame)
     gfx_text(x0, ghy,        hello, PAL_TEXT);
     gfx_text(x0, ghy + 18,
              T("Pin apps to the desktop with P inside Launchpad.",
-               "Launchpad icindeyken P ile masaustune sabitle."),
+               "Launchpad icindeyken P ile masaüstüne sabitle."),
              PAL_TEXT_DIM);
 
     /* row 1 */

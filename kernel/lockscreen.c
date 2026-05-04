@@ -158,7 +158,7 @@ void lockscreen_render(u32 frame)
         gfx_text_centered(cx, cy - 215, date_buf, PAL_TEXT_DIM);
         gfx_text_centered   (cx, cy - 195,
                             TX("Welcome back",
-                               "Tekrar hosgeldin",
+                               "Tekrar hoşgeldin",
                                "Willkommen zuruck",
                                "Bon retour",
                                "Bienvenido de nuevo"), PAL_TEXT_DIM);
@@ -180,7 +180,7 @@ void lockscreen_render(u32 frame)
     if (SET.user_count > 1) {
         gfx_text_centered(cx, cy - 22,
             T("<-  ->   switch user",
-              "<-  ->   kullanici degistir"), PAL_TEXT_FAINT);
+              "<-  ->   kullanıcı değiştir"), PAL_TEXT_FAINT);
     }
 
     /* ---- password pill -------------------------------------------------- */
@@ -250,7 +250,7 @@ void lockscreen_render(u32 frame)
     } else {
         gfx_text_centered(cx, fy + fh + 12,
                           TX("Press Enter to unlock",
-                             "Enter ile kilidi ac",
+                             "Enter ile kilidi aç",
                              "Eingabe zum Entsperren",
                              "Entree pour deverrouiller",
                              "Intro para desbloquear"),

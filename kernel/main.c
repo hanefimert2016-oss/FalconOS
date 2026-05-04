@@ -106,7 +106,7 @@ static void draw_menu_bar(void)
     /* hint pill (centered) */
     {
         const char *hint = T("F1 kernel    F2 Launchpad    F12 Power    Esc closes",
-                             "F1 cekirdek    F2 Launchpad    F12 Guc    Esc kapatir");
+                             "F1 çekirdek    F2 Launchpad    F12 Güç    Esc kapatır");
         i32 hw = gfx_text_width(hint) + 28;
         i32 hx = (W - hw) / 2;
         gfx_round_rect_a(hx, 4, hw, H - 8, 11, PAL_PANEL_DEEP, 255);
@@ -242,7 +242,7 @@ static void boot_splash(void)
         gfx_circle_a(cx, cy, r - 36, PAL_ACCENT,    alpha);
         gfx_text_centered(cx, cy + r + 22, "FalconOS",         PAL_TEXT);
         gfx_text_centered(cx, cy + r + 44,
-            T("starting FalconOS 1", "FalconOS 1 baslatiliyor"),   PAL_TEXT_DIM);
+            T("starting FalconOS 1", "FalconOS 1 başlatılıyor"),   PAL_TEXT_DIM);
         gfx_text_centered(cx, cy + r + 64, "x86_64 long mode", PAL_TEXT_FAINT);
 
         gfx_present();

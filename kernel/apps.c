@@ -366,7 +366,7 @@ static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     gfx_text_centered(cx, wy + 210, "bare-metal x86_64 - personal & developer", PAL_ACCENT);
     gfx_text_centered(cx, wy + 232,
         T("two kernels, one binary - F1 to flip - F2 Launchpad",
-          "iki cekirdek, tek ikili - F1 ile gec - F2 Launchpad"),
+          "iki çekirdek, tek ikili - F1 ile geç - F2 Launchpad"),
         PAL_TEXT_DIM);
 
     /* Native subsystems strip */
@@ -381,7 +381,7 @@ static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 
     gfx_text_centered(cx, wy + 296,
         T("bare-metal microkernel  -  prg packages  -  Store  -  POSIX shell",
-          "bare-metal mikrocekirdek  -  prg paketleri  -  Magaza  -  POSIX kabuk"),
+          "bare-metal mikroçekirdek  -  prg paketleri  -  Mağaza  -  POSIX kabuk"),
         PAL_TEXT_FAINT);
 }
 
@@ -407,9 +407,9 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
     section(wx, wy,
-            T("Store",  "Magaza"),
+            T("Store",  "Mağaza"),
             T("up/down  pick    Enter/I install    R/Backspace remove",
-              "yukari/asagi  sec    Enter/I yukle    R/Backspace kaldir"));
+              "yukarı/aşağı  seç    Enter/I yükle    R/Backspace kaldır"));
 
     char hdr[80], num[12];
     k_strcpy(hdr, T("packages: ", "paket: "));
@@ -456,7 +456,7 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         const char *badge =
             p->builtin             ? T("built-in",  "yerlesik") :
             prg_is_installed(i)    ? T("installed", "kurulu")   :
-                                     T("get",       "yukle");
+                                     T("get",       "yükle");
         u32 badge_c =
             p->builtin             ? COL_OK :
             prg_is_installed(i)    ? COL_OK :
@@ -1300,7 +1300,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     (void)frame; (void)wh;
     section(wx, wy, T("Settings", "Ayarlar"),
                     T("up/down  pick row    left/right  change",
-                      "yukari/asagi  satir   sol/sag  degistir"));
+                      "yukarı/aşağı  satır   sol/sağ  değiştir"));
 
     i32 sx = wx + 24, sy = wy + 56, sw = ww - 48;
     i32 step = 36;     /* row vertical pitch                            */
@@ -1330,7 +1330,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     /* Aero --- frosted glass toggle ------------------------------------ */
     s_row(sx, sy + SR_AERO * step, sw,
           T("Aero (transparency)", "Aero (seffaflik)"),
-          SET.aero_enabled ? T("on", "acik") : T("off", "kapali"),
+          SET.aero_enabled ? T("on", "açık") : T("off", "kapalı"),
           set_row == SR_AERO,
           SET.aero_enabled ? COL_OK : PAL_TEXT_DIM);
 
@@ -1342,7 +1342,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 
     /* Keyboard layout -------------------------------------------------- */
     s_row(sx, sy + SR_KBD * step, sw,
-          T("Keyboard layout", "Klavye duzeni"),
+          T("Keyboard layout", "Klavye düzeni"),
           kbd_layout_name(SET.kbd_layout),
           set_row == SR_KBD, PAL_TEXT);
 
@@ -1364,19 +1364,19 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     /* Animations ------------------------------------------------------- */
     s_row(sx, sy + SR_ANIM * step, sw,
           T("Animations", "Animasyonlar"),
-          SET.animations ? T("on", "acik") : T("off", "kapali"),
+          SET.animations ? T("on", "açık") : T("off", "kapalı"),
           set_row == SR_ANIM, SET.animations ? COL_OK : PAL_TEXT_DIM);
 
     /* Widgets ---------------------------------------------------------- */
     s_row(sx, sy + SR_WIDGETS * step, sw,
-          T("Desktop widgets", "Masaustu widgetlar"),
-          SET.widgets_shown ? T("shown", "acik") : T("hidden", "gizli"),
+          T("Desktop widgets", "Masaüstü widgetlar"),
+          SET.widgets_shown ? T("shown", "açık") : T("hidden", "gizli"),
           set_row == SR_WIDGETS,
           SET.widgets_shown ? COL_OK : PAL_TEXT_DIM);
 
     /* Viewport / resolution ------------------------------------------- */
     s_row(sx, sy + SR_VIEWPORT * step, sw,
-          T("Resolution", "Cozunurluk"),
+          T("Resolution", "Çözünürlük"),
           VIEWPORT_NAMES[set_viewport_idx],
           set_row == SR_VIEWPORT, PAL_TEXT);
 
@@ -1401,7 +1401,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     {
         char ubuf[40];
         k_itoa((u32)SET.user_count, ubuf, 10);
-        k_strcat(ubuf, T(" users  -  default: ", " kullanici  -  varsayilan: "));
+        k_strcat(ubuf, T(" users  -  default: ", " kullanıcı  -  varsayılan: "));
         if (SET.default_user >= 0 && SET.default_user < FALCON_MAX_USERS &&
             SET.users[SET.default_user].in_use) {
             k_strcat(ubuf, SET.users[SET.default_user].name);
@@ -1409,7 +1409,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
             k_strcat(ubuf, "?");
         }
         s_row(sx, sy + SR_USERS * step, sw,
-              T("Users", "Kullanicilar"), ubuf,
+              T("Users", "Kullanıcılar"), ubuf,
               set_row == SR_USERS, PAL_ACCENT);
     }
 
@@ -1441,7 +1441,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         if (af)              status_color = COL_ERR;
 
         s_row(sx, sy + SR_DRIVERS * step, sw,
-              T("Drivers", "Suruculer"), dbuf,
+              T("Drivers", "Sürücüler"), dbuf,
               set_row == SR_DRIVERS, status_color);
     }
 
@@ -1453,7 +1453,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 
     /* Lock ------------------------------------------------------------- */
     s_row(sx, sy + SR_LOCK * step, sw,
-          T("Lock screen now", "Kilit ekrani"),
+          T("Lock screen now", "Kilit ekranı"),
           T("Enter", "Enter"),
           set_row == SR_LOCK, COL_WARN);
 }
