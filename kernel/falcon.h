@@ -450,12 +450,12 @@ typedef struct {
      * mouse / window-management cheat-sheet, then never again unless
      * the user clicks the ? glyph in the menu bar.                    */
     bool        help_seen;
-    /* FalconOS 1 — `prg install` persistence.  Bit i (0/1) tracks whether
+    /* FalconOS 1 — `prg install` persistence.  Byte i (0/1) tracks whether
      * CATALOG[i] is currently installed.  Built-ins live in CATALOG slots
      * 0..N-1 and are forced to 1 on every boot regardless of disk state.
-     * 64 entries gives roughly 2× headroom over today's catalogue without
-     * bumping the on-disk format again.                                */
-    u8          prg_installed[64];
+     * 128 entries gives ~1.5× headroom over today's 85-entry catalogue and
+     * fits comfortably inside the 2 048-byte FalconFS superblock budget. */
+    u8          prg_installed[128];
 } settings_t;
 
 extern settings_t SET;

@@ -73,6 +73,68 @@ static const prg_pkg_t CATALOG[] = {
     { "icon-pack-flat",  "1.0.0","Flat / minimal icon variant",               "themes",  "falcon-shell",        4, false },
     { "wallpaper-pack",  "1.0.0","12 framebuffer wallpapers (gradients)",     "themes",  "falcon-shell",       18, false },
     { "fonts-mono-pack", "1.0.0","Inter / Mono / Display bitmap font pack",   "themes",  "falcon-shell",       12, false },
+
+    /* ---- catalogue expansion (FalconOS 1.1) ----------------------------- */
+    /* extra games */
+    { "app-tictactoe",   "1.0.0","Tic-tac-toe vs. naive AI",                  "games",   "falcon-apps",         3, false },
+    { "app-pong",        "1.0.0","Two-paddle Pong, keyboard duel",            "games",   "falcon-apps",         5, false },
+    { "app-breakout",    "1.0.0","Brick-breaker — 12 levels",                 "games",   "falcon-apps",         9, false },
+    { "app-solitaire",   "1.0.0","Klondike solitaire, 1-card draw",           "games",   "falcon-apps",        18, false },
+    { "app-sudoku",      "1.0.0","Sudoku, four difficulty presets",           "games",   "falcon-apps",        12, false },
+    { "app-snake-classic","1.2.0","Snake remastered, growing dot trail",      "games",   "falcon-apps",         6, false },
+
+    /* extra apps */
+    { "app-stopwatch",   "1.0.0","Lap stopwatch, sub-second readout",         "apps",    "falcon-apps",         3, false },
+    { "app-timer",       "1.0.0","Countdown timer with PC-speaker alarm",     "apps",    "falcon-apps",         4, false },
+    { "app-todo",        "1.0.0","Tiny todo list, persists in shfs",          "apps",    "falcon-shell-sh",     5, false },
+    { "app-weather-pro", "0.9.0","7-day forecast widget for the dashboard",   "apps",    "falcon-apps",        14, false },
+    { "app-translate",   "0.4.0","Phrase translator (TR/EN/DE/FR/ES dataset)","apps",    "falcon-apps",        22, false },
+    { "app-currency",    "1.0.0","Static FX-rate calculator, 18 currencies",  "apps",    "falcon-apps",         6, false },
+    { "app-piano",       "1.0.0","On-screen 2-octave piano (PC speaker)",     "apps",    "falcon-apps",        12, false },
+    { "app-disk-usage",  "1.0.0","Visual du -h on the FalconFS superblock",   "apps",    "falcon-apps",         5, false },
+
+    /* themes */
+    { "theme-monokai",   "1.0.0","Monokai high-contrast (orange / pink)",     "themes",  "falcon-shell",        4, false },
+    { "theme-solarized-dark","1.0.0","Solarized Dark (Ethan Schoonover)",     "themes",  "falcon-shell",        4, false },
+    { "theme-solarized-light","1.0.0","Solarized Light, low eye-strain",      "themes",  "falcon-shell",        4, false },
+    { "theme-cyberpunk", "1.0.0","Neon magenta / cyan, retro-futurist",       "themes",  "falcon-shell",        5, false },
+    { "theme-dracula",   "1.0.0","Dracula community theme, dark purple",      "themes",  "falcon-shell",        4, false },
+    { "theme-forest",    "1.0.0","Forest green, warm beige accents",          "themes",  "falcon-shell",        4, false },
+
+    /* fonts + icons */
+    { "font-inter",      "4.0",  "Inter UI font (8x16 + 16x32 bitmap render)","themes",  "falcon-shell",        9, false },
+    { "font-jetbrains",  "2.304","JetBrains Mono — coding terminal font",     "themes",  "falcon-shell",       11, false },
+    { "font-fira-code",  "6.2",  "Fira Code w/ ligatures (display only)",     "themes",  "falcon-shell",       12, false },
+    { "icon-pack-papirus","1.0.0","Papirus-style flat icon set",              "themes",  "falcon-shell",        7, false },
+    { "icon-pack-monochrome","1.0.0","Monochrome glyph icon set (mono UI)",   "themes",  "falcon-shell",        5, false },
+
+    /* dev / tooling */
+    { "dev-tools",       "1.0.0","gcc-style build glue + objdump-lite",       "dev",     "falcon-shell-sh",    44, false },
+    { "git-tiny",        "2.42.0","git-clone-from-disk-only stub",            "dev",     "falcon-shell-sh",    18, false },
+    { "make-tiny",       "4.4",  "GNU make subset for falcon-shell-sh",       "dev",     "falcon-shell-sh",    14, false },
+    { "ssh-tiny",        "9.6p1","ssh client (planned virtio-net loopback)",  "dev",     "falcon-shell-sh",    52, false },
+    { "python-mini",     "3.12.0","Python REPL subset, no stdlib",            "dev",     "falcon-apps",        96, false },
+    { "lua-mini",        "5.4.6","Lua interpreter, sandboxed",                "dev",     "falcon-apps",        24, false },
+
+    /* network / system tools */
+    { "network-tools",   "1.0.0","ip / ping / arp / traceroute (planned net)","tools",   "linux-uapi",         18, false },
+    { "system-monitor",  "1.0.0","htop-style process + IRQ monitor",          "tools",   "falcon-apps",         8, false },
+    { "diskutil-pro",    "1.0.0","fdisk / parted-style partition editor",     "tools",   "ata-pio",            22, false },
+
+    /* language packs */
+    { "lang-pack-de",    "1.0.0","Full German UI strings",                    "i18n",    "falcon-shell",        6, false },
+    { "lang-pack-fr",    "1.0.0","Full French UI strings",                    "i18n",    "falcon-shell",        6, false },
+    { "lang-pack-es",    "1.0.0","Full Spanish UI strings",                   "i18n",    "falcon-shell",        6, false },
+    { "lang-pack-jp",    "1.0.0","Japanese UI (planned hiragana atlas)",      "i18n",    "falcon-shell",       18, false },
+
+    /* libraries (planned ELF link) */
+    { "lib-openssl",     "3.2.0","OpenSSL crypto + TLS (planned)",            "libraries","falcon-kernel",     124, false },
+    { "lib-sqlite",      "3.45.0","SQLite single-file db (planned)",          "libraries","falcon-kernel",      62, false },
+    { "lib-cairo",       "1.18.0","Cairo 2D vector graphics (planned)",       "libraries","falcon-shell",      138, false },
+
+    /* compat shims */
+    { "wine-tiny",       "9.0",  "Wine subset for win32 console apps (plan)", "compat",  "linux-uapi",        420, false },
+    { "qemu-user",       "8.2.0","qemu-user-static pieces (planned)",         "compat",  "linux-uapi",        260, false },
 };
 
 #define N_CATALOG ((i32)(sizeof(CATALOG) / sizeof(CATALOG[0])))
