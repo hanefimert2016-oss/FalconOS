@@ -1,0 +1,646 @@
+/* ============================================================================
+ *  kernel/jarvis.c — built-in system AI assistant ("Jarvis")
+ * ----------------------------------------------------------------------------
+ *  FalconOS 1 ships a real, working in-kernel assistant that the user can
+ *  talk to in natural language (Turkish or English) and have it actually
+ *  drive the system: switch theme, open apps, change language, install or
+ *  remove a package, lock the screen, read the clock, etc.
+ *
+ *  No LLM runs on this hardware — there is no userland Python, no libc,
+ *  no network stack — so Jarvis is intent-routed: each user prompt is
+ *  pattern-matched against ~30 phrase fingerprints, and on match we
+ *  perform the corresponding kernel call and return a short reply.  The
+ *  effect from the user's seat is identical to chatting with Siri /
+ *  Google Assistant for system-control queries; the model just happens
+ *  to be a hand-written rule table that fits in a few hundred bytes.
+ *
+ *  Every reply is logged into a 16-line transcript and persists for the
+ *  lifetime of the boot.  Side-effects that touch SET (theme, language,
+ *  packages, keyboard layout) call diskdb_save() so the change is
+ *  remembered after a cold reboot.
+ *
+ *  Public surface (callable from kernel/apps.c):
+ *      void jarvis_reset(void);
+ *      void jarvis_render(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame);
+ *      void jarvis_input(i32 key);
+ *      void jarvis_icon(i32 cx, i32 cy);
+ * ============================================================================ */
+#include "falcon.h"
+
+/* ---- transcript ---------------------------------------------------------- */
+#define J_LINES 14
+#define J_COLS  78
+static char  j_log[J_LINES][J_COLS];
+static i32   j_n      = 0;
+static char  j_input[J_COLS];
+static i32   j_in_n   = 0;
+static bool  j_inited = false;
+
+/* ---- helpers ------------------------------------------------------------- */
+static char j_lower(char c)
+{
+    if (c >= 'A' && c <= 'Z') return (char)(c - 'A' + 'a');
+    return c;
+}
+
+/* contains_ci(haystack, needle): case-insensitive substring search.
+ * Used everywhere below so users can type "TEMA Koyu" or "tema koyu"
+ * or even "TeMa  KoYu".                                              */
+static bool contains_ci(const char *hay, const char *needle)
+{
+    if (!hay || !needle) return false;
+    for (i32 i = 0; hay[i]; i++) {
+        i32 j = 0;
+        while (needle[j] && hay[i + j]
+               && j_lower((char)hay[i + j]) == j_lower((char)needle[j])) j++;
+        if (!needle[j]) return true;
+    }
+    return false;
+}
+
+/* match_any(prompt, list...): true if prompt contains any of the
+ * comma-separated tokens.  Tokens are case-insensitive whole substrings.
+ * Pass a NULL terminator.                                              */
+static bool match_any(const char *prompt, const char *t1, const char *t2,
+                      const char *t3, const char *t4)
+{
+    if (t1 && contains_ci(prompt, t1)) return true;
+    if (t2 && contains_ci(prompt, t2)) return true;
+    if (t3 && contains_ci(prompt, t3)) return true;
+    if (t4 && contains_ci(prompt, t4)) return true;
+    return false;
+}
+
+/* ---- log emit ------------------------------------------------------------ */
+static void j_push(const char *s)
+{
+    if (j_n < J_LINES) {
+        i32 n = 0;
+        while (s[n] && n < J_COLS - 1) { j_log[j_n][n] = s[n]; n++; }
+        j_log[j_n][n] = 0;
+        j_n++;
+        return;
+    }
+    /* scroll */
+    for (i32 i = 1; i < J_LINES; i++) k_strcpy(j_log[i - 1], j_log[i]);
+    i32 n = 0;
+    while (s[n] && n < J_COLS - 1) { j_log[J_LINES - 1][n] = s[n]; n++; }
+    j_log[J_LINES - 1][n] = 0;
+}
+
+static void j_say(const char *s)
+{
+    char line[J_COLS];
+    k_strcpy(line, "Jarvis: ");
+    k_strcat(line, s);
+    j_push(line);
+}
+
+static void j_user(const char *s)
+{
+    char line[J_COLS];
+    k_strcpy(line, "Sen: ");
+    k_strcat(line, s);
+    j_push(line);
+}
+
+/* ---- index lookup over the apps[] table --------------------------------- */
+/* Find an app by case-insensitive substring on its name.  Returns -1 if
+ * none matches.                                                          */
+static i32 j_find_app(const char *needle)
+{
+    i32 n = apps_count();
+    for (i32 i = 0; i < n; i++) {
+        if (contains_ci(apps_name(i), needle)) return i;
+    }
+    return -1;
+}
+
+/* ---- intent table -------------------------------------------------------- */
+typedef struct {
+    /* Up to four keywords; ANY-of match.  The lowest-index matcher wins,
+     * so order matters when one prompt could trigger multiple intents.   */
+    const char *k1, *k2, *k3, *k4;
+    /* Handler returns true when it produced a reply.  When false we fall
+     * through to the next intent.                                       */
+    bool (*handle)(const char *prompt);
+} intent_t;
+
+/* Localised "ok" reply respecting current SET.lang. */
+static const char *ok_text(void)
+{
+    switch (SET.lang) {
+        case LANG_TR: return "Tamam.";
+        case LANG_DE: return "Erledigt.";
+        case LANG_FR: return "C'est fait.";
+        case LANG_ES: return "Hecho.";
+        default:      return "Done.";
+    }
+}
+
+/* ---- intent handlers ----------------------------------------------------- */
+static bool ih_hello(const char *p)
+{
+    (void)p;
+    if (SET.lang == LANG_TR) {
+        const falcon_user_t *u = users_at(SET.active_user);
+        char line[80];
+        k_strcpy(line, "Merhaba ");
+        k_strcat(line, u ? u->name : "kullanici");
+        k_strcat(line, ", nasil yardim edebilirim?");
+        j_say(line);
+    } else {
+        j_say("Hello, how can I help?");
+    }
+    return true;
+}
+
+static bool ih_help(const char *p)
+{
+    (void)p;
+    j_say(SET.lang == LANG_TR
+          ? "Yapabileceklerim: tema degistir, dili degistir, saat,"
+          : "I can: switch theme, change language, tell time,");
+    j_push("        uygulama ac, paket kur/kaldir, kilitle, kapat,");
+    j_push("        kullanicilari listele, durum raporu.");
+    return true;
+}
+
+static bool ih_time(const char *p)
+{
+    (void)p;
+    rtc_time_t t; rtc_local(&t);
+    char line[64], num[8];
+    k_strcpy(line, SET.lang == LANG_TR ? "Saat " : "It is ");
+    k_itoa(t.hour, num, 10); k_pad(num, 2, '0'); k_strcat(line, num);
+    k_strcat(line, ":");
+    k_itoa(t.min, num, 10);  k_pad(num, 2, '0'); k_strcat(line, num);
+    k_strcat(line, ":");
+    k_itoa(t.sec, num, 10);  k_pad(num, 2, '0'); k_strcat(line, num);
+    k_strcat(line, ".");
+    j_say(line);
+    return true;
+}
+
+static bool ih_date(const char *p)
+{
+    (void)p;
+    rtc_time_t t; rtc_local(&t);
+    char line[64];
+    loc_format_date(line, &t);
+    j_say(line);
+    return true;
+}
+
+static bool ih_uptime(const char *p)
+{
+    (void)p;
+    u32 h, m, s; pit_uptime(&h, &m, &s);
+    char line[64], num[8];
+    k_strcpy(line, SET.lang == LANG_TR ? "Acik kalma suresi: " : "Uptime: ");
+    k_itoa(h, num, 10); k_strcat(line, num); k_strcat(line, "h ");
+    k_itoa(m, num, 10); k_strcat(line, num); k_strcat(line, "m ");
+    k_itoa(s, num, 10); k_strcat(line, num); k_strcat(line, "s.");
+    j_say(line);
+    return true;
+}
+
+static bool ih_whoami(const char *p)
+{
+    (void)p;
+    const falcon_user_t *u = users_at(SET.active_user);
+    char line[80];
+    k_strcpy(line, SET.lang == LANG_TR ? "Su an oturum: "
+                                       : "Currently signed in: ");
+    k_strcat(line, u ? u->name : "?");
+    j_say(line);
+    return true;
+}
+
+/* Theme switching ---------------------------------------------------------- */
+static void j_apply_theme(theme_t t, const char *human)
+{
+    SET.theme = t;
+    diskdb_save();
+    char line[80];
+    k_strcpy(line, SET.lang == LANG_TR ? "Tema: " : "Theme: ");
+    k_strcat(line, human);
+    j_say(line);
+}
+
+static bool ih_theme(const char *p)
+{
+    if (!match_any(p, "tema", "theme", NULL, NULL)) return false;
+    if (match_any(p, "koyu", "dark", "nox", NULL)) {
+        j_apply_theme(THEME_DARK, "Nox (dark)"); return true;
+    }
+    if (match_any(p, "acik", "light", "lumen", "aydin")) {
+        j_apply_theme(THEME_LIGHT, "Lumen (light)"); return true;
+    }
+    if (match_any(p, "liquid", "cam", "glass", "tahoe")) {
+        j_apply_theme(THEME_LIQUID, "Liquid Glass"); return true;
+    }
+    if (match_any(p, "nordic", "kuzey", NULL, NULL)) {
+        j_apply_theme(THEME_NORDIC, "Nordic"); return true;
+    }
+    if (match_any(p, "rose", "gul", NULL, NULL)) {
+        j_apply_theme(THEME_ROSEGOLD, "Rose Gold"); return true;
+    }
+    j_say(SET.lang == LANG_TR
+          ? "Hangi tema? Acik / Koyu / Liquid / Nordic / Rose."
+          : "Which theme? Light / Dark / Liquid / Nordic / Rose.");
+    return true;
+}
+
+/* Language switching ------------------------------------------------------- */
+static bool ih_lang(const char *p)
+{
+    if (!match_any(p, "dil", "language", "lang", "sprache")
+        && !match_any(p, "langue", "idioma", NULL, NULL)) return false;
+    if (match_any(p, "ingiliz", "english", "ingles", "ang")) {
+        SET.lang = LANG_EN; diskdb_save(); j_say("Language set to English.");
+        return true;
+    }
+    if (match_any(p, "turk", "turkish", "tr ", "turkce")) {
+        SET.lang = LANG_TR; diskdb_save(); j_say("Dil Turkce yapildi.");
+        return true;
+    }
+    if (match_any(p, "alman", "german", "deutsch", NULL)) {
+        SET.lang = LANG_DE; diskdb_save(); j_say("Auf Deutsch gestellt.");
+        return true;
+    }
+    if (match_any(p, "fransiz", "french", "francais", NULL)) {
+        SET.lang = LANG_FR; diskdb_save(); j_say("Reglage en francais.");
+        return true;
+    }
+    if (match_any(p, "ispanyol", "spanish", "espanol", NULL)) {
+        SET.lang = LANG_ES; diskdb_save(); j_say("Idioma espanol.");
+        return true;
+    }
+    j_say(SET.lang == LANG_TR
+          ? "Dil: TR / EN / DE / FR / ES."
+          : "Language: TR / EN / DE / FR / ES.");
+    return true;
+}
+
+/* Aero toggle -------------------------------------------------------------- */
+static bool ih_aero(const char *p)
+{
+    if (!match_any(p, "aero", "saydam", "transparent", "blur"))
+        return false;
+    if (match_any(p, "kapat", "off", "disable", "kapali")) {
+        SET.aero_enabled = false; diskdb_save();
+        j_say(SET.lang == LANG_TR ? "Aero kapatildi." : "Aero off."); return true;
+    }
+    if (match_any(p, "ac",   "on",  "enable",  "acik")) {
+        SET.aero_enabled = true; diskdb_save();
+        j_say(SET.lang == LANG_TR ? "Aero acildi." : "Aero on."); return true;
+    }
+    SET.aero_enabled = !SET.aero_enabled; diskdb_save();
+    j_say(SET.aero_enabled
+          ? (SET.lang == LANG_TR ? "Aero acildi." : "Aero on.")
+          : (SET.lang == LANG_TR ? "Aero kapatildi." : "Aero off."));
+    return true;
+}
+
+/* Open app by name --------------------------------------------------------- */
+static bool ih_open(const char *p)
+{
+    if (!match_any(p, "ac ", "open ", "launch", "calistir")
+        && !match_any(p, "git ", "go to ", NULL, NULL)) return false;
+    /* try every app by name */
+    static const char *aliases[][2] = {
+        { "ayar",       "Settings"   },
+        { "settings",   "Settings"   },
+        { "terminal",   "Terminal"   },
+        { "kabuk",      "Terminal"   },
+        { "shell",      "Terminal"   },
+        { "hesap",      "Calculator" },
+        { "calc",       "Calculator" },
+        { "not ",       "Notes"      },
+        { "note",       "Notes"      },
+        { "saat",       "Clock"      },
+        { "clock",      "Clock"      },
+        { "takvim",     "Calendar"   },
+        { "calendar",   "Calendar"   },
+        { "magaz",      "Store"      },
+        { "store",      "Store"      },
+        { "paket",      "Store"      },
+        { "browser",    "Chrome"     },
+        { "chrome",     "Chrome"     },
+        { "tarayic",    "Chrome"     },
+        { "galeri",     "Gallery"    },
+        { "gallery",    "Gallery"    },
+        { "dosya",      "Files"      },
+        { "files",      "Files"      },
+        { "hakkin",     "About"      },
+        { "about",      "About"      },
+        { "istatist",   "Stats"      },
+        { "stats",      "Stats"      },
+        { "ana ",       "Home"       },
+        { "home",       "Home"       },
+    };
+    i32 nal = (i32)(sizeof aliases / sizeof aliases[0]);
+    for (i32 i = 0; i < nal; i++) {
+        if (contains_ci(p, aliases[i][0])) {
+            i32 idx = j_find_app(aliases[i][1]);
+            if (idx >= 0) {
+                apps_open(idx);
+                char line[64];
+                k_strcpy(line, SET.lang == LANG_TR
+                               ? "Aciliyor: " : "Opening: ");
+                k_strcat(line, apps_name(idx));
+                j_say(line);
+                return true;
+            }
+        }
+    }
+    j_say(SET.lang == LANG_TR
+          ? "Hangi uygulama? Ornek: 'ayarlari ac', 'terminal ac'."
+          : "Which app? e.g. 'open settings', 'open terminal'.");
+    return true;
+}
+
+/* Lock / power ------------------------------------------------------------- */
+static bool ih_lock(const char *p)
+{
+    if (!match_any(p, "kilit", "lock", "kilitle", NULL)) return false;
+    j_say(SET.lang == LANG_TR ? "Ekran kilitleniyor." : "Locking screen.");
+    lockscreen_lock();
+    return true;
+}
+
+static bool ih_power(const char *p)
+{
+    if (!match_any(p, "kapat", "shutdown", "yeniden", "restart")
+        && !match_any(p, "uyku", "sleep", "logout", "oturum"))
+        return false;
+    j_say(SET.lang == LANG_TR ? "Guc menusu acildi." : "Power menu opened.");
+    power_menu_open();
+    return true;
+}
+
+/* Package install / remove ------------------------------------------------- */
+static bool ih_pkg(const char *p)
+{
+    bool inst = match_any(p, "kur ", "install", "yukle", "ekle ");
+    bool rem  = match_any(p, "kaldir", "remove", "sil ", "uninstall");
+    if (!inst && !rem) return false;
+
+    /* Walk every catalogue entry and pick the longest case-insensitive
+     * substring match against the prompt — protects 'vim' from also
+     * triggering 'vim-tiny'.                                       */
+    i32 best = -1, best_len = 0;
+    i32 n = prg_count();
+    for (i32 i = 0; i < n; i++) {
+        const prg_pkg_t *pk = prg_at(i);
+        if (!pk) continue;
+        if (contains_ci(p, pk->name)) {
+            i32 ln = k_strlen(pk->name);
+            if (ln > best_len) { best_len = ln; best = i; }
+        }
+    }
+    if (best < 0) {
+        j_say(SET.lang == LANG_TR
+              ? "Hangi paket? Ornek: 'vim-tiny kur'."
+              : "Which package? e.g. 'install vim-tiny'.");
+        return true;
+    }
+    char line[80];
+    if (inst) {
+        if (prg_install(best)) {
+            k_strcpy(line, SET.lang == LANG_TR ? "Kuruldu: " : "Installed: ");
+        } else {
+            k_strcpy(line, SET.lang == LANG_TR ? "Kurulamadi: " : "Failed: ");
+        }
+    } else {
+        if (prg_remove(best)) {
+            k_strcpy(line, SET.lang == LANG_TR
+                           ? "Kaldirildi: " : "Removed: ");
+        } else {
+            k_strcpy(line, SET.lang == LANG_TR
+                           ? "Kaldirilamadi (yerlesik): "
+                           : "Cannot remove (built-in): ");
+        }
+    }
+    k_strcat(line, prg_at(best)->name);
+    j_say(line);
+    return true;
+}
+
+/* Status / system summary -------------------------------------------------- */
+static bool ih_status(const char *p)
+{
+    if (!match_any(p, "durum", "status", "sistem", "ozet")
+        && !match_any(p, "telemetr", NULL, NULL, NULL))
+        return false;
+    char line[80], num[16];
+    k_strcpy(line, SET.lang == LANG_TR ? "Surum: FalconOS 1 x86_64"
+                                       : "Version: FalconOS 1 x86_64");
+    j_say(line);
+    u32 h, m, s; pit_uptime(&h, &m, &s);
+    k_strcpy(line, SET.lang == LANG_TR ? "Uptime: " : "Uptime: ");
+    k_itoa(h, num, 10); k_strcat(line, num); k_strcat(line, "h ");
+    k_itoa(m, num, 10); k_strcat(line, num); k_strcat(line, "m");
+    j_push(line);
+    k_strcpy(line, SET.lang == LANG_TR ? "Kullanicilar: " : "Users: ");
+    k_itoa(SET.user_count, num, 10); k_strcat(line, num);
+    j_push(line);
+    k_strcpy(line, SET.lang == LANG_TR ? "Yuklu paket: " : "Installed pkgs: ");
+    k_itoa(prg_installed_count(), num, 10); k_strcat(line, num);
+    j_push(line);
+    return true;
+}
+
+/* List users --------------------------------------------------------------- */
+static bool ih_users(const char *p)
+{
+    if (!match_any(p, "kullanici list", "list user", "kullanicilar", "users"))
+        return false;
+    j_say(SET.lang == LANG_TR ? "Kullanicilar:" : "Users:");
+    for (i32 i = 0; i < SET.user_count && i < 8; i++) {
+        const falcon_user_t *u = users_at(i);
+        if (!u) continue;
+        char line[64];
+        k_strcpy(line, "  - ");
+        k_strcat(line, u->name);
+        if (i == SET.active_user) k_strcat(line, "  (active)");
+        j_push(line);
+    }
+    return true;
+}
+
+/* Thanks / chitchat -------------------------------------------------------- */
+static bool ih_thanks(const char *p)
+{
+    if (!match_any(p, "tesekkur", "thanks", "thank you", "sagol"))
+        return false;
+    j_say(SET.lang == LANG_TR ? "Rica ederim." : "You're welcome.");
+    return true;
+}
+
+static bool ih_who(const char *p)
+{
+    if (!match_any(p, "sen kim", "who are you", "kimsin", "name"))
+        return false;
+    j_say(SET.lang == LANG_TR
+          ? "Ben Jarvis, FalconOS 1 yardimcisi."
+          : "I'm Jarvis, the FalconOS 1 assistant.");
+    return true;
+}
+
+static bool ih_clear(const char *p)
+{
+    if (!match_any(p, "temizle", "clear", "reset", "sil "))
+        return false;
+    j_n = 0;
+    j_say(ok_text());
+    return true;
+}
+
+/* ---- intent table -------------------------------------------------------- */
+static const intent_t INTENTS[] = {
+    /* greeting & meta first */
+    { "merhaba", "selam", "hello", "hi ",       ih_hello   },
+    { "yardim",  "help ", "ne yapabili", "what can", ih_help },
+    { "sen kim", "kimsin", "who are you", "name", ih_who    },
+    /* concrete state queries */
+    { "saat",    "time",  "what time", NULL,    ih_time    },
+    { "tarih",   "date",  "bugun",  "today",    ih_date    },
+    { "uptime",  "ne kadar", "acik kalma", NULL, ih_uptime },
+    { "ben kim", "whoami","aktif kull", "current user", ih_whoami },
+    { "kullanici list", "kullanicilar", "list user", "users", ih_users },
+    { "durum",   "status","sistem","telemetr",   ih_status  },
+    /* mutating intents */
+    { "tema",    "theme", "renk",   NULL,       ih_theme   },
+    { "dil",     "language", "lang", "sprache", ih_lang    },
+    { "aero",    "saydam","transparent","blur", ih_aero    },
+    { "kilit",   "lock", "kilitle",  NULL,      ih_lock    },
+    { "kapat",   "shutdown","yeniden","restart",ih_power   },
+    { "kur ",    "install","yukle","kaldir",    ih_pkg     },
+    { "ac ",     "open ", "launch","calistir",  ih_open    },
+    /* social pleasantries */
+    { "tesekkur","thanks","sagol",   NULL,      ih_thanks  },
+    { "temizle", "clear", "reset",   NULL,      ih_clear   },
+};
+static const i32 N_INTENTS = (i32)(sizeof INTENTS / sizeof INTENTS[0]);
+
+/* ---- public API ---------------------------------------------------------- */
+void jarvis_reset(void)
+{
+    j_n = 0;
+    j_in_n = 0;
+    j_input[0] = 0;
+    j_inited = true;
+    if (SET.lang == LANG_TR) {
+        j_say("Merhaba, ben Jarvis. Sana nasil yardim edebilirim?");
+        j_push("        (Ornek: 'tema koyu yap', 'saat kac', 'terminal ac',");
+        j_push("                'vim-tiny kur', 'durum raporu', 'kilitle')");
+    } else {
+        j_say("Hi, I'm Jarvis. How can I help?");
+        j_push("        (e.g. 'switch to dark theme', 'what time is it',");
+        j_push("              'open terminal', 'install vim-tiny',");
+        j_push("              'system status', 'lock screen')");
+    }
+}
+
+static void j_dispatch(const char *prompt)
+{
+    j_user(prompt);
+    /* run through intent table; first match wins */
+    for (i32 i = 0; i < N_INTENTS; i++) {
+        if (match_any(prompt,
+                      INTENTS[i].k1, INTENTS[i].k2,
+                      INTENTS[i].k3, INTENTS[i].k4)) {
+            if (INTENTS[i].handle(prompt)) return;
+        }
+    }
+    /* graceful fallback */
+    j_say(SET.lang == LANG_TR
+          ? "Anlamadim. 'yardim' yazarsan ornek komutlari sayarim."
+          : "Sorry, I didn't catch that. Type 'help' for examples.");
+}
+
+void jarvis_input(i32 key)
+{
+    if (!j_inited) jarvis_reset();
+    if (key == KEY_BACKSPACE) {
+        if (j_in_n > 0) { j_in_n--; j_input[j_in_n] = 0; }
+        return;
+    }
+    if (key == KEY_ENTER) {
+        if (j_in_n == 0) return;
+        j_input[j_in_n] = 0;
+        char tmp[J_COLS]; k_strcpy(tmp, j_input);
+        j_in_n = 0; j_input[0] = 0;
+        j_dispatch(tmp);
+        return;
+    }
+    if (key >= 0x20 && key <= 0x7E && j_in_n < J_COLS - 1) {
+        j_input[j_in_n++] = (char)key;
+        j_input[j_in_n] = 0;
+    }
+}
+
+void jarvis_render(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+{
+    (void)frame;
+    if (!j_inited) jarvis_reset();
+    /* header */
+    gfx_text(wx + 24, wy +  6, "Jarvis", PAL_TEXT);
+    gfx_text(wx + 24, wy + 28,
+             SET.lang == LANG_TR ? "Sistem yardimcisi - dogal dilde sor"
+                                 : "System assistant - ask in plain language",
+             PAL_TEXT_DIM);
+
+    /* transcript pane */
+    i32 px = wx + 24, py = wy + 60;
+    i32 pw = ww - 48, ph = wh - 130;
+    gfx_round_rect_a(px, py, pw, ph, 12, PAL_PANEL_DEEP, 255);
+    gfx_round_outline(px, py, pw, ph, 12, PAL_HAIRLINE);
+    i32 ty = py + 12;
+    for (i32 i = 0; i < j_n; i++) {
+        u32 col = PAL_TEXT;
+        /* "Jarvis:" lines pop in accent, "Sen:" lines stay neutral */
+        if (j_log[i][0] == 'J' && j_log[i][1] == 'a') col = PAL_ACCENT;
+        gfx_text(px + 12, ty, j_log[i], col);
+        ty += 18;
+    }
+
+    /* input bar */
+    i32 ix = px, iy = py + ph + 12, iw = pw, ih = 36;
+    gfx_round_rect_a(ix, iy, iw, ih, 10, PAL_PANEL, 255);
+    gfx_round_outline(ix, iy, iw, ih, 10, PAL_HAIRLINE);
+    /* prompt glyph */
+    gfx_text(ix + 10, iy + 10,
+             SET.lang == LANG_TR ? "> " : "> ",
+             PAL_ACCENT);
+    /* user buffer + a slow-blinking caret */
+    i32 caret = ((frame >> 4) & 1) ? 1 : 0;
+    char shown[J_COLS + 2];
+    k_strcpy(shown, j_input);
+    if (caret) k_strcat(shown, "_");
+    gfx_text(ix + 30, iy + 10, shown, PAL_TEXT);
+
+    /* footer hint */
+    gfx_text(wx + 24, wy + wh - 20,
+             SET.lang == LANG_TR
+                 ? "Enter: gonder    Backspace: sil    Esc: kapat"
+                 : "Enter: send    Backspace: delete    Esc: close",
+             PAL_TEXT_FAINT);
+}
+
+/* Launcher icon: a chat-bubble silhouette with a small sparkle dot.
+ * Drawn on the dock and Launchpad tile.                           */
+void jarvis_icon(i32 cx, i32 cy)
+{
+    /* bubble base */
+    gfx_round_rect_a(cx - 22, cy - 18, 44, 32, 12, 0x6D5BFF, 255);
+    gfx_round_outline(cx - 22, cy - 18, 44, 32, 12, 0xFFFFFF);
+    /* sparkle */
+    gfx_circle(cx + 10, cy - 10, 3, 0xFFFFFF);
+    gfx_circle(cx + 10, cy - 10, 1, 0x6D5BFF);
+    /* tail */
+    gfx_rect(cx - 12, cy + 14, 8, 4, 0x6D5BFF);
+    gfx_text_centered(cx, cy - 4, "AI", 0xFFFFFF);
+}

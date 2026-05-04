@@ -341,6 +341,12 @@ void launchpad_render(u32 frame);
 void launchpad_input(i32 key);
 i32  launchpad_cursor(void);
 
+/* ---- Jarvis (built-in assistant, FalconOS 1) ----------------------------- */
+void jarvis_reset(void);
+void jarvis_render(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame);
+void jarvis_input(i32 key);
+void jarvis_icon(i32 cx, i32 cy);
+
 /* ---- Help panel (slides in from the right, FalconOS 1) ------------------- */
 void helppanel_open(void);
 void helppanel_close(void);

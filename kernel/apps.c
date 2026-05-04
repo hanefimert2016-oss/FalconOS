@@ -2271,6 +2271,7 @@ static app_def_t APPS[] = {
     { "Calendar",   "month view",          0x3070FF, render_calendar, NULL,             icon_calendar },
     { "Gallery",    "palette swatches",    0xC084FC, render_gallery,  NULL,             icon_gallery  },
     { "Chrome",     "Tab to switch tabs",  0x4285F4, render_browser, chrome_input_key,  icon_browser  },
+    { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
 };
 
