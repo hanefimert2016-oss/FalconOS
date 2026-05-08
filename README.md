@@ -417,7 +417,7 @@ buttons and a "yüklü" badge.
 | 2 | Files      | Mock file browser with a striped 12-row table              |
 | 3 | Clock      | Analog dial + digital readout, driven by PIT IRQ0           |
 | 4 | Stats      | tsc / uptime / ticks / RAM / FB resolution + pulse bar      |
-| 5 | Terminal   | Fake bash prompt that echoes typed input                    |
+| 5 | Terminal   | POSIX-style shell + `prg` package commands                  |
 | 6 | Calculator | 4-function arithmetic with a clickable keypad               |
 | 7 | Settings   | Theme, accent, language, **keyboard layout**, dock size,    |
 |   |            | animations, widgets, viewport, password change, **default**  |
@@ -425,9 +425,11 @@ buttons and a "yüklü" badge.
 | 8 | Notes      | Free-form text pad with caret blink                         |
 | 9 | Calendar   | Month grid with "today" highlighted from uptime             |
 |10 | Gallery    | Lumen / Nox palette swatches with hex codes                 |
-|11 | Browser    | Mock URL bar + bookmark cards                               |
-|12 | Store      | prg package browser — search, install, uninstall            |
-|13 | About      | Version, native subsystem summary, ATA probe results        |
+|11 | Video      | Software-rendered demo video player (play/pause/seek)       |
+|12 | Chrome     | Chrome-style browser mock + docs/source tabs                |
+|13 | Heroic     | Linux game-launcher compatibility mock                       |
+|14 | Store      | prg package browser — search, install, uninstall            |
+|15 | About      | Version, native subsystem summary, ATA probe results        |
 
 ## Driver source attribution
 

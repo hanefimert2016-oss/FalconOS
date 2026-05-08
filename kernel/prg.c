@@ -60,6 +60,8 @@ static const prg_pkg_t CATALOG[] = {
     { "app-network-cfg", "0.3.0","Network configuration (planned virtio-net)","apps",    "falcon-apps",        10, false },
     { "app-screensaver", "1.0.0","Aero starfield + clock screensaver",        "apps",    "falcon-aero",         7, false },
     { "app-dosbox-lite", "0.2.0","Tiny x86 real-mode interpreter (sandbox)",  "compat",  "falcon-apps",        86, false },
+    { "app-google-chrome","1.0.0","Chrome compatibility launcher bridge",      "compat",  "linux-uapi",         64, false },
+    { "app-heroic-launcher","1.0.0","Heroic Games Launcher compatibility shim", "compat",  "linux-uapi",         52, false },
     { "lib-png",         "1.6.39","PNG decoder, derived from libpng",         "libraries","falcon-kernel",     54, false },
     { "lib-zlib",        "1.3.0","zlib compression — drop-in libz.so",        "libraries","falcon-kernel",     48, false },
     { "lib-jpeg",        "9.5.0","libjpeg-turbo SIMD decoder (planned)",      "libraries","falcon-kernel",     86, false },
@@ -169,6 +171,15 @@ static void init_once(void)
 
 i32 prg_count(void) { init_once(); return N_CATALOG; }
 
+static i32 catalog_idx_by_name(const char *name)
+{
+    if (!name || !name[0]) return -1;
+    for (i32 i = 0; i < N_CATALOG; i++) {
+        if (k_strcmp(CATALOG[i].name, name) == 0) return i;
+    }
+    return -1;
+}
+
 const prg_pkg_t *prg_at(i32 i)
 {
     init_once();
@@ -197,8 +208,27 @@ bool prg_install(i32 i)
     init_once();
     if (i < 0 || i >= N_CATALOG) return false;
     if (SET.prg_installed[i]) return true;          /* already installed */
-    SET.prg_installed[i] = 1;
-    diskdb_save();                                  /* persist immediately */
+
+    /* Resolve a single depends-edge recursively (catalog uses one direct
+     * dependency string per package). Depth guard prevents accidental cycles
+     * from corrupt future catalog edits.                                     */
+    i32 chain[128];
+    i32 nchain = 0;
+    i32 cur = i;
+    while (cur >= 0 && !SET.prg_installed[cur]) {
+        if (nchain >= (i32)(sizeof(chain) / sizeof(chain[0]))) return false;
+        for (i32 k = 0; k < nchain; k++) if (chain[k] == cur) return false;
+        chain[nchain++] = cur;
+
+        const char *dep = CATALOG[cur].depends;
+        if (!dep || !dep[0]) break;
+        cur = catalog_idx_by_name(dep);
+        if (cur < 0) return false;
+    }
+
+    /* Install deepest dependency first, then the requested package. */
+    for (i32 k = nchain - 1; k >= 0; k--) SET.prg_installed[chain[k]] = 1;
+    diskdb_save();
     return true;
 }
 
@@ -208,6 +238,16 @@ bool prg_remove(i32 i)
     if (i < 0 || i >= N_CATALOG) return false;
     if (CATALOG[i].builtin)      return false;
     if (!SET.prg_installed[i]) return true;
+
+    /* Prevent removing a package that another installed package depends on. */
+    for (i32 j = 0; j < N_CATALOG; j++) {
+        if (j == i || !SET.prg_installed[j]) continue;
+        const char *dep = CATALOG[j].depends;
+        if (dep && dep[0] && k_strcmp(dep, CATALOG[i].name) == 0) {
+            return false;
+        }
+    }
+
     SET.prg_installed[i] = 0;
     diskdb_save();
     return true;

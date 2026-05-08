@@ -9,10 +9,9 @@
  *      KBD_TR_F   — Türkçe F (typewriter heritage; popular with touch-typists)
  *      KBD_US     — US-QWERTY (standard ANSI 101)
  *
- *  Turkish-specific letters (ç ğ ı ö ş ü) are mapped to safe ASCII fallbacks
- *  ('c', 'g', 'i', 'o', 's', 'u') because the rest of the kernel uses an
- *  ASCII-only 8x16 font; users still see the layout name they picked in the
- *  installer reflected in Settings ▸ Keyboard.
+ *  Turkish-specific letters (ç ğ ı ö ş ü / Ç Ğ İ Ö Ş Ü) are emitted as
+ *  dedicated keycodes and converted to UTF-8 by key_to_utf8(), so text fields
+ *  can store/display real Turkish characters instead of ASCII fallbacks.
  * ============================================================================= */
 #include "falcon.h"
 
@@ -98,8 +97,7 @@ static const i32 SC_US_HI[128] = {
     [0x33]='<',[0x34]='>',[0x35]='?',
 };
 
-/* ---- TR-Q (Türkçe Q) — same alphabetic positions, Turkish punct mapped to
- *  ASCII fallbacks (kernel font is ASCII).                                  */
+/* ---- TR-Q (Türkçe Q) ------------------------------------------------------ */
 static const i32 SC_TRQ_LO[128] = {
     [0x01] = KEY_ESC,
     [0x0E] = KEY_BACKSPACE,
@@ -116,13 +114,13 @@ static const i32 SC_TRQ_LO[128] = {
 
     [0x10]='q',[0x11]='w',[0x12]='e',[0x13]='r',[0x14]='t',
     [0x15]='y',[0x16]='u',[0x17]='i',[0x18]='o',[0x19]='p',
-    [0x1A]='g',[0x1B]='u',                          /* ğ ü → fallback     */
+    [0x1A]=KEY_TR_G_BREVE_LO,[0x1B]=KEY_TR_U_UMLAUT_LO, /* ğ ü */
     [0x1E]='a',[0x1F]='s',[0x20]='d',[0x21]='f',[0x22]='g',
     [0x23]='h',[0x24]='j',[0x25]='k',[0x26]='l',
-    [0x27]='s',[0x28]='i',                          /* ş i (dotless)      */
+    [0x27]=KEY_TR_S_CEDILLA_LO,[0x28]=KEY_TR_DOTLESS_I_LO, /* ş ı */
     [0x2C]='z',[0x2D]='x',[0x2E]='c',[0x2F]='v',[0x30]='b',
     [0x31]='n',[0x32]='m',
-    [0x33]='o',[0x34]='c',[0x35]='.',               /* ö ç .              */
+    [0x33]=KEY_TR_O_UMLAUT_LO,[0x34]=KEY_TR_C_CEDILLA_LO,[0x35]='.', /* ö ç */
 };
 
 /* ---- TR-F — different mechanical layout; we mostly mirror QWERTY shift  */
@@ -140,13 +138,13 @@ static const i32 SC_TRF_LO[128] = {
     [0x07]='6',[0x08]='7',[0x09]='8',[0x0A]='9',[0x0B]='0',
     [0x0C]='/',[0x0D]='-',
 
-    [0x10]='f',[0x11]='g',[0x12]='g',[0x13]='i',[0x14]='o',
+    [0x10]='f',[0x11]='g',[0x12]=KEY_TR_G_BREVE_LO,[0x13]='i',[0x14]='o',
     [0x15]='d',[0x16]='r',[0x17]='n',[0x18]='h',[0x19]='p',
     [0x1A]='q',[0x1B]='w',
-    [0x1E]='u',[0x1F]='i',[0x20]='e',[0x21]='a',[0x22]='u',
+    [0x1E]='u',[0x1F]=KEY_TR_DOTLESS_I_LO,[0x20]='e',[0x21]='a',[0x22]=KEY_TR_U_UMLAUT_LO,
     [0x23]='t',[0x24]='k',[0x25]='m',[0x26]='l',
-    [0x27]='y',[0x28]='s',
-    [0x2C]='j',[0x2D]='o',[0x2E]='v',[0x2F]='c',[0x30]='c',
+    [0x27]='y',[0x28]=KEY_TR_S_CEDILLA_LO,
+    [0x2C]='j',[0x2D]=KEY_TR_O_UMLAUT_LO,[0x2E]='v',[0x2F]='c',[0x30]=KEY_TR_C_CEDILLA_LO,
     [0x31]='z',[0x32]='s',
     [0x33]='b',[0x34]='.',[0x35]=',',
 };
@@ -164,6 +162,21 @@ i32 kbd_translate(u8 sc, kbd_layout_t layout, bool shift)
      * keyboards (caps + shift = lowercase).                            */
     bool letter_upper = shift;
     if (k >= 'a' && k <= 'z' && g_caps) letter_upper = !letter_upper;
+    if ((layout == KBD_TR_Q || layout == KBD_TR_F) &&
+        (k == KEY_TR_C_CEDILLA_LO || k == KEY_TR_G_BREVE_LO ||
+         k == KEY_TR_DOTLESS_I_LO || k == KEY_TR_O_UMLAUT_LO ||
+         k == KEY_TR_S_CEDILLA_LO || k == KEY_TR_U_UMLAUT_LO || k == 'i') &&
+        g_caps) letter_upper = !letter_upper;
+
+    if (k == KEY_TR_C_CEDILLA_LO) return letter_upper ? KEY_TR_C_CEDILLA_UP : KEY_TR_C_CEDILLA_LO;
+    if (k == KEY_TR_G_BREVE_LO)   return letter_upper ? KEY_TR_G_BREVE_UP   : KEY_TR_G_BREVE_LO;
+    if (k == KEY_TR_O_UMLAUT_LO)  return letter_upper ? KEY_TR_O_UMLAUT_UP  : KEY_TR_O_UMLAUT_LO;
+    if (k == KEY_TR_S_CEDILLA_LO) return letter_upper ? KEY_TR_S_CEDILLA_UP : KEY_TR_S_CEDILLA_LO;
+    if (k == KEY_TR_U_UMLAUT_LO)  return letter_upper ? KEY_TR_U_UMLAUT_UP  : KEY_TR_U_UMLAUT_LO;
+    if (k == KEY_TR_DOTLESS_I_LO) return letter_upper ? 'I'                 : KEY_TR_DOTLESS_I_LO;
+    if (k == 'i' && (layout == KBD_TR_Q || layout == KBD_TR_F))
+        return letter_upper ? KEY_TR_DOTTED_I_UP : 'i';
+
     if (letter_upper && k >= 'a' && k <= 'z') return k - 'a' + 'A';
     /* punctuation shift: only US has full mapping; reuse for others       */
     if (shift && SC_US_HI[sc] && (k < 0x100)) return SC_US_HI[sc];

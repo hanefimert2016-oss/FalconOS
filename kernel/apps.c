@@ -23,6 +23,7 @@
 
 static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
+static i32 minimized_app = -1; /* last app sent to dock by yellow light */
 
 /* ----- window manager state (FalconOS 1) ---------------------------------
  * The dispatcher used to centre every app window on every frame. With
@@ -42,10 +43,11 @@ static bool wm_resizing = false;
 static i32  wm_resize_grab_x = 0, wm_resize_grab_y = 0;
 static i32  wm_resize_start_w = 0, wm_resize_start_h = 0;
 
-void apps_open(i32 i)  { active_app = i; open_at_ms = pit_ms(); }
+void apps_open(i32 i)  { active_app = i; minimized_app = -1; open_at_ms = pit_ms(); }
 void apps_close(void)  { active_app = -1; wm_max = false;
                           wm_dragging = false; wm_resizing = false; }
 i32  apps_active(void) { return active_app; }
+i32  apps_minimized(void) { return minimized_app; }
 
 /* ===== icon glyphs ======================================================== */
 static void icon_home(i32 cx, i32 cy)
@@ -198,6 +200,29 @@ static void icon_store(i32 cx, i32 cy)
     gfx_line(cx + 8, cy - 8, cx + 8, cy - 14, COL_PANEL);
     gfx_line(cx - 8, cy - 14, cx + 8, cy - 14, COL_PANEL);
     gfx_text_centered(cx, cy - 6, "P", COL_ACCENT);
+}
+static void icon_video(i32 cx, i32 cy)
+{
+    gfx_round_rect(cx - 16, cy - 12, 32, 24, 6, 0x10141C);
+    gfx_round_outline(cx - 16, cy - 12, 32, 24, 6, PAL_HAIRLINE);
+    for (i32 y = -9; y <= 9; y++)
+        for (i32 x = -13; x <= 13; x++) {
+            u8 a = (u8)(120 + ((x + 13) * 80) / 26);
+            gfx_pixel_a(cx + x, cy + y, PAL_ACCENT, a);
+        }
+    for (i32 y = -5; y <= 5; y++)
+        for (i32 x = -2; x <= 6; x++)
+            if (x + y / 2 >= -2 && x - y / 2 <= 6)
+                gfx_pixel(cx + x, cy + y, 0xFFFFFF);
+}
+static void icon_heroic(i32 cx, i32 cy)
+{
+    gfx_round_rect(cx - 16, cy - 16, 32, 32, 8, 0x1E2635);
+    gfx_round_outline(cx - 16, cy - 16, 32, 32, 8, PAL_HAIRLINE);
+    gfx_text_centered(cx, cy - 8, "H", PAL_ACCENT);
+    gfx_rect(cx - 8, cy + 2, 16, 2, 0x34A853);
+    gfx_rect(cx - 6, cy + 6, 12, 2, 0xFBBC04);
+    gfx_rect(cx - 4, cy + 10, 8, 2, 0xEA4335);
 }
 
 /* ===== app render functions ============================================== */
@@ -389,17 +414,82 @@ static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static i32 store_cursor = 0;
 static i32 store_filter = 0;     /* 0 all, 1 installed */
 
+static bool store_pkg_visible(i32 pkg_i)
+{
+    if (store_filter == 0) return true;
+    return prg_is_installed(pkg_i);
+}
+
+static i32 store_visible_count(void)
+{
+    i32 n = 0;
+    for (i32 i = 0; i < prg_count(); i++) if (store_pkg_visible(i)) n++;
+    return n;
+}
+
+static i32 store_visible_to_pkg(i32 vis_i)
+{
+    if (vis_i < 0) return -1;
+    i32 seen = 0;
+    for (i32 i = 0; i < prg_count(); i++) {
+        if (!store_pkg_visible(i)) continue;
+        if (seen == vis_i) return i;
+        seen++;
+    }
+    return -1;
+}
+
+static i32 store_pkg_to_visible(i32 pkg_i)
+{
+    if (pkg_i < 0) return -1;
+    i32 vis = 0;
+    for (i32 i = 0; i < prg_count(); i++) {
+        if (!store_pkg_visible(i)) continue;
+        if (i == pkg_i) return vis;
+        vis++;
+    }
+    return -1;
+}
+
+static void store_clamp_cursor(void)
+{
+    i32 n = store_visible_count();
+    if (n <= 0) { store_cursor = 0; return; }
+    if (store_cursor < 0) store_cursor = 0;
+    if (store_cursor >= n) store_cursor = n - 1;
+}
+
+static void store_set_filter(i32 new_filter)
+{
+    if (new_filter < 0 || new_filter > 1) return;
+    i32 keep_pkg = store_visible_to_pkg(store_cursor);
+    store_filter = new_filter;
+    if (keep_pkg >= 0) {
+        i32 v = store_pkg_to_visible(keep_pkg);
+        store_cursor = (v >= 0) ? v : 0;
+    }
+    store_clamp_cursor();
+}
+
 static void store_input_key(i32 key)
 {
-    i32 n = prg_count();
-    if (key == KEY_UP   && store_cursor > 0)     store_cursor--;
+    store_clamp_cursor();
+    if (key == KEY_LEFT)  { store_set_filter(0); return; }
+    if (key == KEY_RIGHT) { store_set_filter(1); return; }
+
+    i32 n = store_visible_count();
+    if (n <= 0) return;
+
+    if (key == KEY_UP   && store_cursor > 0) store_cursor--;
     if (key == KEY_DOWN && store_cursor < n - 1) store_cursor++;
-    if (key == KEY_LEFT  || key == KEY_RIGHT)    store_filter ^= 1;
+
+    i32 pkg_i = store_visible_to_pkg(store_cursor);
+    if (pkg_i < 0) return;
     if (key == KEY_ENTER || key == ' ' || key == 'i' || key == 'I') {
-        prg_install(store_cursor);
+        prg_install(pkg_i);
     }
     if (key == 'r' || key == 'R' || key == KEY_BACKSPACE) {
-        prg_remove(store_cursor);
+        prg_remove(pkg_i);
     }
 }
 
@@ -408,8 +498,10 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     (void)frame;
     section(wx, wy,
             T("Store",  "Mağaza"),
-            T("up/down  pick    Enter/I install    R/Backspace remove",
-              "yukarı/aşağı  seç    Enter/I yükle    R/Backspace kaldır"));
+            T("up/down pick  Enter install  R remove  mouse: click row/action",
+              "yukarı/aşağı seç  Enter yükle  R kaldır  fare: satır/eylem tıkla"));
+
+    store_clamp_cursor();
 
     char hdr[80], num[12];
     k_strcpy(hdr, T("packages: ", "paket: "));
@@ -421,22 +513,65 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     k_strcat(hdr, T("  installed", "  kurulu"));
     gfx_text(wx + 24, wy + 38, hdr, PAL_TEXT_DIM);
 
-    i32 lx = wx + 24, ly = wy + 60, lw = ww - 48;
+    /* filter chips: all / installed */
+    const char *chip_all  = T("all", "tum");
+    const char *chip_inst = T("installed", "kurulu");
+    i32 chip_y  = wy + 54;
+    i32 all_w   = gfx_text_width(chip_all) + 20;
+    i32 inst_w  = gfx_text_width(chip_inst) + 20;
+    i32 all_x   = wx + 24;
+    i32 inst_x  = all_x + all_w + 10;
+    bool all_on = (store_filter == 0);
+
+    gfx_round_rect_a(all_x, chip_y, all_w, 20, 10, all_on ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
+    gfx_round_outline(all_x, chip_y, all_w, 20, 10, all_on ? PAL_ACCENT : PAL_HAIRLINE);
+    gfx_text(all_x + 10, chip_y + 5, chip_all, all_on ? PAL_ACCENT : PAL_TEXT_DIM);
+    gfx_round_rect_a(inst_x, chip_y, inst_w, 20, 10, all_on ? PAL_PANEL_DEEP : PAL_ACCENT_DIM, 255);
+    gfx_round_outline(inst_x, chip_y, inst_w, 20, 10, all_on ? PAL_HAIRLINE : PAL_ACCENT);
+    gfx_text(inst_x + 10, chip_y + 5, chip_inst, all_on ? PAL_TEXT_DIM : PAL_ACCENT);
+
+    i32 lx = wx + 24, ly = wy + 82, lw = ww - 48;
     i32 row_h = 32;
-    i32 visible = (wh - 80) / row_h;
+    i32 visible_total = store_visible_count();
+    i32 visible = (wh - 112) / row_h;
+    if (visible < 1) visible = 1;
     i32 first = store_cursor - visible / 2;
     if (first < 0) first = 0;
-    if (first > prg_count() - visible) first = prg_count() - visible;
+    if (first > visible_total - visible) first = visible_total - visible;
     if (first < 0) first = 0;
 
-    for (i32 i = first; i < first + visible && i < prg_count(); i++) {
+    i32 mx, my; bool ml;
+    mouse_get(&mx, &my, &ml);
+    (void)ml;
+    bool edge = mouse_peek_click();
+    bool click_used = false;
+
+    if (edge && mx >= all_x && mx <= all_x + all_w && my >= chip_y && my <= chip_y + 20) {
+        store_set_filter(0); click_used = true;
+    } else if (edge && mx >= inst_x && mx <= inst_x + inst_w &&
+               my >= chip_y && my <= chip_y + 20) {
+        store_set_filter(1); click_used = true;
+    }
+
+    if (visible_total <= 0) {
+        gfx_round_rect_a(lx, ly, lw, 28, 8, PAL_PANEL_DEEP, 255);
+        gfx_round_outline(lx, ly, lw, 28, 8, PAL_HAIRLINE);
+        gfx_text(lx + 10, ly + 8,
+                 T("no packages in this filter", "bu filtrede paket yok"),
+                 PAL_TEXT_DIM);
+        if (click_used) (void)mouse_consume_click();
+        return;
+    }
+
+    for (i32 v = first; v < first + visible && v < visible_total; v++) {
+        i32 i = store_visible_to_pkg(v);
         const prg_pkg_t *p = prg_at(i);
-        i32 y = ly + (i - first) * row_h;
-        bool active = (i == store_cursor);
+        i32 y = ly + (v - first) * row_h;
+        bool active = (v == store_cursor);
         gfx_round_rect_a(lx, y, lw, row_h - 4, 8,
                          active ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
         gfx_round_outline(lx, y, lw, row_h - 4, 8,
-                         active ? PAL_ACCENT : PAL_HAIRLINE);
+                          active ? PAL_ACCENT : PAL_HAIRLINE);
         /* category dot */
         u32 cat_color = COL_OK;
         if (p->category[0] == 'd') cat_color = COL_WARN;          /* drivers */
@@ -452,24 +587,40 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         /* summary */
         gfx_text(lx + 30 + gfx_text_width(p->name) + 8 + gfx_text_width(p->version) + 14,
                  y + 8, p->summary, PAL_TEXT_DIM);
-        /* installed badge */
+
+        /* status/action pill */
+        bool installed = prg_is_installed(i);
         const char *badge =
             p->builtin             ? T("built-in",  "yerlesik") :
-            prg_is_installed(i)    ? T("installed", "kurulu")   :
+            installed              ? T("remove",    "kaldir")   :
                                      T("get",       "yükle");
-        u32 badge_c =
-            p->builtin             ? COL_OK :
-            prg_is_installed(i)    ? COL_OK :
-                                     PAL_ACCENT;
-        gfx_text(lx + lw - gfx_text_width(badge) - 14, y + 8, badge, badge_c);
+        i32 bw = gfx_text_width(badge) + 14;
+        i32 bx = lx + lw - bw - 10;
+        u32 bc = p->builtin ? PAL_PANEL_HI : (installed ? 0xEBC9C8 : PAL_ACCENT);
+        u32 tc = p->builtin ? PAL_TEXT_DIM : 0xFFFFFF;
+        gfx_round_rect_a(bx, y + 4, bw, row_h - 12, 8, bc, 255);
+        gfx_round_outline(bx, y + 4, bw, row_h - 12, 8, PAL_HAIRLINE);
+        gfx_text(bx + 7, y + 8, badge, tc);
+
+        if (edge && !click_used &&
+            mx >= lx && mx <= lx + lw && my >= y && my <= y + row_h - 4) {
+            store_cursor = v;
+            if (mx >= bx && mx <= bx + bw && my >= y + 4 && my <= y + row_h - 8 && !p->builtin) {
+                if (installed) (void)prg_remove(i);
+                else           (void)prg_install(i);
+            }
+            click_used = true;
+        }
     }
 
     /* footer status */
-    const prg_pkg_t *cur = prg_at(store_cursor);
+    const prg_pkg_t *cur = prg_at(store_visible_to_pkg(store_cursor));
     char foot[80];
     k_strcpy(foot, T("category: ", "kategori: "));
     k_strcat(foot, cur->category);
     gfx_text(wx + 24, wy + wh - 22, foot, PAL_TEXT_FAINT);
+
+    if (click_used) (void)mouse_consume_click();
 }
 
 /* --- Terminal (POSIX shell subset, FalconOS 1.1) -------------------------
@@ -589,6 +740,84 @@ static shfile_t *sh_file_open_w(const char *n, bool append)
 
 /* small helpers --------------------------------------------------------- */
 static bool sh_isspace(char c) { return c == ' ' || c == '\t'; }
+static char sh_tolower(char c) { return (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : c; }
+
+static bool sh_streq_ci(const char *a, const char *b)
+{
+    i32 i = 0;
+    while (a[i] && b[i]) {
+        if (sh_tolower(a[i]) != sh_tolower(b[i])) return false;
+        i++;
+    }
+    return a[i] == 0 && b[i] == 0;
+}
+
+static bool sh_contains_ci(const char *hay, const char *needle)
+{
+    if (!needle || !needle[0]) return true;
+    for (i32 i = 0; hay[i]; i++) {
+        i32 j = 0;
+        while (needle[j] && hay[i + j] &&
+               sh_tolower(hay[i + j]) == sh_tolower(needle[j])) j++;
+        if (!needle[j]) return true;
+    }
+    return false;
+}
+
+static i32 sh_find_pkg_idx(const char *name)
+{
+    for (i32 i = 0; i < prg_count(); i++) {
+        const prg_pkg_t *p = prg_at(i);
+        if (p && sh_streq_ci(p->name, name)) return i;
+    }
+    return -1;
+}
+
+static i32 sh_find_app_idx(const char *name)
+{
+    if (!name || !name[0]) return -1;
+    for (i32 i = 0; i < apps_count(); i++)
+        if (sh_streq_ci(apps_name(i), name)) return i;
+    if (sh_streq_ci(name, "google-chrome") || sh_streq_ci(name, "googlechrome"))
+        return sh_find_app_idx("Chrome");
+    if (sh_streq_ci(name, "heroic-launcher") || sh_streq_ci(name, "heroiclauncher"))
+        return sh_find_app_idx("Heroic");
+    if (sh_streq_ci(name, "media") || sh_streq_ci(name, "video-player"))
+        return sh_find_app_idx("Video");
+    return -1;
+}
+
+static void sh_buf_pop_utf8(char *buf, i32 *len)
+{
+    if (!buf || !len || *len <= 0) return;
+    i32 i = *len - 1;
+    while (i > 0 && (((u8)buf[i] & 0xC0u) == 0x80u)) i--;
+    buf[i] = 0;
+    *len = i;
+}
+
+static bool sh_buf_append_key(char *buf, i32 *len, i32 cap, i32 key)
+{
+    char utf[4];
+    i32 n = key_to_utf8(key, utf);
+    if (n <= 0 || !buf || !len) return false;
+    if (*len + n >= cap) return false;
+    for (i32 i = 0; i < n; i++) buf[*len + i] = utf[i];
+    *len += n;
+    buf[*len] = 0;
+    return true;
+}
+
+static i32 sh_utf8_chars_between(const char *buf, i32 from, i32 to)
+{
+    i32 n = 0;
+    if (from < 0) from = 0;
+    if (to < from) return 0;
+    for (i32 i = from; i < to && buf[i]; i++) {
+        if (((u8)buf[i] & 0xC0u) != 0x80u) n++;
+    }
+    return n;
+}
 
 /* Tokenise a single command (no metachars). $X expanded inline. Tokens
  * placed in `out[]`, returns token count. */
@@ -661,10 +890,149 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         k_strcpy(out,
             "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
             "touch cp mv mkdir rmdir basename dirname more less xxd file "
-            "echo printf yes seq expr test [ env set unset export alias "
+            "echo printf yes seq expr test [ env set unset alias export "
             "history ps top kill df du free mount lsblk uname whoami id "
-            "groups who w hostname uptime cal date reboot which type | > >>");
+            "groups who w users hostname uptime cal date reboot shutdown "
+            "which type prg pkg open chrome heroic video man | > >>");
         return 0;
+    }
+    if (k_strcmp(cmd, "man") == 0) {
+        if (argc < 2) { k_strcpy(out, "man: usage: man <command>"); return 1; }
+        if (k_strcmp(argv[1], "prg") == 0 || k_strcmp(argv[1], "pkg") == 0) {
+            k_strcpy(out, "prg: list | installed | search <term> | info <pkg> | install <pkg> | remove <pkg>");
+            return 0;
+        }
+        if (k_strcmp(argv[1], "open") == 0) {
+            k_strcpy(out, "open <app-name>  (e.g. open Chrome, open Heroic, open Video)");
+            return 0;
+        }
+        if (k_strcmp(argv[1], "video") == 0) {
+            k_strcpy(out, "video: launches Video app. Keys: Space play/pause, <-/-> seek, Tab next clip.");
+            return 0;
+        }
+        k_strcpy(out, argv[1]); k_strcat(out, ": manual entry not found");
+        return 1;
+    }
+    if (k_strcmp(cmd, "open") == 0 || k_strcmp(cmd, "xdg-open") == 0) {
+        if (argc < 2) { k_strcpy(out, "open: usage: open <app>"); return 1; }
+        i32 ai = sh_find_app_idx(argv[1]);
+        if (ai < 0 && argc >= 3) {
+            char joined[64];
+            k_strcpy(joined, argv[1]);
+            for (i32 i = 2; i < argc && k_strlen(joined) < 62; i++) {
+                k_strcat(joined, " ");
+                k_strcat(joined, argv[i]);
+            }
+            ai = sh_find_app_idx(joined);
+        }
+        if (ai < 0) { k_strcpy(out, "open: app not found"); return 1; }
+        apps_open(ai);
+        k_strcpy(out, "opened "); k_strcat(out, apps_name(ai));
+        return 0;
+    }
+    if (k_strcmp(cmd, "chrome") == 0) {
+        i32 pkg = sh_find_pkg_idx("app-google-chrome");
+        if (pkg >= 0 && !prg_is_installed(pkg)) {
+            k_strcpy(out, "chrome: package not installed (run: prg install app-google-chrome)");
+            return 1;
+        }
+        i32 ai = sh_find_app_idx("Chrome");
+        if (ai >= 0) apps_open(ai);
+        k_strcpy(out, "opening Chrome");
+        return 0;
+    }
+    if (k_strcmp(cmd, "heroic") == 0) {
+        i32 pkg = sh_find_pkg_idx("app-heroic-launcher");
+        if (pkg >= 0 && !prg_is_installed(pkg)) {
+            k_strcpy(out, "heroic: package not installed (run: prg install app-heroic-launcher)");
+            return 1;
+        }
+        i32 ai = sh_find_app_idx("Heroic");
+        if (ai >= 0) apps_open(ai);
+        k_strcpy(out, "opening Heroic Launcher");
+        return 0;
+    }
+    if (k_strcmp(cmd, "video") == 0) {
+        i32 ai = sh_find_app_idx("Video");
+        if (ai >= 0) apps_open(ai);
+        k_strcpy(out, "opening Video player");
+        return 0;
+    }
+    if (k_strcmp(cmd, "prg") == 0 || k_strcmp(cmd, "pkg") == 0) {
+        if (argc < 2 || k_strcmp(argv[1], "help") == 0) {
+            k_strcpy(out, "prg: list | installed | search <term> | info <pkg> | install <pkg> | remove <pkg>");
+            return 0;
+        }
+        if (k_strcmp(argv[1], "list") == 0) {
+            out[0] = 0;
+            for (i32 i = 0; i < prg_count(); i++) {
+                const prg_pkg_t *p = prg_at(i);
+                if (!p) continue;
+                if (k_strlen(out) > cap - 40) break;
+                k_strcat(out, prg_is_installed(i) ? "[i] " : "[ ] ");
+                k_strcat(out, p->name);
+                k_strcat(out, "\n");
+            }
+            i32 n = k_strlen(out); if (n > 0) out[n - 1] = 0;
+            return 0;
+        }
+        if (k_strcmp(argv[1], "installed") == 0) {
+            out[0] = 0;
+            for (i32 i = 0; i < prg_count(); i++) {
+                if (!prg_is_installed(i)) continue;
+                const prg_pkg_t *p = prg_at(i);
+                if (!p) continue;
+                if (k_strlen(out) > cap - 32) break;
+                k_strcat(out, p->name); k_strcat(out, "\n");
+            }
+            i32 n = k_strlen(out); if (n > 0) out[n - 1] = 0;
+            if (!out[0]) k_strcpy(out, "(none)");
+            return 0;
+        }
+        if (k_strcmp(argv[1], "search") == 0) {
+            if (argc < 3) { k_strcpy(out, "prg search: missing term"); return 1; }
+            out[0] = 0;
+            for (i32 i = 0; i < prg_count(); i++) {
+                const prg_pkg_t *p = prg_at(i);
+                if (!p) continue;
+                if (!sh_contains_ci(p->name, argv[2]) && !sh_contains_ci(p->summary, argv[2])) continue;
+                if (k_strlen(out) > cap - 48) break;
+                k_strcat(out, p->name);
+                k_strcat(out, " - ");
+                k_strcat(out, p->summary);
+                k_strcat(out, "\n");
+            }
+            i32 n = k_strlen(out); if (n > 0) out[n - 1] = 0;
+            if (!out[0]) k_strcpy(out, "no matches");
+            return 0;
+        }
+        if (k_strcmp(argv[1], "info") == 0) {
+            if (argc < 3) { k_strcpy(out, "prg info: missing package"); return 1; }
+            i32 idx = sh_find_pkg_idx(argv[2]);
+            if (idx < 0) { k_strcpy(out, "prg info: package not found"); return 1; }
+            const prg_pkg_t *p = prg_at(idx);
+            k_strcpy(out, p->name); k_strcat(out, " "); k_strcat(out, p->version);
+            k_strcat(out, "\n");
+            k_strcat(out, p->summary);
+            k_strcat(out, "\nstatus: ");
+            k_strcat(out, p->builtin ? "built-in" : (prg_is_installed(idx) ? "installed" : "not installed"));
+            if (p->depends && p->depends[0]) { k_strcat(out, "\ndepends: "); k_strcat(out, p->depends); }
+            return 0;
+        }
+        if (k_strcmp(argv[1], "install") == 0 || k_strcmp(argv[1], "remove") == 0) {
+            if (argc < 3) { k_strcpy(out, "prg: missing package"); return 1; }
+            i32 idx = sh_find_pkg_idx(argv[2]);
+            if (idx < 0) { k_strcpy(out, "prg: package not found"); return 1; }
+            bool ok = (k_strcmp(argv[1], "install") == 0) ? prg_install(idx) : prg_remove(idx);
+            if (ok) {
+                k_strcpy(out, argv[1]); k_strcat(out, " ok: "); k_strcat(out, argv[2]);
+                return 0;
+            }
+            k_strcpy(out, argv[1]); k_strcat(out, " failed: "); k_strcat(out, argv[2]);
+            return 1;
+        }
+        k_strcpy(out, "prg: unknown subcommand");
+        return 1;
     }
     if (k_strcmp(cmd, "pwd") == 0)    { k_strcpy(out, sh_cwd); return 0; }
     if (k_strcmp(cmd, "uname") == 0)  { k_strcpy(out, "FalconOS 1 x86_64 bare-metal"); return 0; }
@@ -1249,7 +1617,8 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "[","sleep","history","hostname","id","groups","who","w","users",
             "uptime","cal","ps","top","jobs","kill","df","du","free","mount",
             "lsblk","reboot","shutdown","poweroff","halt","which","type",
-            "uname","whoami","date","clear","help","true","false","exit",NULL
+            "uname","whoami","date","clear","help","true","false","exit",
+            "man","open","xdg-open","prg","pkg","chrome","heroic","video",NULL
         };
         for (i32 i = 0; BUILTINS[i]; i++) {
             if (k_strcmp(BUILTINS[i], argv[1]) == 0) {
@@ -1546,16 +1915,10 @@ static void term_input_key(i32 key)
         return;
     }
     if (key == KEY_BACKSPACE) {
-        if (term_input_len > 0) {
-            term_input_len--;
-            term_input[term_input_len] = 0;
-        }
+        sh_buf_pop_utf8(term_input, &term_input_len);
         return;
     }
-    if (key >= 0x20 && key <= 0x7E && term_input_len < TERM_COLS - 16) {
-        term_input[term_input_len++] = (char)key;
-        term_input[term_input_len] = 0;
-    }
+    (void)sh_buf_append_key(term_input, &term_input_len, TERM_COLS, key);
 }
 
 /* --- Calculator ---------------------------------------------------------- */
@@ -1695,7 +2058,7 @@ static bool set_pwd_editing = false;
 static void set_input_key(i32 key)
 {
     if (set_pwd_editing) {
-        if (key == KEY_BACKSPACE) { if (set_pwd_len) set_pwd[--set_pwd_len] = 0; return; }
+        if (key == KEY_BACKSPACE) { sh_buf_pop_utf8(set_pwd, &set_pwd_len); return; }
         if (key == KEY_ENTER)     {
             set_pwd[set_pwd_len] = 0;
             k_strcpy(SET.password, set_pwd);
@@ -1703,10 +2066,7 @@ static void set_input_key(i32 key)
             return;
         }
         if (key == KEY_ESC)       { set_pwd_editing = false; return; }
-        if (key >= 0x20 && key < 0x7F && set_pwd_len < 23) {
-            set_pwd[set_pwd_len++] = (char)key;
-            set_pwd[set_pwd_len] = 0;
-        }
+        (void)sh_buf_append_key(set_pwd, &set_pwd_len, 24, key);
         return;
     }
 
@@ -1975,10 +2335,7 @@ static void notes_input_key(i32 key)
 {
     notes_init_once();
     if (key == KEY_BACKSPACE) {
-        if (notes_len > 0) {
-            notes_len--;
-            notes_buf[notes_len] = 0;
-        }
+        sh_buf_pop_utf8(notes_buf, &notes_len);
         return;
     }
     if (key == KEY_ENTER) {
@@ -1988,10 +2345,7 @@ static void notes_input_key(i32 key)
         }
         return;
     }
-    if (key >= 0x20 && key <= 0x7E && notes_len < NOTES_MAX - 1) {
-        notes_buf[notes_len++] = (char)key;
-        notes_buf[notes_len] = 0;
-    }
+    (void)sh_buf_append_key(notes_buf, &notes_len, NOTES_MAX, key);
 }
 static void render_notes(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
@@ -2020,7 +2374,10 @@ static void render_notes(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         }
     }
     /* caret */
-    if ((g_ticks / 50) & 1) gfx_text(px + 14 + (notes_len - line_start) * 8, ty, "_", PAL_ACCENT);
+    if ((g_ticks / 50) & 1) {
+        i32 cols = sh_utf8_chars_between(notes_buf, line_start, notes_len);
+        gfx_text(px + 14 + cols * 8, ty, "_", PAL_ACCENT);
+    }
 }
 
 /* --- Calendar ------------------------------------------------------------ */
@@ -2245,6 +2602,127 @@ static void render_browser(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
              PAL_TEXT_FAINT);
 }
 
+/* --- Video (software demo player) ---------------------------------------- */
+static bool vid_play = true;
+static u32  vid_epoch_ms = 0;
+static u32  vid_freeze_ms = 0;
+static i32  vid_clip = 0;   /* 0..2 */
+
+static u32 vid_now_ms(void)
+{
+    if (vid_play) return pit_ms() - vid_epoch_ms;
+    return vid_freeze_ms;
+}
+
+static void video_input_key(i32 key)
+{
+    if (key == ' ' || key == 'p' || key == 'P') {
+        if (vid_play) {
+            vid_freeze_ms = vid_now_ms();
+            vid_play = false;
+        } else {
+            vid_epoch_ms = pit_ms() - vid_freeze_ms;
+            vid_play = true;
+        }
+        return;
+    }
+    if (key == KEY_RIGHT) { vid_freeze_ms = vid_now_ms() + 1500; if (vid_play) vid_epoch_ms = pit_ms() - vid_freeze_ms; return; }
+    if (key == KEY_LEFT)  {
+        vid_freeze_ms = vid_now_ms();
+        if (vid_freeze_ms > 1500) vid_freeze_ms -= 1500;
+        else                      vid_freeze_ms = 0;
+        if (vid_play) vid_epoch_ms = pit_ms() - vid_freeze_ms;
+        return;
+    }
+    if (key == KEY_TAB || key == 'n' || key == 'N') {
+        vid_clip = (vid_clip + 1) % 3;
+    }
+}
+
+static void render_video(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+{
+    (void)frame;
+    section(wx, wy, "Video", "software player  -  Space play/pause  -  <-/-> seek  -  Tab next clip");
+
+    i32 vx = wx + 24, vy = wy + 56, vw = ww - 48, vh = wh - 120;
+    if (vh < 120) vh = 120;
+    gfx_round_rect_a(vx, vy, vw, vh, 12, 0x0D1118, 255);
+    gfx_round_outline(vx, vy, vw, vh, 12, PAL_HAIRLINE);
+
+    u32 t = vid_now_ms();
+    u32 sec = t / 1000;
+    u32 ms = t % 1000;
+
+    /* Procedural "video" clips rendered in real-time on the framebuffer. */
+    if (vid_clip == 0) {
+        for (i32 y = 8; y < vh - 8; y += 2) {
+            u8 a = (u8)(30 + (y * 60) / vh);
+            gfx_rect_a(vx + 8, vy + y, vw - 16, 2, PAL_ACCENT, a);
+        }
+        i32 bx = vx + 24 + (i32)(sec % (u32)(vw > 80 ? (vw - 80) : 1));
+        gfx_round_rect_a(bx, vy + vh / 2 - 18, 56, 36, 8, 0xFFFFFF, 190);
+    } else if (vid_clip == 1) {
+        i32 cx = vx + vw / 2, cy = vy + vh / 2;
+        for (i32 r = 18; r < (vh < vw ? vh : vw) / 2 - 8; r += 18) {
+            u8 a = (u8)(140 - (r * 100) / (vh > 0 ? vh : 1));
+            gfx_circle_a(cx, cy, r + (i32)(sec % 12), PAL_ACCENT, a);
+        }
+        gfx_circle(cx, cy, 14, 0xFFFFFF);
+    } else {
+        for (i32 x = vx + 10; x < vx + vw - 10; x += 18) {
+            i32 h = 20 + (i32)((((u32)x + sec * 37u) % (u32)(vh - 34)));
+            gfx_round_rect_a(x, vy + vh - h - 8, 10, h, 3, 0x34A853, 220);
+        }
+    }
+
+    /* Transport row */
+    i32 tx = vx + 12, ty = vy + vh + 10, tw = vw - 24;
+    gfx_round_rect_a(tx, ty, tw, 28, 12, PAL_PANEL_DEEP, 255);
+    gfx_round_outline(tx, ty, tw, 28, 12, PAL_HAIRLINE);
+    i32 prog = (i32)(ms % (u32)(tw > 16 ? tw - 16 : 1));
+    gfx_round_rect_a(tx + 8, ty + 10, prog, 8, 4, PAL_ACCENT, 255);
+    gfx_text(tx + tw - 210, ty + 7, vid_play ? "playing" : "paused", vid_play ? COL_OK : COL_WARN);
+    char ts[32], n[8];
+    k_strcpy(ts, "t=");
+    k_itoa(sec, n, 10); k_strcat(ts, n); k_strcat(ts, ".");
+    if (ms < 100) k_strcat(ts, "0");
+    if (ms < 10)  k_strcat(ts, "0");
+    k_itoa(ms, n, 10); k_strcat(ts, n); k_strcat(ts, "s");
+    gfx_text(tx + 12, ty + 7, ts, PAL_TEXT);
+}
+
+/* --- Heroic Launcher (Linux app bridge mock) ----------------------------- */
+static i32 heroic_sel = 0;
+static const char *HERO_GAMES[] = {
+    "Hades", "Celeste", "Dead Cells", "Vampire Survivors", "Hollow Knight"
+};
+
+static void heroic_input_key(i32 key)
+{
+    i32 n = (i32)(sizeof(HERO_GAMES) / sizeof(HERO_GAMES[0]));
+    if (key == KEY_UP && heroic_sel > 0) heroic_sel--;
+    if (key == KEY_DOWN && heroic_sel < n - 1) heroic_sel++;
+}
+
+static void render_heroic(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+{
+    (void)frame;
+    section(wx, wy, "Heroic Launcher", "Linux game launcher compatibility layer");
+    i32 n = (i32)(sizeof(HERO_GAMES) / sizeof(HERO_GAMES[0]));
+    i32 lx = wx + 24, ly = wy + 62, lw = ww - 48;
+    for (i32 i = 0; i < n; i++) {
+        i32 y = ly + i * 36;
+        bool sel = (i == heroic_sel);
+        gfx_round_rect_a(lx, y, lw, 30, 8, sel ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
+        gfx_round_outline(lx, y, lw, 30, 8, sel ? PAL_ACCENT : PAL_HAIRLINE);
+        gfx_text(lx + 12, y + 8, HERO_GAMES[i], PAL_TEXT);
+        gfx_text(lx + lw - 140, y + 8, "Epic/GOG bridge", PAL_TEXT_DIM);
+    }
+    gfx_text(wx + 24, wy + wh - 26,
+             "Note: runtime bridge only, no native Linux ELF execution yet.",
+             PAL_TEXT_FAINT);
+}
+
 /* ===== app table & dispatch ============================================= */
 typedef void (*app_render_fn)(i32 x, i32 y, i32 w, i32 h, u32 f);
 typedef void (*app_input_fn)(i32 key);
@@ -2263,14 +2741,16 @@ static app_def_t APPS[] = {
     { "Files",      "in-memory tree",      0xF59F1A, render_files,    NULL,             icon_files    },
     { "Store",      "prg packages",        0x2BB673, render_store,    store_input_key,  icon_store    },
     { "Settings",   "system + theme",      0x6E7884, render_settings, set_input_key,    icon_settings },
-    { "Terminal",   "fake bash prompt",    0x14181F, render_term,     term_input_key,   icon_term     },
+    { "Terminal",   "POSIX shell + prg",   0x14181F, render_term,     term_input_key,   icon_term     },
     { "Calculator", "+ - * /",             0xA45EE5, render_calc,     calc_input_key,   icon_calc     },
     { "Notes",      "free-form pad",       0xFFB547, render_notes,    notes_input_key,  icon_notes    },
     { "Clock",      "PIT analog dial",     0x16B5A8, render_clock,    NULL,             icon_clock    },
     { "Stats",      "system telemetry",    0xE53935, render_stats,    NULL,             icon_stats    },
     { "Calendar",   "month view",          0x3070FF, render_calendar, NULL,             icon_calendar },
     { "Gallery",    "palette swatches",    0xC084FC, render_gallery,  NULL,             icon_gallery  },
+    { "Video",      "software player",     0x16B5A8, render_video,    video_input_key,  icon_video    },
     { "Chrome",     "Tab to switch tabs",  0x4285F4, render_browser, chrome_input_key,  icon_browser  },
+    { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
 };
@@ -2350,14 +2830,16 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
 
     /* traffic lights live at title-bar y ± 10px, x within radius 9.
      *   red    → close (×)
-     *   yellow → recentre the window on the screen (-)  - poor man's
-     *            "minimise" until we have a proper dock-stash flow.
+     *   yellow → minimise to dock
      *   green  → toggle maximised (+)                                  */
     i32 ty = wy + 18;
     if (my >= ty - 10 && my <= ty + 10) {
         if (mx >= wx + 9  && mx <= wx + 27) { apps_close(); return true; }
         if (mx >= wx + 29 && mx <= wx + 47) {
-            wm_dx = 0; wm_dy = 0;          /* recentre */
+            minimized_app = active_app;
+            active_app = -1;
+            wm_dragging = false;
+            wm_resizing = false;
             return true;
         }
         if (mx >= wx + 49 && mx <= wx + 67) { wm_max = !wm_max; return true; }
@@ -2419,21 +2901,16 @@ void apps_render_active(u32 frame)
         wy += off;
     }
 
-    /* card — Aero blurs the desktop / dock / widgets behind the
-     * window so the chrome feels lifted; the body remains solid
-     * because most apps render their own opaque content into it.   */
+    /* card — Aero dims the desktop / dock / widgets behind the window  
+     * so the chrome feels lifted. Window body remains solid because most
+     * apps render their own opaque content into it.                      */
     gfx_round_rect_a(wx + 4, wy + 12, ww, wh, 18, COL_SHADOW, 70);   /* shadow */
-    if (SET.aero_enabled) {
-        gfx_blur_rect(wx, wy, ww, wh, 6);
-        gfx_round_rect_a(wx, wy, ww, wh, 18, PAL_PANEL, 220);
-    } else {
-        gfx_round_rect_a(wx, wy, ww, wh, 18, PAL_PANEL, 245);
-    }
+    gfx_round_rect_a(wx, wy, ww, wh, 18, PAL_PANEL, SET.aero_enabled ? 230 : 245);
     gfx_round_outline(wx, wy, ww, wh, 18, PAL_HAIRLINE);
 
     /* title bar — macOS-spec traffic lights on the left.
      *   x+18  red    close       (#FF5F57)
-     *   x+38  yellow minimise/   (#FEBC2E)  — we use it as "centre"
+     *   x+38  yellow minimise    (#FEBC2E)
      *   x+58  green  maximise    (#28C840)
      *
      * Each light is rendered as a sphere: inner disc + soft top
@@ -2482,6 +2959,6 @@ void apps_render_active(u32 frame)
 
     /* hint */
     gfx_text_centered(wx + ww / 2, wy + wh - 24,
-        "drag title-bar  ·  resize corner  ·  Esc / red close",
+        "drag title-bar  ·  resize corner  ·  yellow=minimize  ·  green=max",
         PAL_TEXT_FAINT);
 }

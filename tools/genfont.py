@@ -112,7 +112,7 @@ def main() -> None:
         " * Index 0..94: ASCII 0x20..0x7E.  Index 95..106: Turkish letters",
         " *  Ç ç Ğ ğ İ ı Ö ö Ş ş Ü ü — see TR_GLYPHS in tools/genfont.py and",
         " *  tr_glyph_index_for_codepoint() in kernel/gfx.c.                   */",
-        "const u8 FONT8X16[FONT_GLYPH_COUNT][128] = {",  /* keep falcon.h in sync */
+        "const u8 FONT8X16[FONT_GLYPH_COUNT][128] = {",  # keep falcon.h in sync
     ]
     for code in range(FIRST, LAST + 1):
         # 14 px fits the 8×16 cell with descender room; supersampled 4× for AA.
@@ -130,7 +130,7 @@ def main() -> None:
 
     lines.extend([
         "/* 16×32 1-bit headline font — two bytes per row, MSB = leftmost. */",
-        "const u8 FONT16X32[FONT_GLYPH_COUNT][64] = {",  /* keep falcon.h in sync */
+        "const u8 FONT16X32[FONT_GLYPH_COUNT][64] = {",  # keep falcon.h in sync
     ])
     for code in range(FIRST, LAST + 1):
         rows = render_bilevel(f16, chr(code), 16, 32, 96,

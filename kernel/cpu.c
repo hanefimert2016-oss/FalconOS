@@ -139,3 +139,28 @@ u32 k_parse_hex(const char *s)
     }
     return v;
 }
+
+i32 key_to_utf8(i32 key, char out[4])
+{
+    if (!out) return 0;
+    if (key >= 0x20 && key <= 0x7E) {
+        out[0] = (char)key;
+        out[1] = 0;
+        return 1;
+    }
+    switch (key) {
+        case KEY_TR_C_CEDILLA_LO: out[0] = (char)0xC3; out[1] = (char)0xA7; out[2] = 0; return 2; /* ç */
+        case KEY_TR_C_CEDILLA_UP: out[0] = (char)0xC3; out[1] = (char)0x87; out[2] = 0; return 2; /* Ç */
+        case KEY_TR_G_BREVE_LO:   out[0] = (char)0xC4; out[1] = (char)0x9F; out[2] = 0; return 2; /* ğ */
+        case KEY_TR_G_BREVE_UP:   out[0] = (char)0xC4; out[1] = (char)0x9E; out[2] = 0; return 2; /* Ğ */
+        case KEY_TR_DOTLESS_I_LO: out[0] = (char)0xC4; out[1] = (char)0xB1; out[2] = 0; return 2; /* ı */
+        case KEY_TR_DOTTED_I_UP:  out[0] = (char)0xC4; out[1] = (char)0xB0; out[2] = 0; return 2; /* İ */
+        case KEY_TR_O_UMLAUT_LO:  out[0] = (char)0xC3; out[1] = (char)0xB6; out[2] = 0; return 2; /* ö */
+        case KEY_TR_O_UMLAUT_UP:  out[0] = (char)0xC3; out[1] = (char)0x96; out[2] = 0; return 2; /* Ö */
+        case KEY_TR_S_CEDILLA_LO: out[0] = (char)0xC5; out[1] = (char)0x9F; out[2] = 0; return 2; /* ş */
+        case KEY_TR_S_CEDILLA_UP: out[0] = (char)0xC5; out[1] = (char)0x9E; out[2] = 0; return 2; /* Ş */
+        case KEY_TR_U_UMLAUT_LO:  out[0] = (char)0xC3; out[1] = (char)0xBC; out[2] = 0; return 2; /* ü */
+        case KEY_TR_U_UMLAUT_UP:  out[0] = (char)0xC3; out[1] = (char)0x9C; out[2] = 0; return 2; /* Ü */
+    }
+    return 0;
+}

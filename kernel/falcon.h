@@ -216,6 +216,19 @@ void kbd_set_focus_text(bool b);
 #define KEY_PGUP       0x116
 #define KEY_PGDN       0x117
 #define KEY_DEL        0x07F
+/* UTF-8-capable Turkish letter keys emitted by kbd.c for TR layouts. */
+#define KEY_TR_C_CEDILLA_LO 0x200   /* ç */
+#define KEY_TR_C_CEDILLA_UP 0x201   /* Ç */
+#define KEY_TR_G_BREVE_LO   0x202   /* ğ */
+#define KEY_TR_G_BREVE_UP   0x203   /* Ğ */
+#define KEY_TR_DOTLESS_I_LO 0x204   /* ı */
+#define KEY_TR_DOTTED_I_UP  0x205   /* İ */
+#define KEY_TR_O_UMLAUT_LO  0x206   /* ö */
+#define KEY_TR_O_UMLAUT_UP  0x207   /* Ö */
+#define KEY_TR_S_CEDILLA_LO 0x208   /* ş */
+#define KEY_TR_S_CEDILLA_UP 0x209   /* Ş */
+#define KEY_TR_U_UMLAUT_LO  0x20A   /* ü */
+#define KEY_TR_U_UMLAUT_UP  0x20B   /* Ü */
 
 /* Modifier-state bitmask returned by kbd_mod_state().                    */
 #define KMOD_SHIFT  (1u << 0)
@@ -289,6 +302,9 @@ char *k_strcpy(char *d, const char *s);
 i32   k_strcmp(const char *a, const char *b);
 i32   k_strncmp(const char *a, const char *b, i32 n);
 u32   k_parse_hex(const char *s);
+/* Convert an input key to UTF-8 bytes (ASCII + Turkish keycodes above).
+ * Returns byte count written to out (1..3), or 0 if key is not printable. */
+i32   key_to_utf8(i32 key, char out[4]);
 
 /* ---- multiboot2 memory map ------------------------------------------------ */
 typedef struct { u32 base; u32 length; u32 type; } mmap_entry_t;
@@ -328,6 +344,7 @@ void         apps_draw_icon(i32 i, i32 cx, i32 cy);
 void         apps_open(i32 i);
 void         apps_close(void);
 i32          apps_active(void);
+i32          apps_minimized(void);
 void         apps_render_active(u32 frame);
 void         apps_input_active(i32 key);
 /* WM mouse handler — returns true when it consumed the click. */

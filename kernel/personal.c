@@ -91,8 +91,14 @@ static void draw_res_card(void)
 static void draw_dock(void)
 {
     i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
-    bool clicked = mouse_consume_click();
-    bool rclicked = mouse_consume_right();
+    bool clicked = false;
+    bool rclicked = false;
+    /* When an app window is open, keep the dock visually alive but do not
+     * consume click edges here; the active window / app gets first shot. */
+    if (apps_active() < 0) {
+        clicked  = mouse_consume_click();
+        rclicked = mouse_consume_right();
+    }
     (void)ml;
 
     i32 n = apps_count();
@@ -110,8 +116,15 @@ static void draw_dock(void)
      * the user has turned Aero off in Settings.                         */
     if (SET.aero_enabled) {
         gfx_round_rect_a(dx + 2, dy + 8, dw, dh, 26, COL_SHADOW, 60);
-        gfx_blur_rect(dx, dy, dw, dh, 7);
-        gfx_round_rect_a(dx, dy, dw, dh, 26, PAL_PANEL, 140);
+        if (SET.theme == THEME_LIQUID) {
+            gfx_blur_rect(dx, dy, dw, dh, 8);
+            gfx_blur_rect(dx, dy, dw, dh, 4);
+            gfx_round_rect_a(dx, dy, dw, dh, 26, 0xEAF7FF, 110);
+            gfx_round_rect_a(dx + 6, dy + 2, dw - 12, 6, 4, 0xFFFFFF, 120);
+        } else {
+            gfx_blur_rect(dx, dy, dw, dh, 7);
+            gfx_round_rect_a(dx, dy, dw, dh, 26, PAL_PANEL, 140);
+        }
         gfx_round_outline(dx, dy, dw, dh, 26, PAL_HAIRLINE);
     } else {
         gfx_round_rect_a(dx + 2, dy + 8, dw, dh, 26, COL_SHADOW, 60);
@@ -274,8 +287,34 @@ void mode_personal_render(u32 frame)
      * underlying app sees nothing.                                       */
     {
         i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
+        
+        /* dock tile clicking (restore minimized app or launch) */
+        i32 dock_h = (i32)FB.height - 8 - (50 + SET.dock_size * 9) / 2;
+        if (my >= dock_h - 30 && my <= dock_h + 30 && ml && 
+            !mouse_peek_click() /* single click consumed */) {
+            i32 n = apps_count();
+            if (n > 7) n = 7;
+            i32 tile = 50 + SET.dock_size * 9;
+            i32 gap = 14 + SET.dock_size * 2;
+            i32 dock_w = (i32)FB.width / 2 - (n * (tile + gap)) / 2;
+            for (i32 i = 0; i < n; i++) {
+                i32 tx = dock_w + i * (tile + gap);
+                if (mx >= tx && mx <= tx + tile) {
+                    if (apps_minimized() == i) {
+                        apps_open(i);  /* restore minimized app */
+                    } else if (apps_active() != i) {
+                        apps_open(i);  /* launch new app */
+                    }
+                    (void)mouse_consume_click();
+                    break;
+                }
+            }
+        }
+        
         if (apps_active() >= 0) {
-            (void)apps_wm_handle_mouse(mx, my, ml, mouse_consume_click());
+            bool edge = mouse_peek_click();
+            bool wm_used = apps_wm_handle_mouse(mx, my, ml, edge);
+            if (edge && wm_used) (void)mouse_consume_click();
         } else if (mouse_consume_click()) {
             desktop_pins_input_click(mx, my);
         }
@@ -283,4 +322,11 @@ void mode_personal_render(u32 frame)
 
     /* active app window (drawn over everything except menu bar / cursor) */
     apps_render_active(frame);
+
+    /* Any click not used by WM/app this frame must be cleared so it does not
+     * stick as a permanent edge into subsequent frames. */
+    if (apps_active() >= 0) {
+        if (mouse_peek_click()) (void)mouse_consume_click();
+        (void)mouse_consume_right();
+    }
 }

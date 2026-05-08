@@ -37,6 +37,27 @@ static i32  g_user_cursor = -1;        /* index into SET.users[]            */
 static u32 g_fail_count   = 0;
 static u32 g_throttle_end = 0;             /* g_tick value when lifted      */
 
+static void buf_pop_utf8(char *buf, i32 *len)
+{
+    if (!buf || !len || *len <= 0) return;
+    i32 i = *len - 1;
+    while (i > 0 && (((u8)buf[i] & 0xC0u) == 0x80u)) i--;
+    buf[i] = 0;
+    *len = i;
+}
+
+static bool buf_append_key(char *buf, i32 *len, i32 cap, i32 key)
+{
+    char utf[4];
+    i32 n = key_to_utf8(key, utf);
+    if (n <= 0 || !buf || !len) return false;
+    if (*len + n >= cap) return false;
+    for (i32 i = 0; i < n; i++) buf[*len + i] = utf[i];
+    *len += n;
+    buf[*len] = 0;
+    return true;
+}
+
 bool lockscreen_is_unlocked(void) { return g_unlocked; }
 
 static void ensure_cursor_valid(void)
@@ -273,7 +294,7 @@ void lockscreen_input(i32 key)
     if (key == KEY_RIGHT) { step_user_cursor(+1); g_input_len = 0; g_input[0] = 0; g_show_error = false; return; }
 
     if (key == KEY_BACKSPACE) {
-        if (g_input_len) g_input[--g_input_len] = 0;
+        buf_pop_utf8(g_input, &g_input_len);
         g_show_error = false;
         return;
     }
@@ -303,9 +324,7 @@ void lockscreen_input(i32 key)
         g_input_len = 0;
         return;
     }
-    if (key >= 0x20 && key < 0x7F && g_input_len < 23) {
-        g_input[g_input_len++] = (char)key;
-        g_input[g_input_len]   = 0;
+    if (buf_append_key(g_input, &g_input_len, 24, key)) {
         g_show_error = false;
     }
 }

@@ -82,8 +82,16 @@ static void draw_menu_bar(void)
      * so the menu bar feels lifted off the desktop.  When SET.aero is
      * off, fall back to the cheap flat overlay.                       */
     if (SET.aero_enabled) {
-        gfx_blur_rect(0, 0, W, H, 5);
-        gfx_rect_a(0, 0, W, H, PAL_PANEL, 150);
+        if (SET.theme == THEME_LIQUID) {
+            gfx_blur_rect(0, 0, W, H, 8);
+            gfx_blur_rect(0, 0, W, H, 4);
+            gfx_rect_a(0, 0, W, H, 0xE8F6FF, 105);
+            gfx_rect_a(0, 0, W, 1, 0xFFFFFF, 180);
+            gfx_rect_a(0, 1, W, 1, 0xCFF1FF, 120);
+        } else {
+            gfx_blur_rect(0, 0, W, H, 5);
+            gfx_rect_a(0, 0, W, H, PAL_PANEL, 150);
+        }
     } else {
         gfx_rect_a(0, 0, W, H, PAL_PANEL, 220);
     }

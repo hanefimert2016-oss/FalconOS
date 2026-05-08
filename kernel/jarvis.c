@@ -43,6 +43,27 @@ static char j_lower(char c)
     return c;
 }
 
+static void j_buf_pop_utf8(char *buf, i32 *len)
+{
+    if (!buf || !len || *len <= 0) return;
+    i32 i = *len - 1;
+    while (i > 0 && (((u8)buf[i] & 0xC0u) == 0x80u)) i--;
+    buf[i] = 0;
+    *len = i;
+}
+
+static bool j_buf_append_key(char *buf, i32 *len, i32 cap, i32 key)
+{
+    char utf[4];
+    i32 n = key_to_utf8(key, utf);
+    if (n <= 0 || !buf || !len) return false;
+    if (*len + n >= cap) return false;
+    for (i32 i = 0; i < n; i++) buf[*len + i] = utf[i];
+    *len += n;
+    buf[*len] = 0;
+    return true;
+}
+
 /* contains_ci(haystack, needle): case-insensitive substring search.
  * Used everywhere below so users can type "TEMA Koyu" or "tema koyu"
  * or even "TeMa  KoYu".                                              */
@@ -329,6 +350,10 @@ static bool ih_open(const char *p)
         { "browser",    "Chrome"     },
         { "chrome",     "Chrome"     },
         { "tarayic",    "Chrome"     },
+        { "heroic",     "Heroic"     },
+        { "oyun",       "Heroic"     },
+        { "video",      "Video"      },
+        { "medya",      "Video"      },
         { "galeri",     "Gallery"    },
         { "gallery",    "Gallery"    },
         { "dosya",      "Files"      },
@@ -419,8 +444,8 @@ static bool ih_pkg(const char *p)
                            ? "Kaldirildi: " : "Removed: ");
         } else {
             k_strcpy(line, SET.lang == LANG_TR
-                           ? "Kaldirilamadi (yerlesik): "
-                           : "Cannot remove (built-in): ");
+                           ? "Kaldirilamadi (yerlesik ya da bagimlilik): "
+                           : "Cannot remove (built-in or required): ");
         }
     }
     k_strcat(line, prg_at(best)->name);
@@ -565,7 +590,7 @@ void jarvis_input(i32 key)
 {
     if (!j_inited) jarvis_reset();
     if (key == KEY_BACKSPACE) {
-        if (j_in_n > 0) { j_in_n--; j_input[j_in_n] = 0; }
+        j_buf_pop_utf8(j_input, &j_in_n);
         return;
     }
     if (key == KEY_ENTER) {
@@ -576,10 +601,7 @@ void jarvis_input(i32 key)
         j_dispatch(tmp);
         return;
     }
-    if (key >= 0x20 && key <= 0x7E && j_in_n < J_COLS - 1) {
-        j_input[j_in_n++] = (char)key;
-        j_input[j_in_n] = 0;
-    }
+    (void)j_buf_append_key(j_input, &j_in_n, J_COLS, key);
 }
 
 void jarvis_render(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)

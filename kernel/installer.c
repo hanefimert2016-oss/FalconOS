@@ -44,6 +44,27 @@ static char g_pwd2[24];
 static i32  g_pwd2_len = 0;
 static bool g_pwd_mismatch = false;
 
+static void buf_pop_utf8(char *buf, i32 *len)
+{
+    if (!buf || !len || *len <= 0) return;
+    i32 i = *len - 1;
+    while (i > 0 && (((u8)buf[i] & 0xC0u) == 0x80u)) i--;
+    buf[i] = 0;
+    *len = i;
+}
+
+static bool buf_append_key(char *buf, i32 *len, i32 cap, i32 key)
+{
+    char utf[4];
+    i32 n = key_to_utf8(key, utf);
+    if (n <= 0 || !buf || !len) return false;
+    if (*len + n >= cap) return false;
+    for (i32 i = 0; i < n; i++) buf[*len + i] = utf[i];
+    *len += n;
+    buf[*len] = 0;
+    return true;
+}
+
 bool installer_is_done(void) { return g_step == INST_DONE; }
 
 /* --------------------------------------------------------------------------- */
@@ -533,20 +554,17 @@ void installer_input(i32 key)
 
     /* text-input steps ----------------------------------------------------- */
     if (g_step == INST_USER_NAME) {
-        if (key == KEY_BACKSPACE) { if (g_uname_len) g_uname[--g_uname_len] = 0; return; }
+        if (key == KEY_BACKSPACE) { buf_pop_utf8(g_uname, &g_uname_len); return; }
         if (key == KEY_ENTER) {
             g_uname[g_uname_len] = 0;
             g_step = INST_USER_PASS;
             return;
         }
-        if (key >= 0x20 && key < 0x7F && g_uname_len < FALCON_NAME_BYTES - 1) {
-            g_uname[g_uname_len++] = (char)key;
-            g_uname[g_uname_len]   = 0;
-        }
+        (void)buf_append_key(g_uname, &g_uname_len, FALCON_NAME_BYTES, key);
         return;
     }
     if (g_step == INST_USER_PASS) {
-        if (key == KEY_BACKSPACE) { if (g_pwd_len) g_pwd[--g_pwd_len] = 0; return; }
+        if (key == KEY_BACKSPACE) { buf_pop_utf8(g_pwd, &g_pwd_len); return; }
         if (key == KEY_ENTER) {
             g_pwd[g_pwd_len] = 0;
             /* Move to confirmation step instead of committing.        */
@@ -556,14 +574,11 @@ void installer_input(i32 key)
             g_step = INST_USER_PASS2;
             return;
         }
-        if (key >= 0x20 && key < 0x7F && g_pwd_len < 23) {
-            g_pwd[g_pwd_len++] = (char)key;
-            g_pwd[g_pwd_len]   = 0;
-        }
+        (void)buf_append_key(g_pwd, &g_pwd_len, 24, key);
         return;
     }
     if (g_step == INST_USER_PASS2) {
-        if (key == KEY_BACKSPACE) { if (g_pwd2_len) g_pwd2[--g_pwd2_len] = 0; return; }
+        if (key == KEY_BACKSPACE) { buf_pop_utf8(g_pwd2, &g_pwd2_len); return; }
         if (key == KEY_ENTER) {
             g_pwd2[g_pwd2_len] = 0;
             bool match = (g_pwd_len == g_pwd2_len);
@@ -593,10 +608,7 @@ void installer_input(i32 key)
             }
             return;
         }
-        if (key >= 0x20 && key < 0x7F && g_pwd2_len < 23) {
-            g_pwd2[g_pwd2_len++] = (char)key;
-            g_pwd2[g_pwd2_len]   = 0;
-        }
+        (void)buf_append_key(g_pwd2, &g_pwd2_len, 24, key);
         return;
     }
 }
