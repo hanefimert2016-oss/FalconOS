@@ -574,6 +574,14 @@ u64    ata_sectors(i32 idx);
 void   ata_stats(u32 *reads, u32 *writes, u32 *retries, u32 *failed);
 void   hid_keymap_dump(char *buf, u32 max);
 
+/* ---- USB host controller driver (linux/usb_core.c) ---------------------- */
+void   usb_init(void);
+bool   usb_present(void);
+i32    usb_device_count(void);
+bool   usb_keyboard_connected(void);
+bool   usb_storage_connected(void);
+const char *usb_summary(void);
+
 /* ---- virtio-net network driver (linux/virtio_net.c) ---------------------- */
 bool   net_init(void);
 bool   net_present(void);

@@ -231,60 +231,125 @@ static void draw_cursor(void)
 
 static void draw_blue_dragon(i32 cx, i32 cy, u8 alpha)
 {
-    /* Enhanced blue dragon emblem for the boot splash. */
-    u32 blue      = 0x2A66F5;
-    u32 dark_blue = 0x123A9C;
-    u32 ice       = 0xBDE2FF;
-    u32 glow      = 0x5588FF;
-    u32 white     = 0xFFFFFF;
+    /* Professional blue dragon emblem - detailed and realistic */
+    u32 deep_blue  = 0x0A1628;
+    u32 body_blue  = 0x1E4A8C;
+    u32 mid_blue   = 0x2A66F5;
+    u32 bright_blue= 0x4A88FF;
+    u32 glow_blue  = 0x5588FF;
+    u32 ice_blue   = 0xBDE2FF;
+    u32 white      = 0xFFFFFF;
+    u32 gold       = 0xFFD700;
+    u32 dark       = 0x050A14;
 
-    /* Dragon body - main shape */
-    gfx_circle_a(cx - 12, cy + 4, 32, blue, alpha);
-    gfx_circle_a(cx + 10, cy - 12, 22, blue, alpha);
+    /* Outer glow layers - atmosphere around dragon */
+    gfx_circle_a(cx, cy, 90, dark, (u8)(alpha / 4));
+    gfx_circle_a(cx, cy, 80, deep_blue, (u8)(alpha / 3));
+    gfx_circle_a(cx, cy, 70, body_blue, (u8)(alpha / 2));
 
-    /* Dragon head */
-    gfx_circle_a(cx + 18, cy - 20, 16, dark_blue, alpha);
-    gfx_circle_a(cx + 22, cy - 22, 12, blue, alpha);
+    /* Main body - sinuous serpentine body */
+    gfx_circle_a(cx - 25, cy + 35, 28, body_blue, alpha);
+    gfx_circle_a(cx - 15, cy + 25, 30, body_blue, alpha);
+    gfx_circle_a(cx - 5, cy + 15, 32, mid_blue, alpha);
+    gfx_circle_a(cx + 5, cy + 5, 34, mid_blue, alpha);
+    gfx_circle_a(cx + 15, cy - 5, 32, mid_blue, alpha);
+    gfx_circle_a(cx + 20, cy - 18, 28, bright_blue, alpha);
 
-    /* Dragon eye - glowing */
-    gfx_circle_a(cx + 26, cy - 24, 5, white, alpha);
-    gfx_circle_a(cx + 26, cy - 24, 3, ice, alpha);
-    gfx_circle_a(cx + 27, cy - 24, 2, glow, alpha);
+    /* Body scales pattern - subtle scale effect */
+    gfx_circle_a(cx - 20, cy + 30, 12, body_blue, (u8)(alpha * 3 / 4));
+    gfx_circle_a(cx - 10, cy + 20, 14, body_blue, (u8)(alpha * 3 / 4));
+    gfx_circle_a(cx, cy + 10, 16, mid_blue, (u8)(alpha * 3 / 4));
+    gfx_circle_a(cx + 10, cy, 14, mid_blue, (u8)(alpha * 3 / 4));
 
-    /* Dragon tail */
-    gfx_circle_a(cx - 28, cy + 20, 14, dark_blue, alpha);
-    gfx_circle_a(cx - 36, cy + 28, 8, dark_blue, alpha);
-    gfx_circle_a(cx - 42, cy + 32, 4, blue, alpha);
+    /* Dragon neck and head - elegant curve */
+    gfx_circle_a(cx + 25, cy - 25, 22, bright_blue, alpha);
+    gfx_circle_a(cx + 30, cy - 32, 18, bright_blue, alpha);
+    gfx_circle_a(cx + 35, cy - 38, 14, mid_blue, alpha);
 
-    /* Dragon wings */
-    gfx_line(cx - 8, cy - 10, cx - 32, cy - 36, glow);
-    gfx_line(cx - 6, cy - 8, cx - 26, cy - 32, glow);
-    gfx_line(cx - 4, cy - 6, cx - 20, cy - 28, blue);
-    gfx_circle_a(cx - 32, cy - 36, 6, ice, alpha);
-    gfx_circle_a(cx - 26, cy - 32, 4, ice, alpha);
-    gfx_circle_a(cx - 20, cy - 28, 3, ice, alpha);
+    /* Dragon snout */
+    gfx_circle_a(cx + 42, cy - 40, 10, body_blue, alpha);
+    gfx_circle_a(cx + 48, cy - 42, 6, body_blue, alpha);
 
-    /* Dragon claws */
-    gfx_line(cx + 4, cy + 24, cx - 8, cy + 40, dark_blue);
-    gfx_line(cx + 8, cy + 22, cx + 4, cy + 38, dark_blue);
+    /* Dragon eye socket */
+    gfx_circle_a(cx + 32, cy - 36, 8, dark, alpha);
+    /* Glowing eye */
+    gfx_circle_a(cx + 33, cy - 37, 5, gold, alpha);
+    gfx_circle_a(cx + 33, cy - 37, 3, white, alpha);
+    gfx_circle_a(cx + 34, cy - 38, 1, white, alpha);
 
-    /* Dragon horns */
-    gfx_line(cx + 12, cy - 28, cx + 6, cy - 42, ice);
-    gfx_line(cx + 20, cy - 30, cx + 18, cy - 44, ice);
-    gfx_circle_a(cx + 6, cy - 42, 3, white, alpha);
-    gfx_circle_a(cx + 18, cy - 44, 3, white, alpha);
+    /* Dragon horns - sharp and angular */
+    gfx_line(cx + 28, cy - 42, cx + 18, cy - 60, ice_blue);
+    gfx_line(cx + 30, cy - 44, cx + 22, cy - 62, ice_blue);
+    gfx_line(cx + 32, cy - 45, cx + 26, cy - 64, white);
+    /* Horn tips - glowing */
+    gfx_circle_a(cx + 18, cy - 60, 3, white, alpha);
+    gfx_circle_a(cx + 22, cy - 62, 3, white, alpha);
+    gfx_circle_a(cx + 26, cy - 64, 2, white, alpha);
 
-    /* Glow effect around dragon */
-    gfx_circle_outline(cx, cy, 50, glow);
-    gfx_circle_outline(cx, cy, 52, glow);
+    /* Dragon ears/frills */
+    gfx_line(cx + 24, cy - 35, cx + 14, cy - 48, bright_blue);
+    gfx_line(cx + 22, cy - 34, cx + 12, cy - 46, bright_blue);
+    gfx_circle_a(cx + 14, cy - 48, 4, ice_blue, alpha);
+    gfx_circle_a(cx + 12, cy - 46, 3, ice_blue, alpha);
+
+    /* Dragon wings - large and impressive */
+    /* Left wing (viewer's left, dragon's right) */
+    gfx_line(cx + 10, cy - 5, cx - 15, cy - 35, glow_blue);
+    gfx_line(cx + 8, cy - 3, cx - 20, cy - 38, glow_blue);
+    gfx_line(cx + 5, cy, cx - 28, cy - 40, bright_blue);
+    gfx_line(cx + 2, cy + 2, cx - 35, cy - 38, bright_blue);
+    gfx_line(cx - 2, cy + 4, cx - 42, cy - 32, mid_blue);
+    /* Wing membrane details */
+    gfx_circle_a(cx - 15, cy - 35, 8, bright_blue, (u8)(alpha * 2 / 3));
+    gfx_circle_a(cx - 28, cy - 40, 6, bright_blue, (u8)(alpha * 2 / 3));
+    gfx_circle_a(cx - 40, cy - 35, 5, mid_blue, (u8)(alpha * 2 / 3));
+    /* Wing tip feathers */
+    gfx_circle_a(cx - 15, cy - 35, 4, ice_blue, alpha);
+    gfx_circle_a(cx - 28, cy - 40, 3, ice_blue, alpha);
+    gfx_circle_a(cx - 40, cy - 35, 2, ice_blue, alpha);
+
+    /* Dragon tail - long and flowing */
+    gfx_circle_a(cx - 35, cy + 45, 20, body_blue, alpha);
+    gfx_circle_a(cx - 45, cy + 55, 14, body_blue, alpha);
+    gfx_circle_a(cx - 55, cy + 62, 10, deep_blue, alpha);
+    gfx_circle_a(cx - 62, cy + 68, 6, deep_blue, alpha);
+    gfx_circle_a(cx - 68, cy + 72, 3, mid_blue, alpha);
+    /* Tail tuft */
+    gfx_line(cx - 68, cy + 72, cx - 75, cy + 78, bright_blue);
+    gfx_line(cx - 68, cy + 72, cx - 78, cy + 75, bright_blue);
+    gfx_line(cx - 68, cy + 72, cx - 76, cy + 80, ice_blue);
+
+    /* Dragon claws - sharp and dangerous */
+    gfx_line(cx + 20, cy + 15, cx + 25, cy + 35, body_blue);
+    gfx_line(cx + 18, cy + 18, cx + 22, cy + 38, body_blue);
+    gfx_line(cx + 22, cy + 20, cx + 30, cy + 36, body_blue);
+    gfx_line(cx + 25, cy + 22, cx + 35, cy + 34, body_blue);
+    /* Claw tips */
+    gfx_circle_a(cx + 25, cy + 35, 2, white, alpha);
+    gfx_circle_a(cx + 22, cy + 38, 2, white, alpha);
+    gfx_circle_a(cx + 30, cy + 36, 2, white, alpha);
+    gfx_circle_a(cx + 35, cy + 34, 2, white, alpha);
+
+    /* Belly scales - lighter underbelly */
+    gfx_circle_a(cx - 5, cy + 18, 10, ice_blue, (u8)(alpha / 2));
+    gfx_circle_a(cx + 5, cy + 8, 12, ice_blue, (u8)(alpha / 2));
+    gfx_circle_a(cx + 15, cy - 2, 10, ice_blue, (u8)(alpha / 2));
+
+    /* Nostril smoke/breath effect */
+    gfx_circle_a(cx + 50, cy - 41, 3, (u8)(alpha / 2), (u8)(alpha / 2));
+    gfx_circle_a(cx + 52, cy - 40, 2, (u8)(alpha / 3), (u8)(alpha / 3));
+
+    /* Final glow ring */
+    gfx_circle_outline(cx, cy, 65, glow_blue);
+    gfx_circle_outline(cx, cy, 68, (u8)(alpha / 2));
 }
 
 /* --------------------------------------------------------------------------- */
 static void boot_splash(void)
 {
-    /* run for ~450 ticks (4500 ms at 100 Hz) — extended splash to show logo */
+    /* run for ~200 ticks (2000 ms at 100 Hz) — show logo while loading */
     u32 start = g_ticks;
-    while (g_ticks - start < 450) {
+    while (g_ticks - start < 200) {
         u32 dt = g_ticks - start;
 
         /* Dark blue gradient background for dragon theme */
@@ -329,7 +394,7 @@ static void boot_splash(void)
         i32 bar_h = 4;
         i32 bar_x = cx - bar_w / 2;
         i32 bar_y = cy + r + 135;
-        i32 progress = (i32)(dt * bar_w / 450);
+        i32 progress = (i32)(dt * bar_w / 200);
         gfx_rect(bar_x, bar_y, bar_w, bar_h, 0x1A3A6A);
         gfx_rect(bar_x, bar_y, progress, bar_h, 0x2A66F5);
 

@@ -10,6 +10,7 @@
 extern void ata_init(void);
 extern void hid_keymap_init(void);
 extern bool net_init(void);
+extern void usb_init(void);
 
 /* Linux compat init is already defined in ata_pio.c - this file adds net init */
 void linux_compat_init(void)
@@ -22,6 +23,9 @@ void linux_compat_init(void)
 
     /* Initialize network */
     net_init();
+
+    /* Initialize USB (OHCI/EHCI) */
+    usb_init();
 }
 
 /* Linux compat summary is already defined in ata_pio.c */

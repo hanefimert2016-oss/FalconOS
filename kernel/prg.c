@@ -39,6 +39,7 @@ static const prg_pkg_t CATALOG[] = {
     { "linux-uapi",     "6.6.0", "Linux UAPI compatibility headers",          "compat",  "falcon-kernel",       14, true  },
     { "ata-pio",        "1.2.0", "ATA PIO disk driver (libata-style)",        "drivers", "linux-uapi",          18, true  },
     { "virtio-net",     "1.1.0", "Virtio 1.1 network driver (QEMU/KVM)",      "drivers", "linux-uapi",          24, true  },
+    { "usb-ohci-ehci",  "1.0.0", "USB OHCI/EHCI host controller driver",     "drivers", "linux-uapi",          32, true  },
     { "hid-keymap",     "1.0.0", "PS/2 + HID scancode tables (TR/EN/DE/FR/ES)","drivers","linux-uapi",          11, true  },
 
     /* Themes ----------------------------------------------------------- */

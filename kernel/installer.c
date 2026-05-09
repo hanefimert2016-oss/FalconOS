@@ -137,22 +137,17 @@ void installer_render(u32 frame)
 
     switch (g_step) {
         case INST_LANG: {
-            headline = "Dilinizi seçin  —  Choose language  —  Sprache — Langue — Idioma";
+            headline = "Dilinizi seçin  —  Choose language";
             helptext   = "<-/-> değiştir / switch    Enter ile devam / continue";
-            const char *items[5] = { "Turkçe", "English", "Deutsch", "Francais", "Espanol" };
-            /* Per-language accent dot — a visible "you are here" cue
-             * beyond the highlighted tile. Roughly evokes each flag.   */
-            const u32 lang_dot[5] = {
+            const char *items[2] = { "Turkçe", "English" };
+            const u32 lang_dot[2] = {
                 0xE30A17,   /* TR  red                                  */
                 0x012169,   /* EN  navy                                 */
-                0xFFCC00,   /* DE  gold                                 */
-                0x0055A4,   /* FR  blue                                 */
-                0xC60B1E,   /* ES  red                                  */
             };
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
-            draw_choice_row(cy - 40, items, 5, g_choice);
+            draw_choice_row(cy - 40, items, 2, g_choice);
             /* paint a 6 px coloured pip on top of every tile          */
-            i32 W = (i32)FB.width, pad = 14, pw = 180, n = 5;
+            i32 W = (i32)FB.width, pad = 14, pw = 180, n = 2;
             i32 row_w = n * pw + (n - 1) * pad;
             i32 x0 = (W - row_w) / 2;
             for (i32 i = 0; i < n; i++) {
@@ -491,7 +486,7 @@ void installer_input(i32 key)
         g_step == INST_DISK  || g_step == INST_USER_MORE) {
         i32 max;
         switch (g_step) {
-            case INST_LANG:     max = LANG_COUNT; break;
+            case INST_LANG:     max = 2; break;  /* TR + EN only */
             case INST_THEME:    max = THEME_COUNT; break;
             case INST_ACCENT:   max = 5; break;
             case INST_KBD:      max = 3; break;
@@ -556,6 +551,22 @@ void installer_input(i32 key)
         if (key == KEY_BACKSPACE) { buf_pop_utf8(g_uname, &g_uname_len); return; }
         if (key == KEY_ENTER) {
             g_uname[g_uname_len] = 0;
+            /* Validate username: must have at least one letter/number/symbol */
+            bool has_letter = false, has_num = false, has_symbol = false;
+            for (i32 i = 0; g_uname[i]; i++) {
+                u8 c = (u8)g_uname[i];
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= 0xC0))
+                    has_letter = true;
+                else if (c >= '0' && c <= '9')
+                    has_num = true;
+                else if (c == '_' || c == '-' || c == '.' || c == '@')
+                    has_symbol = true;
+            }
+            if (!has_letter && !has_num && !has_symbol) {
+                /* Invalid username - show warning by clearing and staying */
+                g_uname_len = 0;
+                return;
+            }
             g_step = INST_USER_PASS;
             return;
         }
