@@ -259,10 +259,20 @@ static void section(i32 wx, i32 wy, const char *title, const char *subtitle)
 static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
-    section(wx, wy, "Welcome to FalconOS", "Quick links");
+    section(wx, wy,
+            T("Welcome to FalconOS", "FalconOS'a hoş geldiniz"),
+            T("Quick links", "Hızlı bağlantılar"));
 
-    const char *cards[]    = { "Recent docs", "System info", "Network", "Theme" };
-    const char *subs[]     = { "open last 5", "uptime/ram",  "no network",  "Lumen blue" };
+    const char *c0 = T("Recent docs", "Son dosyalar");
+    const char *c1 = T("System info", "Sistem bilgisi");
+    const char *c2 = T("Network", "Ağ");
+    const char *c3 = T("Theme", "Tema");
+    const char *s0 = T("open last 5", "dosya demo");
+    const char *s1 = T("uptime / RAM map", "çalışma / RAM");
+    const char *s2 = T("no driver yet — virtio-net roadmap", "sürücü yok — virtio-net");
+    const char *s3 = T("Liquid Glass default", "Liquid Glass varsayılan");
+    const char *cards[] = { c0, c1, c2, c3 };
+    const char *subs[]  = { s0, s1, s2, s3 };
     const u32   tints[]    = { PAL_ACCENT, COL_OK, COL_WARN, COL_PURPLE };
 
     i32 cw = (ww - 72) / 2;
@@ -289,7 +299,8 @@ static const char *FAKE_FILES[] = {
 static void render_files(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame; (void)ww; (void)wh;
-    section(wx, wy, "Files", "/ (root)");
+    section(wx, wy, T("Files", "Dosyalar"),
+            T("/ (sample tree)", "/ (örnek ağaç)"));
     i32 n = (i32)(sizeof FAKE_FILES / sizeof *FAKE_FILES);
     for (i32 i = 0; i < n; i++) {
         i32 y = wy + 60 + i * 22;
@@ -304,7 +315,8 @@ static void render_files(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static void render_clock(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
-    section(wx, wy, "Clock", "synced to PIT IRQ0");
+    section(wx, wy, T("Clock", "Saat"),
+            T("Synced to timer IRQ0", "IRQ0 zamanlayıcı ile"));
     u32 h, m, s; pit_uptime(&h, &m, &s);
 
     i32 cx = wx + ww / 2;
@@ -407,7 +419,8 @@ static void render_stats(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame; (void)wh;
-    section(wx, wy, T("About FalconOS", "FalconOS Hakkinda"), "FalconOS 1");
+    section(wx, wy, T("About FalconOS", "FalconOS Hakkında"),
+            T("Version & credits", "Sürüm ve katkılar"));
 
     i32 cx = wx + ww / 2;
     gfx_circle(cx, wy + 110, 56, PAL_ACCENT);
@@ -436,6 +449,48 @@ static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     char hidsum[80];
     hid_keymap_dump(hidsum, sizeof hidsum);
     gfx_text_centered(cx, wy + 274, hidsum, PAL_TEXT_FAINT);
+
+    gfx_text_centered(cx, wy + 296,
+        T("bare-metal microkernel  -  prg packages  -  Store  -  POSIX shell",
+          "bare-metal mikroçekirdek  -  prg paketleri  -  Mağaza  -  POSIX kabuk"),
+        PAL_TEXT_FAINT);
+}
+
+/* --- Sistem Güncellemeleri (offline channel UI) ---------------------------- */
+static void render_updates(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+{
+    (void)frame;
+    section(wx, wy,
+            T("System updates", "Sistem güncellemeleri"),
+            T("prg catalogue + Terminal bridge", "prg katalogu + Terminal köprüsü"));
+
+    char buf[192], num[14];
+    k_strcpy(buf, T("Installed packages: ", "Kurulu paket sayısı: "));
+    k_itoa((u32)prg_installed_count(), num, 10); k_strcat(buf, num);
+    k_strcat(buf, T(" / ", " / "));
+    k_itoa((u32)prg_count(), num, 10); k_strcat(buf, num);
+    gfx_text(wx + 24, wy + 60, buf, PAL_TEXT);
+
+    k_strcpy(buf, T("FalconFS: ", "FalconFS: "));
+    k_strcat(buf, diskdb_present()
+                    ? T("superblock on ATA.", "ATA üzerinde süper blok.")
+                    : T("no superblock (güvenli oturum or no disk).",
+                        "süper blok yok (güvenli oturum veya disk yok)."));
+    gfx_text(wx + 24, wy + 88, buf, PAL_TEXT_DIM);
+
+    gfx_text(wx + 24, wy + 124,
+             T("Online updates need virtio-net + TLS (planned).",
+               "Çevrimiçi güncelleme virtio-net + TLS gerektirir (planlanıyor)."),
+             PAL_TEXT_DIM);
+    gfx_text(wx + 24, wy + 152,
+             T("Terminal:  update check  |  update apply",
+               "Terminal:  update check  |  update apply"),
+             PAL_TEXT_FAINT);
+
+    (void)ww; (void)wh;
+}
+
+static void updates_input_key(i32 key) { (void)key; }
 
 /* --- Store (prg package browser, GUI) ----------------------------------- */
 static i32 store_cursor = 0;
@@ -541,7 +596,7 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     gfx_text(wx + 24, wy + 38, hdr, PAL_TEXT_DIM);
 
     /* filter chips: all / installed */
-    const char *chip_all  = T("all", "tum");
+    const char *chip_all  = T("all", "tümü");
     const char *chip_inst = T("installed", "kurulu");
     i32 chip_y  = wy + 54;
     i32 all_w   = gfx_text_width(chip_all) + 20;
@@ -703,19 +758,23 @@ static void term_init(void)
     if (term_init_done) return;
     term_init_done = 1;
     for (i32 i = 0; i < TERM_LINES; i++) term_buf[i][0] = 0;
-    term_push("FalconOS shell  -  POSIX subset (cd/ls/cat/echo/if/for/| / > )");
-    term_push("type 'help' for the command list");
+    term_push(T("FalconOS shell — cd/ls/cat/echo/if/for/|/ >",
+                "FalconOS kabuğu — cd/ls/cat/echo/if/for/| / >"));
+    term_push(T("Type 'help', 'hwinfo', or open Mağaza for prg.",
+                "'help', 'hwinfo' yazın; paketler için Mağaza."));
     term_push("");
     /* seed a couple of files so 'ls' / 'cat' have content out of the box */
     k_strcpy(sh_files[0].name, "readme.txt");
     k_strcpy(sh_files[0].data,
-        "Welcome to FalconOS 1.\nThis shell understands the basics:\n"
-        "  pwd, cd, ls, cat, echo, env, set X=val, $X expansion,\n"
-        "  | pipe, > redirect, if/then/fi, for ... in ... do ... done\n");
+        "FalconOS 1 — hoş geldiniz / welcome.\n\n"
+        "Bu kabuk POSIX komutlarının bir alt kümesini anlar; "
+        "The shell understands a POSIX subset: "
+        "pwd, cd, ls, cat, echo, pipe, redirects, df, free, hwinfo, prg, update.\n\n"
+        "- ");
     sh_files[0].len = k_strlen(sh_files[0].data);
     sh_files[0].used = true;
     k_strcpy(sh_files[1].name, "hello.sh");
-    k_strcpy(sh_files[1].data, "echo hello world\n");
+    k_strcpy(sh_files[1].data, "echo Merhaba FalconOS — hello FalconOS\n");
     sh_files[1].len  = k_strlen(sh_files[1].data);
     sh_files[1].used = true;
 }
@@ -871,6 +930,28 @@ static i32 sh_find_app_idx(const char *name)
     if (sh_streq_ci(name, "falco") || sh_streq_ci(name, "falco-browser") ||
         sh_streq_ci(name, "browser"))
         return sh_find_app_idx("Falco");
+
+    static const struct { const char *alias; i32 idx; } TR_ALIAS[] = {
+        { "ana sayfa", 0 },       { "anasayfa", 0 },
+        { "dosyalar", 1 },      { "dosya", 1 },
+        { "mağaza", 2 },        { "magaza", 2 },
+        { "ayarlar", 3 },
+        { "terminal", 5 },
+        { "hesap makinesi", 6 }, { "hesap", 6 },
+        { "notlar", 7 },        { "not defteri", 7 },
+        { "saat", 8 },
+        { "istatistik", 9 },
+        { "takvim", 10 },
+        { "galeri", 11 },
+        { "video", 12 },
+        { "falco tarayıcı", 13 }, { "falco tarayici", 13 },
+        { "asistan", 16 },       { "yardımcı", 16 },
+        { "hakkında", 17 },      { "hakkinda", 17 },
+    };
+    for (u32 kk = 0; kk < sizeof TR_ALIAS / sizeof TR_ALIAS[0]; kk++) {
+        if (sh_streq_ci(name, TR_ALIAS[kk].alias))
+            return TR_ALIAS[kk].idx;
+    }
     return -1;
 }
 
@@ -978,7 +1059,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
             "touch cp mv mkdir rmdir basename dirname more less xxd file "
             "echo printf yes seq expr test [ env set unset alias export "
-            "history ps top kill df du free mount lsblk uname hwinfo whoami id "
+            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id "
             "groups who w users hostname uptime cal date reboot shutdown "
             "which type prg pkg open chrome falco heroic video search "
             "update man | > >>");
@@ -1010,6 +1091,14 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             k_strcpy(out, "video: launches Video app. Keys: Space play/pause, <-/-> seek, Tab next clip.");
             return 0;
         }
+        if (k_strcmp(argv[1], "hwinfo") == 0) {
+            k_strcpy(out, "hwinfo: CPU vendor/brand via CPUID plus RAMmmap + framebuffer line.");
+            return 0;
+        }
+        if (k_strcmp(argv[1], "ver") == 0 || k_strcmp(argv[1], "version") == 0) {
+            k_strcpy(out, "ver / version — prints FalconOS build line (uname style).");
+            return 0;
+        }
         k_strcpy(out, argv[1]); k_strcat(out, ": manual entry not found");
         return 1;
     }
@@ -1027,7 +1116,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         }
         if (ai < 0) { k_strcpy(out, "open: app not found"); return 1; }
         apps_open(ai);
-        k_strcpy(out, "opened "); k_strcat(out, apps_name(ai));
+        k_strcpy(out, "opened "); k_strcat(out, apps_display_name(ai));
         return 0;
     }
     if (k_strcmp(cmd, "chrome") == 0) {
@@ -1210,6 +1299,19 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     }
     if (k_strcmp(cmd, "hwinfo") == 0) {
         hw_probe_summary(out, cap);
+        return 0;
+    }
+    if (k_strcmp(cmd, "lscpu") == 0) {
+        hw_probe_summary(out, cap);
+        return 0;
+    }
+    if (k_strcmp(cmd, "ver") == 0 || k_strcmp(cmd, "version") == 0) {
+        k_strcpy(out, "FalconOS 1  kernel  ");
+#if ARCH_x86_64
+        k_strcat(out, "x86_64  (tek komut: make start)");
+#else
+        k_strcat(out, "i386");
+#endif
         return 0;
     }
     if (k_strcmp(cmd, "whoami") == 0) {
@@ -1719,17 +1821,28 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     if (k_strcmp(cmd, "kill") == 0) { k_strcpy(out, "kill: no userland processes"); return 1; }
     /* df / du / free / mount / lsblk -------------------------------- */
     if (k_strcmp(cmd, "df") == 0) {
-        u32 r, w, retry, fail; ata_stats(&r, &w, &retry, &fail);
         i32 disks = ata_probe_count();
-        char num[16]; out[0] = 0;
-        k_strcat(out, "Filesystem  Size  Used  Avail Use% Mounted on\n");
-        if (disks > 0) {
-            u64 sec = ata_sectors(0);
-            u32 mib = (u32)((sec * 512) / (1024 * 1024));
-            k_strcat(out, "ata0        ");
-            k_itoa(mib, num, 10); k_strcat(out, num); k_strcat(out, "M  -    -      -   /");
-        } else {
-            k_strcat(out, "ramfs       -     -    -      -   /");
+        char num[28], tag[24];
+        k_strcpy(out,
+                 "Filesystem   SizeMiB  UsedMiB AvailMiB Mounted\n");
+        if (disks <= 0) {
+            k_strcat(out,
+                     "ramfs        -       -       -       /\n");
+            return 0;
+        }
+        for (i32 d = 0; d < disks; d++) {
+            u64 sec = ata_sectors(d);
+            if (sec == 0) continue;
+            u32 mib = (u32)((sec * 512u) / (1024u * 1024u));
+            tag[0] = 0;
+            k_strcpy(tag, "ata");
+            k_itoa((u32)d, num, 10);
+            k_strcat(tag, num);
+            k_strcat(out, tag);
+            for (i32 pad = k_strlen(tag); pad < 14; pad++) k_strcat(out, " ");
+            k_itoa(mib, num, 10);
+            k_strcat(out, num);
+            k_strcat(out, "     -       -       /\n");
         }
         return 0;
     }
@@ -1746,13 +1859,21 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 0;
     }
     if (k_strcmp(cmd, "free") == 0) {
-        char num[16];
-        k_strcpy(out, "             total        used        free\n");
-        k_strcat(out, "Mem:   ");
-        k_itoa(8 * 1024, num, 10); k_strcat(out, num); k_strcat(out, "MB    ");
-        k_itoa(64, num, 10);       k_strcat(out, num); k_strcat(out, "MB    ");
-        k_itoa(8 * 1024 - 64, num, 10);
-        k_strcat(out, num); k_strcat(out, "MB");
+        char tot[28], used[28], fr[28];
+        u64 mib = RAM_TOTAL_BYTES / ((u64)1024 * 1024);
+        u64 u_mib = (mib > 256u) ? 256u : (mib > 32u ? mib / 8u : 8u);
+        u64 f_mib = (mib > u_mib) ? (mib - u_mib) : 0;
+        k_u64_to_dec(mib, tot);
+        k_u64_to_dec(u_mib, used);
+        k_u64_to_dec(f_mib, fr);
+        k_strcpy(out,
+                 "               totalMiB       usedMiB       freeMiB\nMem: ");
+        k_strcat(out, tot);
+        while (k_strlen(out) < 42) k_strcat(out, " ");
+        k_strcat(out, used);
+        while (k_strlen(out) < 58) k_strcat(out, " ");
+        k_strcat(out, fr);
+        k_strcat(out, "\n(mmap totals from firmware; kernel+BSS heuristic in used)");
         return 0;
     }
     if (k_strcmp(cmd, "mount") == 0) {
@@ -1760,16 +1881,23 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 0;
     }
     if (k_strcmp(cmd, "lsblk") == 0) {
-        char num[16]; out[0] = 0;
+        char num[28], nm[24];
+        k_strcpy(out, "NAME        SIZEMiB TRAN\n");
         i32 disks = ata_probe_count();
-        k_strcat(out, "NAME   SIZE TYPE\n");
         for (i32 i = 0; i < disks; i++) {
             u64 sec = ata_sectors(i);
-            u32 mib = (u32)((sec * 512) / (1024 * 1024));
-            k_strcat(out, "sda    ");
-            k_itoa(mib, num, 10); k_strcat(out, num); k_strcat(out, "M  disk\n");
+            u32 mib = sec ? (u32)((sec * 512ull) / (1024ull * 1024ull)) : 0;
+            nm[0] = 0;
+            k_strcpy(nm, "ata");
+            k_itoa((u32)i, num, 10); k_strcat(nm, num);
+            k_strcat(out, nm);
+            for (i32 pad = k_strlen(nm); pad < 12; pad++) k_strcat(out, " ");
+            k_itoa(mib, num, 10);
+            k_strcat(out, num);
+            k_strcat(out, "    disk\n");
         }
-        if (disks == 0) k_strcat(out, "(no block devices)");
+        if (disks == 0)
+            k_strcat(out, "(no block devices)\n");
         return 0;
     }
     /* power -------------------------------------------------------- */
@@ -1795,7 +1923,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "lsblk","reboot","shutdown","poweroff","halt","which","type","hwinfo",
             "uname","whoami","date","clear","help","true","false","exit",
             "man","open","xdg-open","prg","pkg","chrome","falco","heroic",
-            "video","search","update","upgrade",NULL
+            "video","search","update","upgrade","ver","version","lscpu",NULL
         };
         for (i32 i = 0; BUILTINS[i]; i++) {
             if (k_strcmp(BUILTINS[i], argv[1]) == 0) {
@@ -2055,9 +2183,12 @@ static void render_term(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     gfx_round_rect_a(wx + 20, wy + 8, ww - 40, wh - 28, 10, 0x101218, 255);
     gfx_round_outline(wx + 20, wy + 8, ww - 40, wh - 28, 10, PAL_HAIRLINE);
 
-    gfx_text(wx + 30, wy + 18, "FalconOS shell  -  POSIX subset", 0xCFE6FF);
+    gfx_text(wx + 30, wy + 18,
+             T("FalconOS shell — POSIX subset", "FalconOS kabuğu — POSIX alt kümesi"),
+             0xCFE6FF);
     gfx_text(wx + 30, wy + 38,
-             "type 'help' or 'cat readme.txt' to start",
+             T("Try: help · hwinfo · prg · update check — cat readme.txt",
+              "Deneyin: help · hwinfo · prg · update check — cat readme.txt"),
              0x8AAACE);
 
     for (i32 i = 0; i < TERM_LINES; i++) {
@@ -2150,7 +2281,8 @@ static void calc_input_key(i32 key)
 static void render_calc(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame; (void)wh;
-    section(wx, wy, "Calculator", "+ - * /  digits  c=clear  Enter==");
+    section(wx, wy, T("Calculator", "Hesap makinesi"),
+            T("+ − × ÷ digits  c=clear  Enter =", "+ − × ÷ rakamlar c=temizle Enter ="));
 
     /* readout */
     i32 dx = wx + 24, dy = wy + 60, dw = ww - 48, dh = 60;
@@ -2528,7 +2660,9 @@ static void render_notes(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
     notes_init_once();
-    section(wx, wy, "Notes", "type freely - Backspace to delete - Enter for newline");
+    section(wx, wy, T("Notes", "Notlar"),
+            T("Type freely · Backspace · Enter newline",
+              "Özgür yazın · Geri Sil · Enter satır"));
 
     i32 px = wx + 24, py = wy + 60, pw = ww - 48, ph = wh - 84;
     gfx_round_rect_a(px, py, pw, ph, 12, PAL_PANEL_DEEP, 255);
@@ -2561,7 +2695,8 @@ static void render_notes(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static void render_calendar(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame; (void)wh;
-    section(wx, wy, "Calendar", "kernel month - day = uptime hours mod 28");
+    section(wx, wy, T("Calendar", "Takvim"),
+            T("Month grid driven by uptime", "Aydınlık ızgarası (uptime ile)"));
 
     /* fake "today" derived from uptime hours, so it changes if you wait */
     u32 H, M, S; pit_uptime(&H, &M, &S);
@@ -2595,7 +2730,8 @@ static void render_calendar(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static void render_gallery(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame; (void)wh;
-    section(wx, wy, "Gallery", "Lumen palette swatches");
+    section(wx, wy, T("Gallery", "Galeri"),
+            T("Lumen palette swatches", "Lumen palet kartelası"));
 
     struct { u32 c; const char *n; } SW[] = {
         { PAL_ACCENT,    "Blue 50"   },
@@ -2701,7 +2837,9 @@ static void falco_input_key(i32 key)
 static void render_falco(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
-    section(wx, wy, "Falco", "Indexed search now, free-web API bridge ready for network drivers");
+    section(wx, wy, "Falco",
+            T("Local index search — virtio-net ile tam web araması planlanır",
+              "Yerel indeks araması — tam internet araması için virtio-net planlanır"));
 
     /* provider chips */
     {
@@ -2722,7 +2860,10 @@ static void render_falco(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     gfx_round_outline(sx, sy, sw, 34, 17, PAL_ACCENT);
     gfx_circle(sx + 16, sy + 17, 6, PAL_ACCENT);
     if (falco_query_len == 0) {
-        gfx_text(sx + 30, sy + 10, "Search web cards, docs, packages...", PAL_TEXT_FAINT);
+        gfx_text(sx + 30, sy + 10,
+                 T("Search local index… (no live internet in this build)",
+                   "Yerel indekste ara… (bu sürümde canlı internet yok)"),
+                 PAL_TEXT_FAINT);
     } else {
         gfx_text(sx + 30, sy + 10, falco_query, PAL_TEXT);
     }
@@ -2740,7 +2881,10 @@ static void render_falco(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     if (hn == 0) {
         gfx_round_rect_a(sx, ry, sw, 32, 8, PAL_PANEL_DEEP, 255);
         gfx_round_outline(sx, ry, sw, 32, 8, PAL_HAIRLINE);
-        gfx_text(sx + 12, ry + 9, "No result in local index. Network API fetch will appear here.", PAL_TEXT_DIM);
+        gfx_text(sx + 12, ry + 9,
+                 T("No local hit. Real web search needs virtio-net/TCP (not bundled).",
+                   "Yerel sonuç yok. Gerçek web araması virtio-net/TCP gerektirir (bu sürümde yok)."),
+                 PAL_TEXT_DIM);
     } else {
         i32 rows = (wh - 140) / 44;
         if (rows < 1) rows = 1;
@@ -2951,7 +3095,9 @@ static void video_input_key(i32 key)
 static void render_video(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
-    section(wx, wy, "Video", "software player  -  Space play/pause  -  <-/-> seek  -  Tab next clip");
+    section(wx, wy, T("Video", "Video"),
+            T("Space play/pause  ← / → seek  Tab clip",
+              "Boşluk duraklat  ← / → sar  Sekme klip"));
 
     i32 vx = wx + 24, vy = wy + 56, vw = ww - 48, vh = wh - 120;
     if (vh < 120) vh = 120;
@@ -3016,7 +3162,9 @@ static void heroic_input_key(i32 key)
 static void render_heroic(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
-    section(wx, wy, "Heroic Launcher", "Linux game launcher compatibility layer");
+    section(wx, wy,
+            T("Heroic Launcher", "Heroic Başlatıcı"),
+            T("Compatibility layer demo", "Uyumluluk katmanı (demo)"));
     i32 n = (i32)(sizeof(HERO_GAMES) / sizeof(HERO_GAMES[0]));
     i32 lx = wx + 24, ly = wy + 62, lw = ww - 48;
     for (i32 i = 0; i < n; i++) {
@@ -3050,6 +3198,8 @@ static app_def_t APPS[] = {
     { "Files",      "in-memory tree",      0xF59F1A, render_files,    NULL,             icon_files    },
     { "Store",      "prg packages",        0x2BB673, render_store,    store_input_key,  icon_store    },
     { "Settings",   "system + theme",      0x6E7884, render_settings, set_input_key,    icon_settings },
+    { "Sistem Güncellemeleri", "prg + FalconFS özeti", 0x05B897, render_updates,
+      updates_input_key, icon_updates },
     { "Terminal",   "POSIX shell + prg",   0x14181F, render_term,     term_input_key,   icon_term     },
     { "Calculator", "+ - * /",             0xA45EE5, render_calc,     calc_input_key,   icon_calc     },
     { "Notes",      "free-form pad",       0xFFB547, render_notes,    notes_input_key,  icon_notes    },
@@ -3068,6 +3218,63 @@ static app_def_t APPS[] = {
 i32 apps_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
 const char *apps_name(i32 i)     { return APPS[i].name; }
 const char *apps_subtitle(i32 i) { return APPS[i].subtitle; }
+
+const char *apps_display_name(i32 i)
+{
+    if (i < 0 || i >= apps_count()) return "?";
+    if (SET.lang != LANG_TR)
+        return APPS[i].name;
+    switch (i) {
+        case 0:  return "Ana Sayfa";
+        case 1:  return "Dosyalar";
+        case 2:  return "Mağaza";
+        case 3:  return "Ayarlar";
+        case 4:  return "Sistem Güncellemeleri";
+        case 5:  return "Terminal";
+        case 6:  return "Hesap Makinesi";
+        case 7:  return "Notlar";
+        case 8:  return "Saat";
+        case 9:  return "İstatistik";
+        case 10: return "Takvim";
+        case 11: return "Galeri";
+        case 12: return "Video";
+        case 13: return "Falco";
+        case 14: return "Chrome";
+        case 15: return "Heroic";
+        case 16: return "Jarvis";
+        case 17: return "Hakkında";
+        default: return APPS[i].name;
+    }
+}
+
+const char *apps_display_subtitle(i32 i)
+{
+    if (i < 0 || i >= apps_count()) return "";
+    if (SET.lang != LANG_TR)
+        return APPS[i].subtitle;
+    switch (i) {
+        case 0:  return "Hızlı bağlantılar";
+        case 1:  return "Örnek dosya listesi";
+        case 2:  return "prg paket merkezi";
+        case 3:  return "sistem + tema";
+        case 4:  return "prg + FalconFS özeti";
+        case 5:  return "POSIX kabuğu + prg";
+        case 6:  return "+ − × ÷";
+        case 7:  return "Serbest not";
+        case 8:  return "Analog saat";
+        case 9:  return "RAM / CPU / ekran";
+        case 10: return "Ay görünümü";
+        case 11: return "Renk paleti";
+        case 12: return "Yazılım oynatıcı";
+        case 13: return "Yerel indeks arama";
+        case 14: return "Sekme görünümü (demo)";
+        case 15: return "Oyun başlatıcı (uyum)";
+        case 16: return "Yapay asistan";
+        case 17: return "FalconOS bilgisi";
+        default: return APPS[i].subtitle;
+    }
+}
+
 u32         apps_tint(i32 i)     { return APPS[i].tint; }
 
 void apps_draw_icon(i32 i, i32 cx, i32 cy)
@@ -3246,7 +3453,7 @@ void apps_render_active(u32 frame)
     }
     /* app-tint pip on the right keeps the chrome symmetric */
     gfx_circle(wx + ww - 26, wy + 18, 8, a->tint);
-    gfx_text_centered(wx + ww / 2, wy + 12, a->name, PAL_TEXT_DIM);
+    gfx_text_centered(wx + ww / 2, wy + 12, apps_display_name(active_app), PAL_TEXT_DIM);
 
     /* body offset by 44 px for title strip */
     a->render(wx, wy + 44, ww, wh - 44, frame);
@@ -3261,6 +3468,7 @@ void apps_render_active(u32 frame)
 
     /* hint */
     gfx_text_centered(wx + ww / 2, wy + wh - 24,
-        "drag title-bar  ·  resize corner  ·  yellow=minimize  ·  green=max",
+        T("drag title-bar  ·  resize corner  ·  yellow=minimize  ·  green=max",
+          "başlık çubuğunu sürükleyin · sağ alttan yeniden boyutlandırın"),
         PAL_TEXT_FAINT);
 }

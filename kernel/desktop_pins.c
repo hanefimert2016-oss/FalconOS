@@ -68,7 +68,7 @@ void desktop_pins_render(u32 frame)
         /* app icon (uses apps' draw_icon hook) */
         apps_draw_icon(g_pin_ids[i], cx, cy - 8);
         /* label */
-        gfx_text_centered(cx, ty + tile - 18, apps_name(g_pin_ids[i]), PAL_TEXT);
+        gfx_text_centered(cx, ty + tile - 18, apps_display_name(g_pin_ids[i]), PAL_TEXT);
     }
 }
 

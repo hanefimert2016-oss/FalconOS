@@ -264,18 +264,24 @@ void mode_developer_render(u32 frame)
     /* MMAP panel */
     i32 mmap_y = mem_y + 18 + 6 * 14 + 14;
     {
-        char total[40] = "MMAP / RAM ";
-        char hex[16];
-        k_itoa(RAM_TOTAL_KB / 1024, hex, 10);
-        k_strcat(total, hex); k_strcat(total, " MB");
+        char total[52] = "RAM mmap ";
+        char dec[24];
+        k_u64_to_dec(RAM_TOTAL_BYTES / (u64)(1024 * 1024), dec);
+        k_strcat(total, dec);
+        k_strcat(total, " MiB total");
         gfx_text(inspector_x + 14, mmap_y, total, COL_OK);
 
-        i32 maxn = MMAP_N < 4 ? MMAP_N : 4;
+        i32 maxn = MMAP_N < 6 ? MMAP_N : 6;
+        char hx[20];
         for (i32 i = 0; i < maxn; i++) {
-            char ln[64];
+            char ln[80];
             k_strcpy(ln, "0x");
-            k_itoa(MMAP[i].base, hex, 16); k_strcat(ln, hex);
-            k_strcat(ln, "  ");
+            k_u64_fixed16_hex(MMAP[i].base, hx);
+            k_strcat(ln, hx);
+            k_strcat(ln, "+");
+            k_u64_to_dec(MMAP[i].length / 1024ull, dec);
+            k_strcat(ln, dec);
+            k_strcat(ln, " KiB  ");
             k_strcat(ln, mmap_type_name(MMAP[i].type));
             u32 col = MMAP[i].type == 1 ? COL_OK : PAL_TEXT_DIM;
             gfx_text(inspector_x + 14, mmap_y + 18 + i * 16, ln, col);

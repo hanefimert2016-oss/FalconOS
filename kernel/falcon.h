@@ -340,6 +340,8 @@ void mode_developer_input(i32 key);
 /* ---- application framework (Personal kernel) ------------------------------ */
 i32          apps_count(void);
 const char  *apps_name(i32 i);
+const char  *apps_display_name(i32 i);     /* localized label for LANG_TR UI   */
+const char  *apps_display_subtitle(i32 i);
 u32          apps_tint(i32 i);
 const char  *apps_subtitle(i32 i);
 void         apps_draw_icon(i32 i, i32 cx, i32 cy);

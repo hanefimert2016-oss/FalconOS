@@ -132,7 +132,8 @@ static i32 j_find_app(const char *needle)
 {
     i32 n = apps_count();
     for (i32 i = 0; i < n; i++) {
-        if (contains_ci(apps_name(i), needle)) return i;
+        if (contains_ci(apps_name(i), needle) ||
+            contains_ci(apps_display_name(i), needle)) return i;
     }
     return -1;
 }
@@ -375,7 +376,7 @@ static bool ih_open(const char *p)
                 char line[64];
                 k_strcpy(line, SET.lang == LANG_TR
                                ? "Aciliyor: " : "Opening: ");
-                k_strcat(line, apps_name(idx));
+                k_strcat(line, apps_display_name(idx));
                 j_say(line);
                 return true;
             }

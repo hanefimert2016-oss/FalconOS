@@ -166,7 +166,7 @@ static void draw_dock(void)
         if (hov) {
             gfx_circle_outline(ix2, iy2, rad + 4, PAL_ACCENT);
             char label[40];
-            k_strcpy(label, apps_name(i));
+            k_strcpy(label, apps_display_name(i));
             if (apps_minimized() == i) k_strcat(label, T(" (min)", " (küçük)"));
             i32 lw = gfx_text_width(label) + 16;
             i32 lx = ix2 - lw / 2;
@@ -281,7 +281,7 @@ void mode_personal_render(u32 frame)
     if (apps_active() < 0 && apps_minimized() >= 0) {
         char hint[96];
         k_strcpy(hint, T("App minimized: ", "Uygulama küçültüldü: "));
-        k_strcat(hint, apps_name(apps_minimized()));
+        k_strcat(hint, apps_display_name(apps_minimized()));
         k_strcat(hint, T(" — click its dock icon to restore.",
                          " — geri getirmek için dock simgesine tıkla."));
         gfx_text_centered((i32)FB.width / 2, (i32)FB.height - 44, hint, COL_WARN);

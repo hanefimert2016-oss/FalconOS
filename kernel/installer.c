@@ -137,9 +137,9 @@ void installer_render(u32 frame)
 
     switch (g_step) {
         case INST_LANG: {
-            headline = "Choose your language  /  Dilini seç  /  Sprache  /  Langue  /  Idioma";
-            helptext = "<-/->  switch    Enter  continue";
-            const char *items[5] = { "Turkce", "English", "Deutsch", "Francais", "Espanol" };
+            headline = "Dilinizi seçin  —  Choose language  —  Sprache — Langue — Idioma";
+            helptext   = "<-/-> değiştir / switch    Enter ile devam / continue";
+            const char *items[5] = { "Turkçe", "English", "Deutsch", "Francais", "Espanol" };
             /* Per-language accent dot — a visible "you are here" cue
              * beyond the highlighted tile. Roughly evokes each flag.   */
             const u32 lang_dot[5] = {
@@ -238,15 +238,14 @@ void installer_render(u32 frame)
         }
         case INST_DISK: {
             headline = T("Choose where to install FalconOS 1",
-                          "FalconOS 1'i nereye kuralim?");
+                          "FalconOS 1'i nereye kuralım?");
             helptext = T("User database + settings will be written to this disk.",
-                          "Kullanıcı + ayarlar bu diske yazilacak.");
+                          "Kullanıcı + ayarlar bu diske yazılacak.");
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
 
-            /* Build a list: each detected ATA drive + a final "RAM only"
-             * fallback for users booting off a CDROM with no disk.   */
+            /* Each ATA drive + “güvenli çalıştırma” (no FalconFS persistence). */
             i32 n_ata    = ata_probe_count();
-            i32 n_total  = n_ata + 1;            /* +1 = RAM-only       */
+            i32 n_total  = n_ata + 1;            /* +1 = güvenli slot   */
             if (g_choice >= n_total) g_choice = n_total - 1;
 
             i32 row_h = 60, gap = 10;
@@ -274,7 +273,7 @@ void installer_render(u32 frame)
                 gfx_round_rect(ix + 4, iy + 4, 20, 12, 2, act ? PAL_ACCENT : PAL_PANEL);
                 gfx_circle(ix + 22, iy + 14, 2, act ? PAL_ACCENT : PAL_PANEL);
 
-                /* Title + subtitle. Last entry = RAM-only sentinel.       */
+                /* Last entry = güvenli çalıştırma (diskdb_save disabled).   */
                 u32 title_c = act ? 0xFFFFFF : PAL_TEXT;
                 u32 sub_c   = act ? 0xC8DBFF : PAL_TEXT_DIM;
                 if (i < n_ata) {
@@ -303,12 +302,12 @@ void installer_render(u32 frame)
                     gfx_text(rx + 56, yy + 36, sub,   sub_c);
                 } else {
                     gfx_text(rx + 56, yy + 14,
-                             T("RAM only  -  do not write to a disk",
-                               "Sadece RAM  -  diske yazma"),
+                             T("Secure session  —  no FalconFS write to ATA",
+                               "Güvenli oturum  —  ATA'ya FalconFS yazılmaz"),
                              title_c);
                     gfx_text(rx + 56, yy + 36,
-                             T("Settings + users will reset on every cold boot.",
-                               "Ayarlar ve kullanıcılar her açılışta sıfırlanır."),
+                             T("Try changes without leaving data on removable media.",
+                               "Kalıcı veri yazmadan dene — USB çıkarinca iz kalmaz (oturumluk)."),
                              sub_c);
                 }
             }
@@ -496,7 +495,7 @@ void installer_input(i32 key)
             case INST_THEME:    max = THEME_COUNT; break;
             case INST_ACCENT:   max = 5; break;
             case INST_KBD:      max = 3; break;
-            case INST_DISK:     max = ata_probe_count() + 1; break; /* +RAM */
+            case INST_DISK:     max = ata_probe_count() + 1; break; /* güvenli */
             case INST_USER_MORE:max = 2; break;
             default:            max = 2; break;
         }
@@ -526,7 +525,7 @@ void installer_input(i32 key)
                     SET.kbd_layout = (kbd_layout_t)g_choice;
                     g_step = INST_DISK;
                     /* default-pick: first detected disk if any, else
-                     * the RAM-only sentinel (last index).         */
+                     * the güvenli sentinel (last index).         */
                     g_choice = (ata_probe_count() > 0) ? 0
                                                        : ata_probe_count();
                     return;

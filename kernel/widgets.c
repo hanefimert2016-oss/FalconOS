@@ -112,10 +112,17 @@ static void w_system(i32 x, i32 y, i32 w, i32 h)
     w_card(x, y, w, h, T("System", "Sistem"), 0x16B5A8);
     char buf[40], num[16];
 
-    /* RAM */
-    k_strcpy(buf, "RAM "); k_itoa(RAM_TOTAL_KB / 1024, num, 10);
-    k_strcat(buf, num);    k_strcat(buf, " MB");
-    gfx_text(x + 18, y + 60, buf, PAL_TEXT);
+    /* RAM — full multiboot2 map --------------------------------------------- */
+    {
+        char dec[28];
+        k_strcpy(buf, T("RAM ", "RAM "));
+        k_u64_to_dec(RAM_TOTAL_BYTES / (u64)(1024 * 1024), dec);
+        k_strcat(buf, dec);
+        k_strcat(buf, T(" MiB (mmap)", " MiB (mmap)"));
+        gfx_text(x + 18, y + 60, buf, PAL_TEXT);
+    }
+
+
 
     /* Uptime */
     u32 H_, M_, S_; pit_uptime(&H_, &M_, &S_);
@@ -128,7 +135,13 @@ static void w_system(i32 x, i32 y, i32 w, i32 h)
     gfx_text(x + 18, y + 78, buf, PAL_TEXT_DIM);
 
     /* Arch */
-    gfx_text(x + 18, y + h - 38, "x86_64 long mode", PAL_TEXT_DIM);
+    gfx_text(x + 18, y + h - 38,
+#if ARCH_x86_64
+             "x86_64 long mode",
+#else
+             "i386 protected/long",
+#endif
+             PAL_TEXT_DIM);
     gfx_text(x + 18, y + h - 22,
              T("Multiboot2 boot",
                "Multiboot2 açılış"), PAL_TEXT_FAINT);

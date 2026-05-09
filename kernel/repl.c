@@ -177,7 +177,7 @@ static void cmd_apps(void)
     char out[80] = "apps:";
     for (i32 i = 0; i < apps_count(); i++) {
         k_strcat(out, " ");
-        k_strcat(out, apps_name(i));
+        k_strcat(out, apps_display_name(i));
     }
     log_push_dev(out);
 }

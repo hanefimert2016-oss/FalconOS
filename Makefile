@@ -3,8 +3,8 @@
 # -----------------------------------------------------------------------------
 #  Targets:
 #    all            build the kernel ELF (default)
+#    start / everything  build ISO + QEMU with 200G qcow2 demo disk (tek komut)
 #    iso            wrap kernel.elf into a bootable GRUB ISO
-#    everything     build ISO + boot QEMU with persistent sparse disk (demo)
 #    run            same as run-disk (persistent qcow2 disk)
 #    run-disk-ephemeral  QEMU -snapshot (guest writes discarded on exit)
 #    run-fb         boot kernel.elf directly via QEMU's -kernel (faster iter)
@@ -83,8 +83,11 @@ HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -serial stdio \
                  -display none -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
-.PHONY: all iso everything run run-cdrom run-fb run-headless \
+.PHONY: start all iso everything run run-cdrom run-fb run-headless \
         run-disk run-disk-headless run-disk-ephemeral wipe-disk font clean
+
+# Türkçe README’de de geçecek tek komut: ISO derle + QEMU (kalıcı qcow2 disk).
+start: everything
 
 all: $(KERNEL)
 

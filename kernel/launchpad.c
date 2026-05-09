@@ -13,8 +13,8 @@
  * ============================================================================= */
 #include "falcon.h"
 
-#define LP_COLS 4
-#define LP_ROWS 4
+#define LP_COLS 5
+#define LP_ROWS 5
 #define LP_MAX  (LP_COLS * LP_ROWS)
 
 static bool g_open      = false;
@@ -157,8 +157,8 @@ void launchpad_render(u32 frame)
         }
         /* label below tile */
         i32 ly = cy + tile / 2 + 16;
-        gfx_text_centered(cx, ly,     apps_name(i),     PAL_TEXT);
-        gfx_text_centered(cx, ly + 18, apps_subtitle(i), PAL_TEXT_DIM);
+        gfx_text_centered(cx, ly,     apps_display_name(i),     PAL_TEXT);
+        gfx_text_centered(cx, ly + 18, apps_display_subtitle(i), PAL_TEXT_DIM);
 
         if (hov_m && clicked) {
             apps_open(i);

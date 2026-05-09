@@ -17,10 +17,10 @@
  *  packages (theme bundles, extra apps) live in a fixed compile-time catalog
  *  and toggle their `installed` flag when the user installs/removes them.
  *
- *  Because there is no disk yet, "install" only flips a bit; the prg.c
- *  layer is the contract that real persistent install routines will fulfil
- *  once we have a filesystem.  This is exactly the architecture macOS used
- *  for `installer(8)` before the AppStore: package metadata + state file.
+ *  Because there was no multi-file FS, early "install" only flipped a bit;
+ *  FalconOS now also drops a `/`-visible receipt into the Terminal ramdisk
+ *  (filename r<slot>) whenever a non-built-in catalogue entry installs, and
+ *  diskdb persists the SET.prg_installed[] bitmap alongside user settings.
  * ============================================================================= */
 #include "falcon.h"
 
@@ -228,7 +228,10 @@ bool prg_install(i32 i)
     }
 
     /* Install deepest dependency first, then the requested package. */
-    for (i32 k = nchain - 1; k >= 0; k--) SET.prg_installed[chain[k]] = 1;
+    for (i32 k = nchain - 1; k >= 0; k--) {
+        SET.prg_installed[chain[k]] = 1;
+        apps_pkg_on_install(chain[k]);
+    }
     diskdb_save();
     return true;
 }
@@ -250,6 +253,7 @@ bool prg_remove(i32 i)
     }
 
     SET.prg_installed[i] = 0;
+    apps_pkg_on_remove(i);
     diskdb_save();
     return true;
 }
