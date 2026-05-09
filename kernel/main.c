@@ -112,8 +112,8 @@ static void draw_menu_bar(void)
 
     /* hint pill (centered) */
     {
-        const char *hint = T("F1 kernel    F2 Launchpad    F12 Power    Esc closes",
-                             "F1 çekirdek    F2 Launchpad    F12 Güç    Esc kapatır");
+        const char *hint = T("F2 Launchpad    F12 Power    Esc closes",
+                             "F2 Launchpad    F12 Guc    Esc kapatir");
         i32 hw = gfx_text_width(hint) + 28;
         i32 hx = (W - hw) / 2;
         gfx_round_rect_a(hx, 4, hw, H - 8, 11, PAL_PANEL_DEEP, 255);
@@ -231,43 +231,107 @@ static void draw_cursor(void)
 
 static void draw_blue_dragon(i32 cx, i32 cy, u8 alpha)
 {
-    /* Compact "blue dragon" emblem for the boot splash. */
-    u32 blue = 0x2A66F5;
-    u32 dark = 0x123A9C;
-    u32 ice  = 0xBDE2FF;
-    gfx_circle_a(cx - 10, cy + 2, 28, blue, alpha);
-    gfx_circle_a(cx + 8,  cy - 10, 18, blue, alpha);
-    gfx_circle_a(cx + 14, cy + 18, 10, dark, alpha);
-    gfx_circle_a(cx + 20, cy - 18, 7,  dark, alpha);
-    gfx_circle_a(cx + 24, cy - 20, 3,  ice,  alpha);
-    gfx_line(cx - 20, cy + 20, cx - 34, cy + 34, dark);
-    gfx_line(cx - 18, cy + 14, cx - 36, cy + 20, dark);
-    gfx_line(cx + 6,  cy - 24, cx + 16, cy - 34, dark);
+    /* Enhanced blue dragon emblem for the boot splash. */
+    u32 blue      = 0x2A66F5;
+    u32 dark_blue = 0x123A9C;
+    u32 ice       = 0xBDE2FF;
+    u32 glow      = 0x5588FF;
+    u32 white     = 0xFFFFFF;
+
+    /* Dragon body - main shape */
+    gfx_circle_a(cx - 12, cy + 4, 32, blue, alpha);
+    gfx_circle_a(cx + 10, cy - 12, 22, blue, alpha);
+
+    /* Dragon head */
+    gfx_circle_a(cx + 18, cy - 20, 16, dark_blue, alpha);
+    gfx_circle_a(cx + 22, cy - 22, 12, blue, alpha);
+
+    /* Dragon eye - glowing */
+    gfx_circle_a(cx + 26, cy - 24, 5, white, alpha);
+    gfx_circle_a(cx + 26, cy - 24, 3, ice, alpha);
+    gfx_circle_a(cx + 27, cy - 24, 2, glow, alpha);
+
+    /* Dragon tail */
+    gfx_circle_a(cx - 28, cy + 20, 14, dark_blue, alpha);
+    gfx_circle_a(cx - 36, cy + 28, 8, dark_blue, alpha);
+    gfx_circle_a(cx - 42, cy + 32, 4, blue, alpha);
+
+    /* Dragon wings */
+    gfx_line(cx - 8, cy - 10, cx - 32, cy - 36, glow);
+    gfx_line(cx - 6, cy - 8, cx - 26, cy - 32, glow);
+    gfx_line(cx - 4, cy - 6, cx - 20, cy - 28, blue);
+    gfx_circle_a(cx - 32, cy - 36, 6, ice, alpha);
+    gfx_circle_a(cx - 26, cy - 32, 4, ice, alpha);
+    gfx_circle_a(cx - 20, cy - 28, 3, ice, alpha);
+
+    /* Dragon claws */
+    gfx_line(cx + 4, cy + 24, cx - 8, cy + 40, dark_blue);
+    gfx_line(cx + 8, cy + 22, cx + 4, cy + 38, dark_blue);
+
+    /* Dragon horns */
+    gfx_line(cx + 12, cy - 28, cx + 6, cy - 42, ice);
+    gfx_line(cx + 20, cy - 30, cx + 18, cy - 44, ice);
+    gfx_circle_a(cx + 6, cy - 42, 3, white, alpha);
+    gfx_circle_a(cx + 18, cy - 44, 3, white, alpha);
+
+    /* Glow effect around dragon */
+    gfx_circle_outline(cx, cy, 50, glow);
+    gfx_circle_outline(cx, cy, 52, glow);
 }
 
 /* --------------------------------------------------------------------------- */
 static void boot_splash(void)
 {
-    /* run for ~70 ticks (700 ms at 100 Hz) — palette-aware fade.            */
+    /* run for ~100 ticks (1000 ms at 100 Hz) — palette-aware fade.          */
     u32 start = g_ticks;
-    while (g_ticks - start < 70) {
+    while (g_ticks - start < 100) {
         u32 dt = g_ticks - start;
-        gfx_gradient_v(PAL_BG_TOP, PAL_BG_BOT);
+
+        /* Dark blue gradient background for dragon theme */
+        gfx_gradient_v(0x0A1628, 0x152238);
 
         i32 cx = (i32)FB.width  / 2;
-        i32 cy = (i32)FB.height / 2;
+        i32 cy = (i32)FB.height / 2 - 30;
 
-        u8  alpha = dt < 10 ? (u8)(dt * 25) : 255;
-        i32 r     = 60 + (i32)dt;
+        u8  alpha = dt < 15 ? (u8)(dt * 17) : 255;
+        i32 r     = 70 + (i32)(dt / 2);
 
-        gfx_circle_a(cx, cy, r,      PAL_ACCENT,    alpha);
-        gfx_circle_a(cx, cy, r - 18, PAL_PANEL,     alpha);
-        gfx_circle_a(cx, cy, r - 36, PAL_ACCENT,    alpha);
-        draw_blue_dragon(cx, cy - 2, alpha);
-        gfx_text_centered(cx, cy + r + 22, "FalconOS 1",       PAL_TEXT);
-        gfx_text_centered(cx, cy + r + 44,
-            T("starting FalconOS 1", "FalconOS 1 başlatılıyor"),   PAL_TEXT_DIM);
-        gfx_text_centered(cx, cy + r + 64, "x86_64 long mode", PAL_TEXT_FAINT);
+        /* Outer glow rings */
+        gfx_circle_a(cx, cy, r + 20, 0x1A3A6A, (u8)(alpha / 3));
+        gfx_circle_a(cx, cy, r + 10, 0x2A5A8A, (u8)(alpha / 2));
+
+        /* Main circle with gradient effect */
+        gfx_circle_a(cx, cy, r,      0x2A66F5, alpha);
+        gfx_circle_a(cx, cy, r - 16, 0x0A1628, alpha);
+        gfx_circle_a(cx, cy, r - 32, 0x2A66F5, (u8)(alpha * 3 / 4));
+        gfx_circle_a(cx, cy, r - 48, 0x0A1628, alpha);
+
+        /* Draw enhanced dragon */
+        draw_blue_dragon(cx, cy, alpha);
+
+        /* FalconOS 1 text - large and prominent */
+        gfx_text_lg(cx - 80, cy + r + 30, "FalconOS", 0xFFFFFF);
+        gfx_text_lg(cx + 56, cy + r + 30, "1", 0x5588FF);
+
+        /* Subtitle with version */
+        gfx_text_centered(cx, cy + r + 70,
+            T("Blue Dragon Edition", "Mavi Ejderha Surumu"), 0xBDE2FF);
+
+        /* Starting message */
+        gfx_text_centered(cx, cy + r + 92,
+            T("Starting kernel...", "Cekirdek baslatiliyor..."), 0x6688AA);
+
+        /* Architecture badge */
+        gfx_text_centered(cx, cy + r + 114, "x86_64 Long Mode | 64-bit", 0x446688);
+
+        /* Progress bar effect */
+        i32 bar_w = 200;
+        i32 bar_h = 4;
+        i32 bar_x = cx - bar_w / 2;
+        i32 bar_y = cy + r + 135;
+        i32 progress = (i32)(dt * bar_w / 100);
+        gfx_rect(bar_x, bar_y, bar_w, bar_h, 0x1A3A6A);
+        gfx_rect(bar_x, bar_y, progress, bar_h, 0x2A66F5);
 
         gfx_present();
         __asm__ volatile ("hlt");
@@ -397,9 +461,11 @@ void long_start(u64 magic, u64 info_ptr)
             if (helppanel_is_open() && k != KEY_F1 && k != KEY_F2 && k != KEY_F12) {
                 helppanel_handle_key(k); continue;
             }
+            /* F1 kernel switching disabled in FalconOS 1.1 release */
             if (k == KEY_F1) {
-                g_mode = (g_mode == MODE_PERSONAL) ? MODE_DEVELOPER : MODE_PERSONAL;
-                if (launchpad_is_open()) launchpad_close();
+                /* Kernel mode switching is now disabled for stability.
+                 * Users stay in Personal mode for the best experience.
+                 * Developer mode can be enabled via Settings app.       */
                 continue;
             }
             if (k == KEY_F2 && g_mode == MODE_PERSONAL) {

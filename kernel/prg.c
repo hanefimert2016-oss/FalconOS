@@ -138,6 +138,54 @@ static const prg_pkg_t CATALOG[] = {
     /* compat shims */
     { "wine-tiny",       "9.0",  "Wine subset for win32 console apps (plan)", "compat",  "linux-uapi",        420, false },
     { "qemu-user",       "8.2.0","qemu-user-static pieces (planned)",         "compat",  "linux-uapi",        260, false },
+
+    /* ---- FalconOS 1.1 new additions ----------------------------------------- */
+    /* browsers and internet */
+    { "app-falcon-web",  "1.1.0","Falcon Web Browser - offline HTML viewer",  "apps",    "falcon-apps",        48, false },
+    { "app-rss-reader",  "1.0.0","RSS/Atom feed reader (offline mode)",       "apps",    "falcon-apps",        22, false },
+    { "app-ftp-client",  "1.0.0","FTP client for local network (planned)",    "apps",    "falcon-apps",        18, false },
+
+    /* productivity */
+    { "app-writer",      "1.0.0","Simple word processor with formatting",     "apps",    "falcon-apps",        32, false },
+    { "app-sheets",      "1.0.0","Spreadsheet with basic formulas",           "apps",    "falcon-apps",        38, false },
+    { "app-slides",      "1.0.0","Presentation creator and viewer",           "apps",    "falcon-apps",        28, false },
+    { "app-pdf-reader",  "1.0.0","PDF document viewer (basic)",               "apps",    "falcon-apps",        42, false },
+    { "app-ebook",       "1.0.0","E-book reader (txt/epub preview)",          "apps",    "falcon-apps",        24, false },
+    { "app-code-editor", "1.0.0","Code editor with syntax highlighting",      "apps",    "falcon-apps",        36, false },
+
+    /* multimedia */
+    { "app-video",       "1.0.0","Video player (framebuffer playback)",       "apps",    "falcon-apps",        64, false },
+    { "app-audio",       "1.0.0","Audio player with PC speaker output",       "apps",    "falcon-apps",        28, false },
+    { "app-recorder",    "1.0.0","Screen recorder (image sequence)",          "apps",    "falcon-apps",        18, false },
+    { "app-gallery",     "1.0.0","Image gallery and slideshow viewer",        "apps",    "falcon-apps",        22, false },
+    { "app-camera",      "1.0.0","Camera preview (USB webcam planned)",       "apps",    "falcon-apps",        16, false },
+
+    /* system utilities */
+    { "app-backup",      "1.0.0","Backup utility for shfs files",             "tools",   "falcon-apps",        14, false },
+    { "app-compress",    "1.0.0","File compression (zip/tar preview)",        "tools",   "falcon-apps",        28, false },
+    { "app-cleaner",     "1.0.0","System cleaner and optimizer",              "tools",   "falcon-apps",        12, false },
+    { "app-benchmark",   "1.0.0","CPU and memory benchmark suite",            "tools",   "falcon-apps",        16, false },
+    { "app-sysinfo",     "1.0.0","Detailed system information viewer",        "tools",   "falcon-apps",         8, false },
+
+    /* games - more */
+    { "app-pacman",      "1.0.0","Pac-Man clone - classic arcade",            "games",   "falcon-apps",        18, false },
+    { "app-space",       "1.0.0","Space invaders arcade game",                "games",   "falcon-apps",        14, false },
+    { "app-racing",      "1.0.0","Top-down racing game",                      "games",   "falcon-apps",        22, false },
+    { "app-puzzle",      "1.0.0","Jigsaw puzzle game",                        "games",   "falcon-apps",        16, false },
+    { "app-memory",      "1.0.0","Memory card matching game",                 "games",   "falcon-apps",         8, false },
+    { "app-hangman",     "1.0.0","Hangman word guessing game",                "games",   "falcon-apps",         6, false },
+    { "app-quiz",        "1.0.0","Trivia quiz game",                          "games",   "falcon-apps",        12, false },
+
+    /* education */
+    { "app-typing",      "1.0.0","Typing tutor and speed test",               "education","falcon-apps",       10, false },
+    { "app-math-tutor",  "1.0.0","Math practice for all ages",                "education","falcon-apps",       14, false },
+    { "app-dictionary",  "1.0.0","Offline dictionary (TR/EN/DE)",             "education","falcon-apps",       48, false },
+    { "app-periodic",    "1.0.0","Interactive periodic table",                "education","falcon-apps",       18, false },
+
+    /* accessibility */
+    { "app-magnifier",   "1.0.0","Screen magnifier for accessibility",        "accessibility","falcon-apps",    6, false },
+    { "app-reader",      "1.0.0","Text-to-speech reader (planned)",           "accessibility","falcon-apps",   24, false },
+    { "app-high-contrast","1.0.0","High contrast display mode",               "accessibility","falcon-apps",    4, false },
 };
 
 #define N_CATALOG ((i32)(sizeof(CATALOG) / sizeof(CATALOG[0])))

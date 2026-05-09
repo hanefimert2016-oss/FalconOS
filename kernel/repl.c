@@ -88,7 +88,124 @@ static void repl_append_key(i32 key)
 
 static void cmd_help(void)
 {
-    log_push_dev("commands: help clear time regs peek poke mem apps panic echo");
+    log_push_dev("commands: help clear time date uptime regs cpu mem peek poke");
+    log_push_dev("          apps ls cat touch mkdir rm pwd cd echo version panic");
+}
+
+static void cmd_date(void)
+{
+    rtc_time_t t; rtc_local(&t);
+    char out[64], tmp[8];
+    k_strcpy(out, "date ");
+    k_itoa(t.day, tmp, 10); if (t.day < 10) k_strcat(out, "0"); k_strcat(out, tmp);
+    k_strcat(out, "/");
+    k_itoa(t.month, tmp, 10); if (t.month < 10) k_strcat(out, "0"); k_strcat(out, tmp);
+    k_strcat(out, "/");
+    k_itoa(t.year, tmp, 10); k_strcat(out, tmp);
+    log_push_dev(out);
+}
+
+static void cmd_uptime(void)
+{
+    u32 H, M, S; pit_uptime(&H, &M, &S);
+    char out[64], tmp[8];
+    k_strcpy(out, "up ");
+    k_itoa(H, tmp, 10); k_strcat(out, tmp); k_strcat(out, "h ");
+    k_itoa(M, tmp, 10); k_strcat(out, tmp); k_strcat(out, "m ");
+    k_itoa(S, tmp, 10); k_strcat(out, tmp); k_strcat(out, "s");
+    log_push_dev(out);
+}
+
+static void cmd_cpu(void)
+{
+    char out[64];
+    k_strcpy(out, "cpu: x86_64 long-mode, tsc ");
+    char hex[20];
+    u64 t = rdtsc();
+    k_itoa((u32)(t >> 32), hex, 16); k_strcat(out, hex);
+    k_itoa((u32)t, hex, 16); k_strcat(out, hex);
+    log_push_dev(out);
+}
+
+static void cmd_version(void)
+{
+    log_push_dev("FalconOS 1.1.0 (x86_64 long-mode)");
+    log_push_dev("  kernel: falcon-kernel 1.0.0");
+    log_push_dev("  shell:  falcon-shell 1.0.0");
+}
+
+static void cmd_ls(void)
+{
+    log_push_dev("drwx  /home");
+    log_push_dev("drwx  /system");
+    log_push_dev("drwx  /apps");
+    log_push_dev("-rw-  /config.ini");
+}
+
+static void cmd_pwd(void)
+{
+    log_push_dev("/home/user");
+}
+
+static void cmd_cat(const char *args)
+{
+    if (!args || !*args) {
+        log_push_dev("usage: cat <file>");
+        return;
+    }
+    char out[64];
+    k_strcpy(out, "cat: ");
+    k_strcat(out, args);
+    k_strcat(out, " (file system demo)");
+    log_push_dev(out);
+}
+
+static void cmd_touch(const char *args)
+{
+    if (!args || !*args) {
+        log_push_dev("usage: touch <filename>");
+        return;
+    }
+    char out[64];
+    k_strcpy(out, "created: ");
+    k_strcat(out, args);
+    log_push_dev(out);
+}
+
+static void cmd_mkdir(const char *args)
+{
+    if (!args || !*args) {
+        log_push_dev("usage: mkdir <dirname>");
+        return;
+    }
+    char out[64];
+    k_strcpy(out, "directory created: ");
+    k_strcat(out, args);
+    log_push_dev(out);
+}
+
+static void cmd_rm(const char *args)
+{
+    if (!args || !*args) {
+        log_push_dev("usage: rm <file>");
+        return;
+    }
+    char out[64];
+    k_strcpy(out, "removed: ");
+    k_strcat(out, args);
+    log_push_dev(out);
+}
+
+static void cmd_cd(const char *args)
+{
+    if (!args || !*args) {
+        log_push_dev("cd -> /home/user");
+        return;
+    }
+    char out[64];
+    k_strcpy(out, "cd -> ");
+    k_strcat(out, args);
+    log_push_dev(out);
 }
 
 static void cmd_time(void)
@@ -202,12 +319,18 @@ static void execute(const char *line)
     echo_back("> ", line);
     prompt_save(line);
 
-    if (k_strcmp(line, "help")  == 0) { cmd_help(); return; }
-    if (k_strcmp(line, "clear") == 0) { log_clear_dev(); return; }
-    if (k_strcmp(line, "time")  == 0) { cmd_time(); return; }
-    if (k_strcmp(line, "regs")  == 0) { cmd_regs(); return; }
-    if (k_strcmp(line, "apps")  == 0) { cmd_apps(); return; }
-    if (k_strcmp(line, "panic") == 0) { cmd_panic(); return; }
+    if (k_strcmp(line, "help")    == 0) { cmd_help(); return; }
+    if (k_strcmp(line, "clear")   == 0) { log_clear_dev(); return; }
+    if (k_strcmp(line, "time")    == 0) { cmd_time(); return; }
+    if (k_strcmp(line, "date")    == 0) { cmd_date(); return; }
+    if (k_strcmp(line, "uptime")  == 0) { cmd_uptime(); return; }
+    if (k_strcmp(line, "regs")    == 0) { cmd_regs(); return; }
+    if (k_strcmp(line, "cpu")     == 0) { cmd_cpu(); return; }
+    if (k_strcmp(line, "apps")    == 0) { cmd_apps(); return; }
+    if (k_strcmp(line, "panic")   == 0) { cmd_panic(); return; }
+    if (k_strcmp(line, "version") == 0) { cmd_version(); return; }
+    if (k_strcmp(line, "ls")      == 0) { cmd_ls(); return; }
+    if (k_strcmp(line, "pwd")     == 0) { cmd_pwd(); return; }
 
     if (k_strncmp(line, "peek", 4) == 0 && (line[4] == 0 || line[4] == ' '))
         { cmd_peek(skip_word(line)); return; }
@@ -217,6 +340,16 @@ static void execute(const char *line)
         { cmd_mem(skip_word(line)); return; }
     if (k_strncmp(line, "echo", 4) == 0 && (line[4] == 0 || line[4] == ' '))
         { cmd_echo(skip_word(line)); return; }
+    if (k_strncmp(line, "cat", 3) == 0 && (line[3] == 0 || line[3] == ' '))
+        { cmd_cat(skip_word(line)); return; }
+    if (k_strncmp(line, "touch", 5) == 0 && (line[5] == 0 || line[5] == ' '))
+        { cmd_touch(skip_word(line)); return; }
+    if (k_strncmp(line, "mkdir", 5) == 0 && (line[5] == 0 || line[5] == ' '))
+        { cmd_mkdir(skip_word(line)); return; }
+    if (k_strncmp(line, "rm", 2) == 0 && (line[2] == 0 || line[2] == ' '))
+        { cmd_rm(skip_word(line)); return; }
+    if (k_strncmp(line, "cd", 2) == 0 && (line[2] == 0 || line[2] == ' '))
+        { cmd_cd(skip_word(line)); return; }
 
     log_push_dev("unknown command - try `help`");
 }

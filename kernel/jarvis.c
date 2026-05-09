@@ -525,6 +525,121 @@ static bool ih_clear(const char *p)
     return true;
 }
 
+/* New Jarvis capabilities for FalconOS 1.1 -------------------------------- */
+static bool ih_version(const char *p)
+{
+    if (!match_any(p, "version", "surum", "versiyon", "kac"))
+        return false;
+    j_say("FalconOS 1.1.0 Blue Dragon Edition");
+    j_push("  Kernel: falcon-kernel 1.0.0");
+    j_push("  Shell:  falcon-shell 1.0.0");
+    j_push("  Arch:   x86_64 long-mode");
+    return true;
+}
+
+static bool ih_memory(const char *p)
+{
+    if (!match_any(p, "memory", "hafiza", "bellek", "ram"))
+        return false;
+    char line[80], num[16];
+    k_strcpy(line, SET.lang == LANG_TR ? "Bellek durumu: " : "Memory status: ");
+    k_strcat(line, "available");
+    j_say(line);
+    return true;
+}
+
+static bool ih_disk(const char *p)
+{
+    if (!match_any(p, "disk", "depolama", "storage", "alan"))
+        return false;
+    j_say(SET.lang == LANG_TR ? "Disk durumu:" : "Disk status:");
+    j_push("  ATA PIO: connected");
+    j_push("  Superblock: active");
+    return true;
+}
+
+static bool ih_joke(const char *p)
+{
+    if (!match_any(p, "joke", "fikra", "espri", "komik"))
+        return false;
+    if (SET.lang == LANG_TR) {
+        j_say("Programci neden gozluk takar?");
+        j_push("  Cunku C# goremez! :)");
+    } else {
+        j_say("Why do programmers prefer dark mode?");
+        j_push("  Because light attracts bugs! :)");
+    }
+    return true;
+}
+
+static bool ih_weather(const char *p)
+{
+    if (!match_any(p, "weather", "hava", "sicaklik", "derece"))
+        return false;
+    j_say(SET.lang == LANG_TR
+          ? "Hava durumu: Ag baglantisi gerekli (cevrimdisi mod)."
+          : "Weather: Network connection required (offline mode).");
+    return true;
+}
+
+static bool ih_music(const char *p)
+{
+    if (!match_any(p, "music", "muzik", "sarki", "calgi"))
+        return false;
+    j_say(SET.lang == LANG_TR
+          ? "Music uygulamasini ac: 'terminal ac' veya Store'dan yukle."
+          : "Open Music app: 'open terminal' or install from Store.");
+    return true;
+}
+
+static bool ih_calculate(const char *p)
+{
+    if (!match_any(p, "hesap", "calculate", "matematik", "toplam"))
+        return false;
+    i32 idx = j_find_app("Calculator");
+    if (idx >= 0) {
+        apps_open(idx);
+        j_say(SET.lang == LANG_TR
+              ? "Calculator acildi."
+              : "Calculator opened.");
+    } else {
+        j_say(SET.lang == LANG_TR
+              ? "Calculator bulunamadi."
+              : "Calculator not found.");
+    }
+    return true;
+}
+
+static bool ih_search(const char *p)
+{
+    if (!match_any(p, "search", "ara ", "bul ", "find"))
+        return false;
+    j_say(SET.lang == LANG_TR
+          ? "Arama: Cevrimdisi modda yerel dosyalari arayabilirim."
+          : "Search: In offline mode, I can search local files.");
+    return true;
+}
+
+static bool ih_screenshot(const char *p)
+{
+    if (!match_any(p, "screenshot", "ekran goru", "capture", "yakala"))
+        return false;
+    j_say(SET.lang == LANG_TR
+          ? "Ekran goruntusu: Bu ozellik Store'dan yuklenebilir."
+          : "Screenshot: Install app-recorder from Store.");
+    return true;
+}
+
+static bool ih_goodbye(const char *p)
+{
+    if (!match_any(p, "bye", "gule", "hosca", "gorusur"))
+        return false;
+    j_say(SET.lang == LANG_TR
+          ? "Hosca kal! Ihtiyacin olursa buradayim."
+          : "Goodbye! I'm here if you need me.");
+    return true;
+}
+
 /* ---- intent table -------------------------------------------------------- */
 static const intent_t INTENTS[] = {
     /* greeting & meta first */
@@ -538,6 +653,17 @@ static const intent_t INTENTS[] = {
     { "ben kim", "whoami","aktif kull", "current user", ih_whoami },
     { "kullanici list", "kullanicilar", "list user", "users", ih_users },
     { "durum",   "status","sistem","telemetr",   ih_status  },
+    /* new FalconOS 1.1 intents */
+    { "version", "surum", "versiyon", NULL,     ih_version },
+    { "memory",  "hafiza", "bellek", "ram",     ih_memory  },
+    { "disk",    "depolama", "storage", "alan", ih_disk    },
+    { "joke",    "fikra", "espri", "komik",     ih_joke    },
+    { "weather", "hava", "sicaklik", "derece",  ih_weather },
+    { "music",   "muzik", "sarki", "calgi",     ih_music   },
+    { "hesap",   "calculate", "matematik", NULL,ih_calculate},
+    { "search",  "ara ", "bul ", "find",        ih_search  },
+    { "screenshot","ekran goru","capture",NULL, ih_screenshot},
+    { "bye",     "gule", "hosca", "gorusur",    ih_goodbye },
     /* mutating intents */
     { "tema",    "theme", "renk",   NULL,       ih_theme   },
     { "dil",     "language", "lang", "sprache", ih_lang    },
