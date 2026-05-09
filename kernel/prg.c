@@ -38,6 +38,7 @@ static const prg_pkg_t CATALOG[] = {
     { "falcon-diskdb",  "1.0.0", "Persistent settings/users superblock",      "core",    "falcon-kernel",       12, true  },
     { "linux-uapi",     "6.6.0", "Linux UAPI compatibility headers",          "compat",  "falcon-kernel",       14, true  },
     { "ata-pio",        "1.2.0", "ATA PIO disk driver (libata-style)",        "drivers", "linux-uapi",          18, true  },
+    { "virtio-net",     "1.1.0", "Virtio 1.1 network driver (QEMU/KVM)",      "drivers", "linux-uapi",          24, true  },
     { "hid-keymap",     "1.0.0", "PS/2 + HID scancode tables (TR/EN/DE/FR/ES)","drivers","linux-uapi",          11, true  },
 
     /* Themes ----------------------------------------------------------- */
@@ -58,7 +59,7 @@ static const prg_pkg_t CATALOG[] = {
     { "app-markdown",    "1.0.0","Markdown reader (headings, lists, code)",   "apps",    "falcon-apps",        16, false },
     { "app-hex-editor",  "1.0.0","16-byte hex/ASCII editor for shfs",         "apps",    "falcon-shell-sh",    14, false },
     { "app-monitor",     "1.0.0","Live IRQ + IO + memory monitor",            "apps",    "falcon-apps",         9, false },
-    { "app-network-cfg", "0.3.0","Network configuration (planned virtio-net)","apps",    "falcon-apps",        10, false },
+    { "app-network-cfg", "1.0.0","Network configuration GUI (virtio-net)",   "apps",    "virtio-net",         14, false },
     { "app-screensaver", "1.0.0","Aero starfield + clock screensaver",        "apps",    "falcon-aero",         7, false },
     { "app-dosbox-lite", "0.2.0","Tiny x86 real-mode interpreter (sandbox)",  "compat",  "falcon-apps",        86, false },
     { "app-google-chrome","1.0.0","Chrome compatibility launcher bridge",      "compat",  "linux-uapi",         64, false },
@@ -115,12 +116,12 @@ static const prg_pkg_t CATALOG[] = {
     { "dev-tools",       "1.0.0","gcc-style build glue + objdump-lite",       "dev",     "falcon-shell-sh",    44, false },
     { "git-tiny",        "2.42.0","git-clone-from-disk-only stub",            "dev",     "falcon-shell-sh",    18, false },
     { "make-tiny",       "4.4",  "GNU make subset for falcon-shell-sh",       "dev",     "falcon-shell-sh",    14, false },
-    { "ssh-tiny",        "9.6p1","ssh client (planned virtio-net loopback)",  "dev",     "falcon-shell-sh",    52, false },
+    { "ssh-tiny",        "9.6p1","ssh client (virtio-net loopback)",            "dev",     "virtio-net",         52, false },
     { "python-mini",     "3.12.0","Python REPL subset, no stdlib",            "dev",     "falcon-apps",        96, false },
     { "lua-mini",        "5.4.6","Lua interpreter, sandboxed",                "dev",     "falcon-apps",        24, false },
 
     /* network / system tools */
-    { "network-tools",   "1.0.0","ip / ping / arp / traceroute (planned net)","tools",   "linux-uapi",         18, false },
+    { "network-tools",   "1.0.0","ip / ping / arp / netstat (virtio-net)",    "tools",   "virtio-net",         24, false },
     { "system-monitor",  "1.0.0","htop-style process + IRQ monitor",          "tools",   "falcon-apps",         8, false },
     { "diskutil-pro",    "1.0.0","fdisk / parted-style partition editor",     "tools",   "ata-pio",            22, false },
 

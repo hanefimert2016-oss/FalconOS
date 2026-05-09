@@ -282,9 +282,9 @@ static void draw_blue_dragon(i32 cx, i32 cy, u8 alpha)
 /* --------------------------------------------------------------------------- */
 static void boot_splash(void)
 {
-    /* run for ~100 ticks (1000 ms at 100 Hz) — palette-aware fade.          */
+    /* run for ~450 ticks (4500 ms at 100 Hz) — extended splash to show logo */
     u32 start = g_ticks;
-    while (g_ticks - start < 100) {
+    while (g_ticks - start < 450) {
         u32 dt = g_ticks - start;
 
         /* Dark blue gradient background for dragon theme */
@@ -329,7 +329,7 @@ static void boot_splash(void)
         i32 bar_h = 4;
         i32 bar_x = cx - bar_w / 2;
         i32 bar_y = cy + r + 135;
-        i32 progress = (i32)(dt * bar_w / 100);
+        i32 progress = (i32)(dt * bar_w / 450);
         gfx_rect(bar_x, bar_y, bar_w, bar_h, 0x1A3A6A);
         gfx_rect(bar_x, bar_y, progress, bar_h, 0x2A66F5);
 

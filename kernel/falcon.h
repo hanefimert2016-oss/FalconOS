@@ -538,10 +538,12 @@ bool diskdb_save(void);          /* writes SET into LBA0                    */
 bool diskdb_present(void);       /* true if last load found a magic block   */
 
 /* ---- ATA PIO (linux/ata_pio.c) ------------------------------------------- */
+void ata_init(void);
 bool ata_read_lba28 (i32 dev, u32 lba, u8 *buf512, u32 sectors);
 bool ata_write_lba28(i32 dev, u32 lba, const u8 *buf512, u32 sectors);
 
 /* ---- keyboard layout (kernel/kbd.c, switched by SET.kbd_layout) ---------- */
+void hid_keymap_init(void);
 i32  kbd_translate(u8 sc, kbd_layout_t layout, bool shift);
 
 /* ---- prg package manager + Store app -------------------------------------- */
@@ -571,6 +573,26 @@ const char *ata_model(i32 idx);
 u64    ata_sectors(i32 idx);
 void   ata_stats(u32 *reads, u32 *writes, u32 *retries, u32 *failed);
 void   hid_keymap_dump(char *buf, u32 max);
+
+/* ---- virtio-net network driver (linux/virtio_net.c) ---------------------- */
+bool   net_init(void);
+bool   net_present(void);
+bool   net_connected(void);
+const u8 *net_mac_addr(void);
+void   net_mac_string(char *out);
+const char *net_ip_addr(void);
+const char *net_netmask(void);
+const char *net_gateway(void);
+void   net_set_ip(const char *ip);
+void   net_set_netmask(const char *nm);
+void   net_set_gateway(const char *gw);
+void   net_stats(u32 *tx_pkt, u32 *rx_pkt, u32 *tx_by, u32 *rx_by,
+                 u32 *tx_err, u32 *rx_err);
+bool   net_dhcp(void);
+const char *net_summary(void);
+
+/* ---- network tools (kernel/net_tools.c) ------------------------------------- */
+void   net_tools_dispatch(const char *cmd, char *out);
 
 /* tiny global tick (incremented by main loop, NOT real time — see g_ticks) */
 extern volatile u32 g_tick;

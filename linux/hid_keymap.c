@@ -29,6 +29,11 @@ static const u16 SC1_TO_KEY[128] = {
     [0x3C] = KEY_F2_LX,
 };
 
+void hid_keymap_init(void)
+{
+    /* No runtime init needed - static table is ready */
+}
+
 void hid_keymap_dump(char *buf, u32 max)
 {
     char num[16];

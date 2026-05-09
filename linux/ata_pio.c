@@ -162,6 +162,82 @@ void ata_stats(u32 *reads, u32 *writes, u32 *retries, u32 *failed)
     if (failed)  *failed  = g_ata_failed;
 }
 
+/* --------------------------------------------------------------------------- */
+void ata_init(void)
+{
+    /* Probe for ATA devices on primary channel */
+    ata_dev_t *dev0 = &DEV[0];
+    dev0->present = false;
+    dev0->slave = false;
+
+    /* Try to identify master device */
+    outb(ATA_PRI_IO + ATA_REG_HDDEVSEL, 0xA0);
+    ata_io_wait();
+    outb(ATA_PRI_IO + ATA_REG_SECCOUNT, 0);
+    outb(ATA_PRI_IO + ATA_REG_LBA0, 0);
+    outb(ATA_PRI_IO + ATA_REG_LBA1, 0);
+    outb(ATA_PRI_IO + ATA_REG_LBA2, 0);
+    outb(ATA_PRI_IO + ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
+    ata_io_wait();
+
+    u8 s = inb(ATA_PRI_IO + ATA_REG_STATUS);
+    if (s & ATA_SR_BSY) {
+        return;
+    }
+    if (!(s & ATA_SR_DRDY)) {
+        return;
+    }
+
+    u16 id[256];
+    insw(ATA_PRI_IO + ATA_REG_DATA, id, 256);
+
+    if (id[0] != 0 && id[0] != 0xFFFF) {
+        for (i32 i = 0; i < 20; i++) {
+            dev0->model[i*2] = (char)(id[27 + i] >> 8);
+            dev0->model[i*2 + 1] = (char)(id[27 + i] & 0xFF);
+        }
+        dev0->model[40] = 0;
+        for (i32 i = 39; i >= 0; i--) {
+            if (dev0->model[i] == ' ') dev0->model[i] = 0;
+            else break;
+        }
+        u32 lba28_sectors = ((u32)id[61] << 16) | id[60];
+        if (lba28_sectors > 0) {
+            dev0->sectors = lba28_sectors;
+            dev0->present = true;
+            N_DEV = 1;
+        }
+    }
+
+    DEV[1].present = false;
+    DEV[1].slave = true;
+    outb(ATA_PRI_IO + ATA_REG_HDDEVSEL, 0xB0);
+    ata_io_wait();
+    outb(ATA_PRI_IO + ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
+    ata_io_wait();
+    s = inb(ATA_PRI_IO + ATA_REG_STATUS);
+    if (!(s & ATA_SR_BSY) && (s & ATA_SR_DRDY)) {
+        insw(ATA_PRI_IO + ATA_REG_DATA, id, 256);
+        if (id[0] != 0 && id[0] != 0xFFFF) {
+            for (i32 i = 0; i < 20; i++) {
+                DEV[1].model[i*2] = (char)(id[27 + i] >> 8);
+                DEV[1].model[i*2 + 1] = (char)(id[27 + i] & 0xFF);
+            }
+            DEV[1].model[40] = 0;
+            for (i32 i = 39; i >= 0; i--) {
+                if (DEV[1].model[i] == ' ') DEV[1].model[i] = 0;
+                else break;
+            }
+            u32 lba28_sectors = ((u32)id[61] << 16) | id[60];
+            if (lba28_sectors > 0) {
+                DEV[1].sectors = lba28_sectors;
+                DEV[1].present = true;
+                N_DEV = 2;
+            }
+        }
+    }
+}
+
 /* Up to 3 attempts per logical request; intermediate attempts bump the
  * retry counter so the user can spot a flaky controller in Settings.   */
 bool ata_read_lba28(i32 dev, u32 lba, u8 *buf512, u32 sectors)
@@ -187,18 +263,6 @@ bool ata_write_lba28(i32 dev, u32 lba, const u8 *buf512, u32 sectors)
 }
 
 /* --------------------------------------------------------------------------- */
-void linux_compat_init(void)
-{
-    N_DEV = 0;
-    for (i32 i = 0; i < MAX_DEV; i++) {
-        DEV[i].present = false;
-        DEV[i].slave   = (i == 1);
-        DEV[i].sectors = 0;
-        k_strcpy(DEV[i].model, "");
-        if (ata_dev_identify(&DEV[i])) N_DEV++;
-    }
-}
-
 i32 ata_probe_count(void) { return N_DEV; }
 
 const char *ata_model(i32 idx)
@@ -211,14 +275,4 @@ u64 ata_sectors(i32 idx)
 {
     if (idx < 0 || idx >= MAX_DEV || !DEV[idx].present) return 0;
     return DEV[idx].sectors;
-}
-
-const char *linux_compat_summary(void)
-{
-    static char buf[80];
-    char num[16];
-    k_strcpy(buf, "ATA: ");
-    k_itoa((u32)N_DEV, num, 10); k_strcat(buf, num);
-    k_strcat(buf, "/2 disks, FalconOS PIO v2 + refreshed HID map");
-    return buf;
 }
