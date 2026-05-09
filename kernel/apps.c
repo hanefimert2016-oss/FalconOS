@@ -844,7 +844,7 @@ void apps_pkg_on_install(i32 idx)
     k_strcpy(f->data, "package ");
     k_strcat(f->data, p->name);
     k_strcat(f->data, "\nver ");
-    k_strcat(f->data, p->ver);
+    k_strcat(f->data, p->version);
     k_strcat(f->data, "\n");
     k_strcat(f->data, p->summary);
     f->len = k_strlen(f->data);
