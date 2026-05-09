@@ -289,6 +289,8 @@ u64  rdtsc(void);
 
 /* ---- utility -------------------------------------------------------------- */
 void  k_itoa(u32 v, char *buf, i32 base);
+void  k_u64_to_dec(u64 v, char *buf);      /* decimal ASCII, max ~20 digits     */
+void  k_u64_fixed16_hex(u64 v, char *dst); /* 16 nibbles + NUL (no 0x prefix) */
 void  k_pad(char *buf, i32 width, char fill);
 i32   k_strlen(const char *s);
 void  k_memcpy(void *d, const void *s, u32 n);
@@ -307,11 +309,11 @@ u32   k_parse_hex(const char *s);
 i32   key_to_utf8(i32 key, char out[4]);
 
 /* ---- multiboot2 memory map ------------------------------------------------ */
-typedef struct { u32 base; u32 length; u32 type; } mmap_entry_t;
-#define MMAP_MAX 16
+typedef struct { u64 base; u64 length; u32 type; } mmap_entry_t;
+#define MMAP_MAX 24
 extern mmap_entry_t MMAP[MMAP_MAX];
 extern i32          MMAP_N;
-extern u32          RAM_TOTAL_KB;
+extern u64          RAM_TOTAL_BYTES;   /* summed type-1 RAM from firmware map */
 void mmap_parse(uptr info_ptr);
 const char *mmap_type_name(u32 t);
 
@@ -347,6 +349,10 @@ i32          apps_active(void);
 i32          apps_minimized(void);
 void         apps_render_active(u32 frame);
 void         apps_input_active(i32 key);
+void         hw_probe_summary(char *dst, i32 cap);
+void         apps_pkg_on_install(i32 catalog_idx);
+void         apps_pkg_on_remove(i32 catalog_idx);
+void         apps_pkg_sync_receipts_from_state(void);
 /* WM mouse handler — returns true when it consumed the click. */
 bool         apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge);
 
@@ -463,10 +469,10 @@ typedef struct {
     /* v5.2 first-run welcome banner — shown once on the desktop after
      * the initial install completes, dismissable.                         */
     bool        welcome_shown;
-    /* FalconOS 1 — installer disk-target picked at setup. -1 means
-     * "RAM only" (no persistent disk attached); 0..3 indexes into the
-     * primary IDE controller's master/slave enumeration produced by
-     * linux/ata_pio.c.  diskdb_save() writes into this disk.          */
+    /* FalconOS 1 — installer disk-target picked at setup.
+     *   >= 0  → persist FalconFS superblock on that ATA index (see ata_pio.c).
+     *   == -1 → “güvenli çalıştırma”: session only (diskdb_save is a no-op);
+     *            no FalconFS persistence on removable / selected mode.       */
     i32         install_disk;
     /* FalconOS 1 — sliding Help panel.  Auto-opens on the very first
      * desktop session so a newcomer immediately sees the keyboard /

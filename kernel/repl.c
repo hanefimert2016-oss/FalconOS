@@ -66,6 +66,26 @@ static void echo_back(const char *prefix, const char *line)
     log_push_dev(out);
 }
 
+static void repl_pop_utf8(void)
+{
+    if (blen <= 0) return;
+    i32 i = blen - 1;
+    while (i > 0 && (((u8)buf[i] & 0xC0u) == 0x80u)) i--;
+    buf[i] = 0;
+    blen = i;
+}
+
+static void repl_append_key(i32 key)
+{
+    char utf[4];
+    i32 n = key_to_utf8(key, utf);
+    if (n <= 0) return;
+    if (blen + n >= REPL_MAX) return;
+    for (i32 i = 0; i < n; i++) buf[blen + i] = utf[i];
+    blen += n;
+    buf[blen] = 0;
+}
+
 static void cmd_help(void)
 {
     log_push_dev("commands: help clear time regs peek poke mem apps panic echo");
@@ -211,13 +231,10 @@ void repl_input(i32 key)
         return;
     }
     if (key == KEY_BACKSPACE) {
-        if (blen > 0) { blen--; buf[blen] = 0; }
+        repl_pop_utf8();
         return;
     }
-    if (blen >= REPL_MAX - 1) return;
-    if (key < 0x20 || key > 0x7E) return;
-    buf[blen++] = (char)key;
-    buf[blen]   = 0;
+    repl_append_key(key);
 }
 
 void repl_render(i32 x, i32 y, i32 w, i32 h)

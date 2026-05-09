@@ -1,8 +1,8 @@
 /* =============================================================================
  *  FalconOS — Multiboot2 memory-map parser
  * -----------------------------------------------------------------------------
- *  Captures up to MMAP_MAX entries from the boot info so the Developer
- *  Kernel can render the BIOS-reported physical memory regions.
+ *  Captures up to MMAP_MAX entries from the boot info so telemetry can show
+ *  the firmware-reported RAM (full 64-bit base/length — no 32-bit truncation).
  * ============================================================================= */
 #include "falcon.h"
 
@@ -10,7 +10,7 @@
 
 mmap_entry_t MMAP[MMAP_MAX];
 i32          MMAP_N;
-u32          RAM_TOTAL_KB;
+u64          RAM_TOTAL_BYTES;
 
 typedef struct __attribute__((packed)) {
     u32 type;
@@ -34,6 +34,9 @@ void mmap_parse(uptr info_ptr)
     u8 *end = p + total;
     p += 8;
 
+    MMAP_N           = 0;
+    RAM_TOTAL_BYTES  = 0;
+
     while (p < end) {
         u32 type = *(u32 *)p;
         u32 size = *(u32 *)(p + 4);
@@ -44,11 +47,11 @@ void mmap_parse(uptr info_ptr)
             u8 *eend = (u8 *)h + h->size;
             while (e < eend && MMAP_N < MMAP_MAX) {
                 mb2_mmap_e_t *m = (mb2_mmap_e_t *)e;
-                MMAP[MMAP_N].base   = (u32)m->base;
-                MMAP[MMAP_N].length = (u32)m->length;
+                MMAP[MMAP_N].base   = m->base;
+                MMAP[MMAP_N].length = m->length;
                 MMAP[MMAP_N].type   = m->type;
                 if (m->type == 1)
-                    RAM_TOTAL_KB += (u32)(m->length / 1024);
+                    RAM_TOTAL_BYTES += m->length;
                 MMAP_N++;
                 e += h->entry_size;
             }

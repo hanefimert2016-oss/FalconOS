@@ -277,8 +277,7 @@ void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r)
              * The whole stack still renders in well under 8 ms for
              * a full-size dock at 2K, comfortably real-time.       */
             gfx_round_drop_shadow(x, y, w, h, r);
-            gfx_blur_rect(x, y, w, h, 8);
-            gfx_blur_rect(x, y, w, h, 4);
+            gfx_blur_rect(x, y, w, h, 6);
 
             /* (3) adaptive tint: sample the average post-blur
              *     luminance at the centre of the panel, decide
@@ -343,18 +342,18 @@ void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r)
             gfx_rect_a(x + r,     y + h - 2, w - 2 * r, 1,
                        0x9FD4E8, 60);
 
-            /* (7) frosted noise — deterministic xor-shift hash per
-             *     pixel, masked to ~6% density, ±2-luma jitter.
+            /* (7) frosted noise — deterministic xor-shift hash, but sampled
+             *     every other pixel for QEMU performance.
              *     Imitates the micro-stipple of real frosted glass
              *     and breaks up large flat tints.                */
-            for (i32 j = 2; j < h - 2; j += 1) {
-                for (i32 i = r; i < w - r; i += 1) {
+            for (i32 j = 2; j < h - 2; j += 2) {
+                for (i32 i = r; i < w - r; i += 2) {
                     u32 hash = (u32)((x + i) * 1664525u +
                                      (y + j) * 1013904223u);
                     hash ^= hash >> 13;
                     hash *= 0x5bd1e995u;
                     hash ^= hash >> 15;
-                    if ((hash & 0xF) == 0) {       /* ~6% of pixels */
+                    if ((hash & 0xF) == 0) {       /* sparse stipple */
                         u8 a = ((hash >> 4) & 0x1F) + 8;  /* 8..39 */
                         u32 col = (hash & 0x100) ? 0xFFFFFF : 0x000000;
                         gfx_pixel_a(x + i, y + j, col, a);

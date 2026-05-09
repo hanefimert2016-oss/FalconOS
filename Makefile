@@ -2,13 +2,15 @@
 #  FalconOS — bare-metal build system  (FalconOS 1)
 # -----------------------------------------------------------------------------
 #  Targets:
-#    all          build the kernel ELF (default)
-#    iso          wrap kernel.elf into a bootable GRUB ISO
-#    run          boot the ISO in QEMU (windowed, 1080p screen)
-#    run-fb       boot kernel.elf directly via QEMU's -kernel  (faster iter)
-#    run-headless boot the ISO with `-display none -vga std` for QMP scripting
-#    font         regenerate kernel/font_data.c from DejaVu (requires Pillow)
-#    clean        remove all build artefacts
+#    all            build the kernel ELF (default)
+#    iso            wrap kernel.elf into a bootable GRUB ISO
+#    everything     build ISO + boot QEMU with persistent sparse disk (demo)
+#    run            same as run-disk (persistent qcow2 disk)
+#    run-disk-ephemeral  QEMU -snapshot (guest writes discarded on exit)
+#    run-fb         boot kernel.elf directly via QEMU's -kernel (faster iter)
+#    run-headless   ISO + disk, no display
+#    font           regenerate kernel/font_data.c from DejaVu (requires Pillow)
+#    clean          remove all build artefacts
 #
 #  Architecture:
 #    make iso ARCH=x86_64 (default)   →  64-bit long-mode kernel
@@ -45,9 +47,6 @@ $(error ARCH must be one of: x86_64, i386 (got '$(ARCH)'))
 endif
 
 # ---- back-buffer geometry  (fixed at the maximum we ship) -------------------
-#  GRUB picks the actual screen mode at boot and the kernel auto-adapts;
-#  baking the back buffer at 2K means HD / FHD / 2K all render correctly
-#  out of a single ISO. ~14 MB BSS, harmless on the 4 GiB QEMU box.
 FB_W := 2560
 FB_H := 1440
 
@@ -69,20 +68,27 @@ ASM_OBJS    := $(BUILD)/boot/multiboot2.o $(BUILD)/boot/isr.o
 KERNEL      := $(BUILD)/falcon.elf
 ISO         := $(BUILD)/FalconOS.iso
 
-# 8 GB main RAM by default (override with `make run RAM=16384` for 16 GiB),
-# 4 vCPUs, 128 MB VRAM — keeps 2K @ 32 bpp snappy and gives the planned
-# in-memory FS a lot of headroom.  FalconOS itself only uses ~30 MB BSS.
-RAM           ?= 8192
-QEMU_FLAGS    := -m $(RAM)M -smp 4 -no-reboot -no-shutdown -serial stdio \
-                 -display sdl -vga std -global VGA.vgamem_mb=128 \
-                 -accel kvm -accel tcg
-HEADLESS_FLAGS:= -m $(RAM)M -smp 4 -no-reboot -no-shutdown -serial stdio \
-                 -display none -vga std -global VGA.vgamem_mb=128 \
+# Omit -no-shutdown / -no-reboot so ACPI power-off (PW_REG) and keyboard reset
+# behave like real hardware and terminate or restart the QEMU process.
+RAM           ?= 12288
+CPUS          ?= 6
+VRAM          ?= 256
+DISK_CAPACITY ?= 200G
+
+QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -serial stdio \
+                 -display sdl -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
-.PHONY: all iso run run-cdrom run-fb run-headless run-disk run-disk-headless wipe-disk font clean
+HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -serial stdio \
+                 -display none -vga std -global VGA.vgamem_mb=$(VRAM) \
+                 -accel kvm -accel tcg
+
+.PHONY: all iso everything run run-cdrom run-fb run-headless \
+        run-disk run-disk-headless run-disk-ephemeral wipe-disk font clean
 
 all: $(KERNEL)
+
+RUN_DISK_DRIVE := file=$(BUILD)/falcon.img,format=qcow2,if=ide,index=0
 
 # ---- compile C ---------------------------------------------------------------
 $(BUILD)/kernel/%.o: kernel/%.c kernel/falcon.h | $(BUILD)/kernel
@@ -112,9 +118,6 @@ $(ISO): $(KERNEL) boot/grub.cfg
 	@echo "[OK] ISO   $@  (ARCH=$(ARCH), single ISO supports HD/FHD/2K via GRUB menu)"
 
 # ---- run ----------------------------------------------------------------------
-# `make run` now boots with a persistent 4 GiB disk attached so the installer
-# actually has somewhere to write to — exactly like installing on real hardware.
-# `make run-cdrom` keeps the old liveCD-only behaviour for quick smoke tests.
 run: run-disk
 
 run-cdrom: $(ISO)
@@ -125,31 +128,31 @@ run-fb: $(KERNEL)
 
 run-headless: run-disk-headless
 
-# ---- persistent disk image: 4 GiB raw IDE drive on the primary master.
-#  diskdb.c writes the user database + settings_t to LBA0 (4 sectors) so
-#  user accounts and passwords survive cold reboots.  4 GiB leaves room
-#  for the future Files/prg backing store.
+# Sparse qcow2: host file grows as the guest writes; logical size $(DISK_CAPACITY).
 $(BUILD)/falcon.img: | $(BUILD)
 	@if [ ! -f $@ ]; then \
-	  qemu-img create -f raw $@ 4G; \
-	  echo "[OK] new disk image $@ (4 GiB raw)"; \
+	  qemu-img create -f qcow2 $@ "$(DISK_CAPACITY)"; \
+	  echo "[OK] new $@ (qcow2, capacity $(DISK_CAPACITY))"; \
 	fi
 
 run-disk: $(ISO) $(BUILD)/falcon.img
-	$(QEMU) -cdrom $(ISO) -drive file=$(BUILD)/falcon.img,format=raw,if=ide,index=0 $(QEMU_FLAGS)
+	$(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 run-disk-headless: $(ISO) $(BUILD)/falcon.img
-	$(QEMU) -cdrom $(ISO) -drive file=$(BUILD)/falcon.img,format=raw,if=ide,index=0 $(HEADLESS_FLAGS)
+	$(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(HEADLESS_FLAGS)
 
-# Wipe the persistent disk image (forces installer wizard on next run-disk).
+# Writes stay in QEMU’s overlay only — discarded when QEMU exits (“USB çıkarılınca kalmadan”).
+run-disk-ephemeral: $(ISO) $(BUILD)/falcon.img
+	$(QEMU) -snapshot -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
+
+everything: iso run-disk
+
 wipe-disk:
 	rm -f $(BUILD)/falcon.img
 
-# ---- font regeneration --------------------------------------------------------
 font:
 	python3 tools/genfont.py
 
-# ---- helpers ------------------------------------------------------------------
 $(BUILD) $(BUILD)/kernel $(BUILD)/boot $(BUILD)/linux:
 	@mkdir -p $@
 

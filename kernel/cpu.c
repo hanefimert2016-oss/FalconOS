@@ -102,6 +102,26 @@ void k_itoa(u32 v, char *buf, i32 base)
     buf[j] = 0;
 }
 
+void k_u64_to_dec(u64 v, char *buf)
+{
+    if (!buf) return;
+    if (v == 0ULL) { buf[0] = '0'; buf[1] = 0; return; }
+    char tmp[24];
+    i32  n = 0;
+    while (v && n < 24) { tmp[n++] = (char)('0' + (char)(v % 10u)); v /= 10u; }
+    i32 j = 0;
+    while (n--) buf[j++] = tmp[n];
+    buf[j] = 0;
+}
+
+void k_u64_fixed16_hex(u64 v, char *dst)
+{
+    static const char dig[] = "0123456789abcdef";
+    for (i32 i = 0; i < 16; i++)
+        dst[i] = dig[(u32)((v >> (60 - i * 4)) & 0xFu)];
+    dst[16] = 0;
+}
+
 void k_pad(char *buf, i32 width, char fill)
 {
     i32 n = k_strlen(buf);

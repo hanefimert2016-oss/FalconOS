@@ -147,7 +147,7 @@ void helppanel_render(u32 frame)
         T("Theme, language, resolution, password",
           "Tema, dil, çözünürlük, parola"),
         T("Open from the dock or via Launchpad",
-          "Dock veya Launchpad'den acabilirsin"),
+          "Dock veya Launchpad'den açabilirsin"),
         NULL, NULL);
 
     /* close pill at the bottom */

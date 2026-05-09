@@ -30,6 +30,7 @@ static const prg_pkg_t CATALOG[] = {
     { "falcon-kernel",  "1.0.0", "Long-mode microkernel + IDT/PIC/PIT",      "core",     "",                  140, true  },
     { "falcon-shell",   "1.0.0", "Lumen + Nox + Liquid + Nordic + Rose desktop shell", "core", "falcon-kernel", 110, true  },
     { "falcon-apps",    "1.0.0", "12 stock apps + Launchpad + window manager", "core", "falcon-shell",         86, true  },
+    { "app-falco-browser","1.0.0","Falco browser/search shell (indexed + API-ready)", "apps", "falcon-apps",    28, true  },
     { "falcon-shell-sh","1.0.0", "POSIX-subset shell (cd/ls/cat/echo/if/for)", "core",  "falcon-apps",          22, true  },
     { "falcon-aero",    "1.0.0", "Aero / Liquid Glass blur compositor",       "core",   "falcon-shell",         18, true  },
     { "falcon-installer","1.0.0","8-step installer + 5 languages + USB image","core",   "falcon-shell",         28, true  },

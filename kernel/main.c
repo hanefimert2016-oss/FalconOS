@@ -83,8 +83,7 @@ static void draw_menu_bar(void)
      * off, fall back to the cheap flat overlay.                       */
     if (SET.aero_enabled) {
         if (SET.theme == THEME_LIQUID) {
-            gfx_blur_rect(0, 0, W, H, 8);
-            gfx_blur_rect(0, 0, W, H, 4);
+            gfx_blur_rect(0, 0, W, H, 6);
             gfx_rect_a(0, 0, W, H, 0xE8F6FF, 105);
             gfx_rect_a(0, 0, W, 1, 0xFFFFFF, 180);
             gfx_rect_a(0, 1, W, 1, 0xCFF1FF, 120);
@@ -230,6 +229,22 @@ static void draw_cursor(void)
     gfx_circle(mx, my, 5, ml ? PAL_ACCENT : PAL_PANEL);
 }
 
+static void draw_blue_dragon(i32 cx, i32 cy, u8 alpha)
+{
+    /* Compact "blue dragon" emblem for the boot splash. */
+    u32 blue = 0x2A66F5;
+    u32 dark = 0x123A9C;
+    u32 ice  = 0xBDE2FF;
+    gfx_circle_a(cx - 10, cy + 2, 28, blue, alpha);
+    gfx_circle_a(cx + 8,  cy - 10, 18, blue, alpha);
+    gfx_circle_a(cx + 14, cy + 18, 10, dark, alpha);
+    gfx_circle_a(cx + 20, cy - 18, 7,  dark, alpha);
+    gfx_circle_a(cx + 24, cy - 20, 3,  ice,  alpha);
+    gfx_line(cx - 20, cy + 20, cx - 34, cy + 34, dark);
+    gfx_line(cx - 18, cy + 14, cx - 36, cy + 20, dark);
+    gfx_line(cx + 6,  cy - 24, cx + 16, cy - 34, dark);
+}
+
 /* --------------------------------------------------------------------------- */
 static void boot_splash(void)
 {
@@ -248,7 +263,8 @@ static void boot_splash(void)
         gfx_circle_a(cx, cy, r,      PAL_ACCENT,    alpha);
         gfx_circle_a(cx, cy, r - 18, PAL_PANEL,     alpha);
         gfx_circle_a(cx, cy, r - 36, PAL_ACCENT,    alpha);
-        gfx_text_centered(cx, cy + r + 22, "FalconOS",         PAL_TEXT);
+        draw_blue_dragon(cx, cy - 2, alpha);
+        gfx_text_centered(cx, cy + r + 22, "FalconOS 1",       PAL_TEXT);
         gfx_text_centered(cx, cy + r + 44,
             T("starting FalconOS 1", "FalconOS 1 başlatılıyor"),   PAL_TEXT_DIM);
         gfx_text_centered(cx, cy + r + 64, "x86_64 long mode", PAL_TEXT_FAINT);
@@ -322,6 +338,7 @@ void long_start(u64 magic, u64 info_ptr)
      * see attached disks and try to restore SET from LBA0 superblock.     */
     linux_compat_init();
     settings_init();
+    apps_pkg_sync_receipts_from_state();   /* mirror prg install flags → shfs     */
 
     pic_unmask(0);   /* PIT      */
     pic_unmask(1);   /* keyboard */

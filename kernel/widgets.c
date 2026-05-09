@@ -103,7 +103,7 @@ static void w_calendar(i32 x, i32 y, i32 w, i32 h)
     gfx_text(x + 18, y + h - 38, line, PAL_TEXT_DIM);
 
     gfx_text(x + 18, y + h - 22,
-             TX("Today", "Bugun", "Heute", "Aujourd'hui", "Hoy"),
+             TX("Today", "Bugün", "Heute", "Aujourd'hui", "Hoy"),
              PAL_TEXT_FAINT);
 }
 
@@ -119,7 +119,7 @@ static void w_system(i32 x, i32 y, i32 w, i32 h)
 
     /* Uptime */
     u32 H_, M_, S_; pit_uptime(&H_, &M_, &S_);
-    k_strcpy(buf, T("Up ", "Calisma "));
+    k_strcpy(buf, T("Up ", "Çalışma "));
     k_itoa(H_, num, 10); k_strcat(buf, num); k_strcat(buf, ":");
     if (M_ < 10) k_strcat(buf, "0");
     k_itoa(M_, num, 10); k_strcat(buf, num); k_strcat(buf, ":");
@@ -142,7 +142,7 @@ static void w_system(i32 x, i32 y, i32 w, i32 h)
 
 static void w_now_playing(i32 x, i32 y, i32 w, i32 h)
 {
-    w_card(x, y, w, h, T("Now Playing", "Calan"), 0xA45EE5);
+    w_card(x, y, w, h, T("Now Playing", "Çalan"), 0xA45EE5);
     /* album-art square */
     gfx_round_rect(x + 18, y + 56, 56, 56, 10, 0xA45EE5);
     gfx_circle(x + 46, y + 84, 4, 0xFFFFFF);
@@ -164,7 +164,7 @@ static void w_now_playing(i32 x, i32 y, i32 w, i32 h)
 
 static void w_recents(i32 x, i32 y, i32 w, i32 h)
 {
-    w_card(x, y, w, h, T("Recents", "Son Acilanlar"), 0xF59F1A);
+    w_card(x, y, w, h, T("Recents", "Son Açılanlar"), 0xF59F1A);
     const char *items[3] = { "notes.txt", "Untitled.calc", "trip-2025.cal" };
     for (i32 i = 0; i < 3; i++) {
         i32 ry = y + 60 + i * 26;

@@ -24,6 +24,7 @@
 static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
 static i32 minimized_app = -1; /* last app sent to dock by yellow light */
+static void falco_set_query(const char *q);
 
 /* ----- window manager state (FalconOS 1) ---------------------------------
  * The dispatcher used to centre every app window on every frame. With
@@ -192,6 +193,17 @@ static void icon_browser(i32 cx, i32 cy)
     gfx_circle(cx, cy, 6, 0x4285F4);                  /* blue centre    */
     gfx_circle_outline(cx, cy, 6, 0xFFFFFF);
 }
+static void icon_falco(i32 cx, i32 cy)
+{
+    /* Falco mark: blue dragon head in a rounded badge. */
+    gfx_round_rect(cx - 16, cy - 16, 32, 32, 8, 0x163C8C);
+    gfx_round_outline(cx - 16, cy - 16, 32, 32, 8, PAL_HAIRLINE);
+    gfx_circle(cx - 3, cy + 2, 11, 0x2A66F5);
+    gfx_circle(cx + 7, cy - 5, 7, 0x2A66F5);
+    gfx_circle(cx + 11, cy - 12, 3, 0xBDE2FF);
+    gfx_line(cx - 10, cy + 10, cx - 15, cy + 15, 0x123A9C);
+    gfx_line(cx - 7,  cy + 5,  cx - 15, cy + 8, 0x123A9C);
+}
 static void icon_store(i32 cx, i32 cy)
 {
     /* shopping bag with "P" */
@@ -200,6 +212,15 @@ static void icon_store(i32 cx, i32 cy)
     gfx_line(cx + 8, cy - 8, cx + 8, cy - 14, COL_PANEL);
     gfx_line(cx - 8, cy - 14, cx + 8, cy - 14, COL_PANEL);
     gfx_text_centered(cx, cy - 6, "P", COL_ACCENT);
+}
+static void icon_updates(i32 cx, i32 cy)
+{
+    /* downward refresh arrow */
+    gfx_round_rect(cx - 13, cy - 12, 26, 20, 4, PAL_PANEL_DEEP);
+    gfx_round_outline(cx - 13, cy - 12, 26, 20, 4, PAL_HAIRLINE);
+    gfx_line(cx - 5, cy - 8, cx, cy + 8, PAL_ACCENT);
+    gfx_line(cx + 5, cy - 8, cx, cy + 8, PAL_ACCENT);
+    gfx_line(cx - 10, cy + 6, cx + 10, cy + 6, PAL_ACCENT);
 }
 static void icon_video(i32 cx, i32 cy)
 {
@@ -336,13 +357,14 @@ static void render_clock(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static void render_stats(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame; (void)wh;
-    section(wx, wy, "Stats", "live system telemetry");
+    section(wx, wy, T("Stats", "İstatistik"),
+            T("live telemetry", "Canlı sistem telemetrisi"));
 
     u64 t = rdtsc();
     u32 hi = (u32)(t >> 32), lo = (u32)t;
     u32 h, m, s; pit_uptime(&h, &m, &s);
 
-    char hex[20], line[80];
+    char hex[22], mib[28], line[96];
 
     k_strcpy(line, "tsc       0x");
     k_itoa(hi, hex, 16); k_strcat(line, hex);
@@ -351,29 +373,34 @@ static void render_stats(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 
     char th[8], tm[8], ts[8];
     k_itoa(h, th, 10); k_itoa(m, tm, 10); k_itoa(s, ts, 10);
-    k_strcpy(line, "uptime    ");
+    k_strcpy(line, T("uptime    ", "çalışma   "));
     k_strcat(line, th); k_strcat(line, "h ");
     k_strcat(line, tm); k_strcat(line, "m ");
     k_strcat(line, ts); k_strcat(line, "s");
     gfx_text(wx + 24, wy + 86, line, PAL_TEXT);
 
-    k_strcpy(line, "ticks     ");
+    k_strcpy(line, T("ticks     ", "tik       "));
     k_itoa(g_ticks, hex, 10); k_strcat(line, hex);
     gfx_text(wx + 24, wy + 110, line, PAL_TEXT);
 
-    k_strcpy(line, "ram (KiB) ");
-    k_itoa(RAM_TOTAL_KB, hex, 10); k_strcat(line, hex);
+    u64 mib_val = RAM_TOTAL_BYTES / ((u64)1024 * 1024);
+    k_u64_to_dec(mib_val, mib);
+    k_strcpy(line, T("ram (mmap)", "RAM (mmap"));
+    k_strcat(line, ") ");
+    k_strcat(line, mib);
+    k_strcat(line, T(" MiB", " MiB"));
     gfx_text(wx + 24, wy + 134, line, PAL_TEXT);
 
-    k_strcpy(line, "fb        ");
+    k_strcpy(line, T("screen    ", "ekran    "));
     k_itoa(FB.width, hex, 10); k_strcat(line, hex); k_strcat(line, "x");
-    k_itoa(FB.height, hex, 10); k_strcat(line, hex);
+    k_itoa(FB.height, hex, 10); k_strcat(line, hex); k_strcat(line, "@");
+    k_itoa(FB.bpp, hex, 10); k_strcat(line, hex);
     gfx_text(wx + 24, wy + 158, line, PAL_TEXT);
 
     /* pulse bar */
     i32 pw = (i32)((g_ticks % 100) * (ww - 48) / 100);
-    gfx_round_rect(wx + 24, wy + 188, ww - 48, 6, 3, PAL_HAIRLINE);
-    gfx_round_rect(wx + 24, wy + 188, pw,      6, 3, PAL_ACCENT);
+    gfx_round_rect(wx + 24, wy + 210, ww - 48, 6, 3, PAL_HAIRLINE);
+    gfx_round_rect(wx + 24, wy + 210, pw,      6, 3, PAL_ACCENT);
 }
 
 /* --- About --------------------------------------------------------------- */
@@ -388,7 +415,13 @@ static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     gfx_circle(cx, wy + 110, 18, PAL_ACCENT);
 
     gfx_text_centered(cx, wy + 190, "FalconOS 1",                            PAL_TEXT);
-    gfx_text_centered(cx, wy + 210, "bare-metal x86_64 - personal & developer", PAL_ACCENT);
+    gfx_text_centered(cx, wy + 210,
+#if ARCH_x86_64
+        "bare-metal x86_64 — personal + developer",
+#else
+        "bare-metal i386 — personal + developer",
+#endif
+                      PAL_ACCENT);
     gfx_text_centered(cx, wy + 232,
         T("two kernels, one binary - F1 to flip - F2 Launchpad",
           "iki çekirdek, tek ikili - F1 ile geç - F2 Launchpad"),
@@ -403,12 +436,6 @@ static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     char hidsum[80];
     hid_keymap_dump(hidsum, sizeof hidsum);
     gfx_text_centered(cx, wy + 274, hidsum, PAL_TEXT_FAINT);
-
-    gfx_text_centered(cx, wy + 296,
-        T("bare-metal microkernel  -  prg packages  -  Store  -  POSIX shell",
-          "bare-metal mikroçekirdek  -  prg paketleri  -  Mağaza  -  POSIX kabuk"),
-        PAL_TEXT_FAINT);
-}
 
 /* --- Store (prg package browser, GUI) ----------------------------------- */
 static i32 store_cursor = 0;
@@ -647,7 +674,7 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 #define TERM_LINES 12
 #define TERM_COLS  80
 #define SH_VARS    16
-#define SH_FILES   16
+#define SH_FILES   40
 #define SH_FBYTES  512
 
 typedef struct { char name[16]; u32 len; char data[SH_FBYTES]; bool used; } shfile_t;
@@ -738,6 +765,58 @@ static shfile_t *sh_file_open_w(const char *n, bool append)
     return f;
 }
 
+/* --- prg install receipts appear in Terminal `ls ~/shfs`-style helpers --- */
+static void pkg_receipt_fname(i32 idx, char name[16])
+{
+    name[0] = 'r';
+    char num[12];
+    k_itoa((u32)idx, num, 10);
+    k_strcpy(name + 1, num);
+}
+
+void apps_pkg_on_install(i32 idx)
+{
+    const prg_pkg_t *p = prg_at(idx);
+    if (!p || p->builtin) return;
+    char fn[16];
+    pkg_receipt_fname(idx, fn);
+    shfile_t *f = sh_file_open_w(fn, false);
+    if (!f) return;
+    k_strcpy(f->data, "package ");
+    k_strcat(f->data, p->name);
+    k_strcat(f->data, "\nver ");
+    k_strcat(f->data, p->ver);
+    k_strcat(f->data, "\n");
+    k_strcat(f->data, p->summary);
+    f->len = k_strlen(f->data);
+    if (f->len >= SH_FBYTES) {
+        f->data[SH_FBYTES - 1] = 0;
+        f->len = SH_FBYTES - 1;
+    }
+}
+
+void apps_pkg_on_remove(i32 idx)
+{
+    char fn[16];
+    pkg_receipt_fname(idx, fn);
+    shfile_t *f = sh_file_find(fn);
+    if (f) {
+        f->used = false;
+        f->name[0] = 0;
+        f->len     = 0;
+    }
+}
+
+void apps_pkg_sync_receipts_from_state(void)
+{
+    for (i32 i = 0; i < prg_count(); i++) {
+        const prg_pkg_t *p = prg_at(i);
+        if (!p || p->builtin) continue;
+        if (prg_is_installed(i)) apps_pkg_on_install(i);
+        else                     apps_pkg_on_remove(i);
+    }
+}
+
 /* small helpers --------------------------------------------------------- */
 static bool sh_isspace(char c) { return c == ' ' || c == '\t'; }
 static char sh_tolower(char c) { return (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : c; }
@@ -778,12 +857,20 @@ static i32 sh_find_app_idx(const char *name)
     if (!name || !name[0]) return -1;
     for (i32 i = 0; i < apps_count(); i++)
         if (sh_streq_ci(apps_name(i), name)) return i;
+    if (sh_streq_ci(name, "updates") || sh_streq_ci(name, "güncelleme") ||
+        sh_streq_ci(name, "guncelleme") ||
+        sh_streq_ci(name, "sistem güncellemeleri") ||
+        sh_streq_ci(name, "sistem-güncellemeleri"))
+        return sh_find_app_idx("Sistem Güncellemeleri");
     if (sh_streq_ci(name, "google-chrome") || sh_streq_ci(name, "googlechrome"))
         return sh_find_app_idx("Chrome");
     if (sh_streq_ci(name, "heroic-launcher") || sh_streq_ci(name, "heroiclauncher"))
         return sh_find_app_idx("Heroic");
     if (sh_streq_ci(name, "media") || sh_streq_ci(name, "video-player"))
         return sh_find_app_idx("Video");
+    if (sh_streq_ci(name, "falco") || sh_streq_ci(name, "falco-browser") ||
+        sh_streq_ci(name, "browser"))
+        return sh_find_app_idx("Falco");
     return -1;
 }
 
@@ -891,9 +978,10 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
             "touch cp mv mkdir rmdir basename dirname more less xxd file "
             "echo printf yes seq expr test [ env set unset alias export "
-            "history ps top kill df du free mount lsblk uname whoami id "
+            "history ps top kill df du free mount lsblk uname hwinfo whoami id "
             "groups who w users hostname uptime cal date reboot shutdown "
-            "which type prg pkg open chrome heroic video man | > >>");
+            "which type prg pkg open chrome falco heroic video search "
+            "update man | > >>");
         return 0;
     }
     if (k_strcmp(cmd, "man") == 0) {
@@ -903,7 +991,19 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             return 0;
         }
         if (k_strcmp(argv[1], "open") == 0) {
-            k_strcpy(out, "open <app-name>  (e.g. open Chrome, open Heroic, open Video)");
+            k_strcpy(out, "open <app-name>  (e.g. open Falco, open Chrome, open Heroic, open Video)");
+            return 0;
+        }
+        if (k_strcmp(argv[1], "falco") == 0) {
+            k_strcpy(out, "falco [query]: opens Falco browser; with query, runs in-app search.");
+            return 0;
+        }
+        if (k_strcmp(argv[1], "search") == 0) {
+            k_strcpy(out, "search <query>: open Falco and run indexed search.");
+            return 0;
+        }
+        if (k_strcmp(argv[1], "update") == 0) {
+            k_strcpy(out, "update check | update apply: upgrade FalconOS components without reinstall.");
             return 0;
         }
         if (k_strcmp(argv[1], "video") == 0) {
@@ -956,6 +1056,71 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         i32 ai = sh_find_app_idx("Video");
         if (ai >= 0) apps_open(ai);
         k_strcpy(out, "opening Video player");
+        return 0;
+    }
+    if (k_strcmp(cmd, "falco") == 0) {
+        i32 ai = sh_find_app_idx("Falco");
+        if (argc >= 2) {
+            char q[80];
+            q[0] = 0;
+            for (i32 i = 1; i < argc && k_strlen(q) < 78; i++) {
+                if (i > 1) k_strcat(q, " ");
+                k_strcat(q, argv[i]);
+            }
+            falco_set_query(q);
+        }
+        if (ai >= 0) apps_open(ai);
+        k_strcpy(out, "opening Falco browser");
+        return 0;
+    }
+    if (k_strcmp(cmd, "search") == 0) {
+        if (argc < 2) { k_strcpy(out, "search: usage: search <query>"); return 1; }
+        char q[80];
+        q[0] = 0;
+        for (i32 i = 1; i < argc && k_strlen(q) < 78; i++) {
+            if (i > 1) k_strcat(q, " ");
+            k_strcat(q, argv[i]);
+        }
+        falco_set_query(q);
+        i32 ai = sh_find_app_idx("Falco");
+        if (ai >= 0) apps_open(ai);
+        k_strcpy(out, "search forwarded to Falco");
+        return 0;
+    }
+    if (k_strcmp(cmd, "update") == 0 || k_strcmp(cmd, "upgrade") == 0) {
+        static const char *BUNDLE[] = {
+            "app-falco-browser",
+            "app-google-chrome",
+            "app-heroic-launcher",
+            "theme-liquid",
+            "fonts-mono-pack",
+            NULL
+        };
+        bool apply = (argc >= 2 &&
+                      (k_strcmp(argv[1], "apply") == 0 ||
+                       k_strcmp(argv[1], "upgrade") == 0 ||
+                       k_strcmp(argv[1], "install") == 0));
+        if (!apply) {
+            i32 pending = 0;
+            for (i32 i = 0; BUNDLE[i]; i++) {
+                i32 idx = sh_find_pkg_idx(BUNDLE[i]);
+                if (idx >= 0 && !prg_is_installed(idx)) pending++;
+            }
+            char num[16];
+            k_strcpy(out, "update check: ");
+            k_itoa((u32)pending, num, 10); k_strcat(out, num);
+            k_strcat(out, " package(s) pending. Run: update apply");
+            return 0;
+        }
+        i32 done = 0;
+        for (i32 i = 0; BUNDLE[i]; i++) {
+            i32 idx = sh_find_pkg_idx(BUNDLE[i]);
+            if (idx >= 0 && prg_install(idx)) done++;
+        }
+        char num[16];
+        k_strcpy(out, "update apply: ");
+        k_itoa((u32)done, num, 10); k_strcat(out, num);
+        k_strcat(out, " package(s) ready. Reinstall not required.");
         return 0;
     }
     if (k_strcmp(cmd, "prg") == 0 || k_strcmp(cmd, "pkg") == 0) {
@@ -1035,7 +1200,18 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 1;
     }
     if (k_strcmp(cmd, "pwd") == 0)    { k_strcpy(out, sh_cwd); return 0; }
-    if (k_strcmp(cmd, "uname") == 0)  { k_strcpy(out, "FalconOS 1 x86_64 bare-metal"); return 0; }
+    if (k_strcmp(cmd, "uname") == 0)  {
+#if ARCH_x86_64
+        k_strcpy(out, "FalconOS 1 x86_64 bare-metal");
+#else
+        k_strcpy(out, "FalconOS 1 i386 bare-metal");
+#endif
+        return 0;
+    }
+    if (k_strcmp(cmd, "hwinfo") == 0) {
+        hw_probe_summary(out, cap);
+        return 0;
+    }
     if (k_strcmp(cmd, "whoami") == 0) {
         const falcon_user_t *u = users_at(SET.active_user);
         k_strcpy(out, u ? u->name : "falcon");
@@ -1616,9 +1792,10 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "less","xxd","hexdump","file","printf","yes","seq","expr","test",
             "[","sleep","history","hostname","id","groups","who","w","users",
             "uptime","cal","ps","top","jobs","kill","df","du","free","mount",
-            "lsblk","reboot","shutdown","poweroff","halt","which","type",
+            "lsblk","reboot","shutdown","poweroff","halt","which","type","hwinfo",
             "uname","whoami","date","clear","help","true","false","exit",
-            "man","open","xdg-open","prg","pkg","chrome","heroic","video",NULL
+            "man","open","xdg-open","prg","pkg","chrome","falco","heroic",
+            "video","search","update","upgrade",NULL
         };
         for (i32 i = 0; BUILTINS[i]; i++) {
             if (k_strcmp(BUILTINS[i], argv[1]) == 0) {
@@ -2195,7 +2372,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 
     /* Aero --- frosted glass toggle ------------------------------------ */
     s_row(sx, sy + SR_AERO * step, sw,
-          T("Aero (transparency)", "Aero (seffaflik)"),
+          T("Aero (transparency)", "Aero (şeffaflık)"),
           SET.aero_enabled ? T("on", "açık") : T("off", "kapalı"),
           set_row == SR_AERO,
           SET.aero_enabled ? COL_OK : PAL_TEXT_DIM);
@@ -2452,6 +2629,138 @@ static void render_gallery(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     }
 }
 
+/* --- Falco (native Falcon browser/search surface) ------------------------
+ *  Falco is a first-party browser shell designed for FalconOS. With no
+ *  network stack yet, it runs a real indexed search over curated web cards
+ *  and ships API-ready connectors (DuckDuckGo / Wikipedia / HN) that can be
+ *  wired to HTTP once net drivers are live.                                  */
+typedef struct {
+    const char *title;
+    const char *url;
+    const char *desc;
+} falco_doc_t;
+
+static const falco_doc_t FALCO_INDEX[] = {
+    { "FalconOS repository", "https://github.com/hanefimert2016-oss/FalconOS", "Source, issues, roadmap and docs." },
+    { "DuckDuckGo Instant API", "https://duckduckgo.com/api", "Free JSON endpoint for search snippets." },
+    { "Wikipedia API", "https://www.mediawiki.org/wiki/API:Main_page", "Open encyclopedia API for summaries." },
+    { "Stack Exchange API", "https://api.stackexchange.com/docs", "Developer Q&A endpoint with public quotas." },
+    { "GitHub REST API", "https://docs.github.com/rest", "Repository and release metadata API." },
+    { "Heroic Games Launcher", "https://heroicgameslauncher.com/", "Open launcher for Epic/GOG libraries." },
+    { "Google Chrome", "https://www.google.com/chrome/", "Browser compatibility target package." },
+    { "QEMU documentation", "https://www.qemu.org/docs/master/", "Virtual machine setup and acceleration." },
+    { "Kernel Dev Notes", "falco://docs/kernel", "Local Falcon docs bundle for OS internals." },
+    { "Falcon package index", "falco://packages", "Installed + available prg packages." },
+};
+
+static char falco_query[80] = "FalconOS";
+static i32  falco_query_len = 8;
+static i32  falco_sel = 0;
+
+static void falco_set_query(const char *q)
+{
+    falco_query_len = 0;
+    falco_query[0] = 0;
+    if (!q) return;
+    while (q[falco_query_len] && falco_query_len < 79) {
+        falco_query[falco_query_len] = q[falco_query_len];
+        falco_query_len++;
+    }
+    falco_query[falco_query_len] = 0;
+    falco_sel = 0;
+}
+
+static i32 falco_collect_hits(i32 out_idx[], i32 cap)
+{
+    i32 n = 0;
+    i32 total = (i32)(sizeof(FALCO_INDEX) / sizeof(FALCO_INDEX[0]));
+    bool empty = (falco_query[0] == 0);
+    for (i32 i = 0; i < total && n < cap; i++) {
+        if (empty ||
+            sh_contains_ci(FALCO_INDEX[i].title, falco_query) ||
+            sh_contains_ci(FALCO_INDEX[i].url,   falco_query) ||
+            sh_contains_ci(FALCO_INDEX[i].desc,  falco_query)) {
+            out_idx[n++] = i;
+        }
+    }
+    return n;
+}
+
+static void falco_input_key(i32 key)
+{
+    if (key == KEY_BACKSPACE) {
+        sh_buf_pop_utf8(falco_query, &falco_query_len);
+        return;
+    }
+    if (key == KEY_UP && falco_sel > 0) { falco_sel--; return; }
+    if (key == KEY_DOWN) { falco_sel++; return; }
+    if (key == KEY_ENTER) return;
+    (void)sh_buf_append_key(falco_query, &falco_query_len, 80, key);
+}
+
+static void render_falco(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+{
+    (void)frame;
+    section(wx, wy, "Falco", "Indexed search now, free-web API bridge ready for network drivers");
+
+    /* provider chips */
+    {
+        const char *chips[3] = { "DuckDuckGo API", "Wikipedia API", "HN API" };
+        i32 x = wx + 24, y = wy + 42;
+        for (i32 i = 0; i < 3; i++) {
+            i32 cw = gfx_text_width(chips[i]) + 18;
+            gfx_round_rect_a(x, y, cw, 20, 10, PAL_PANEL_DEEP, 255);
+            gfx_round_outline(x, y, cw, 20, 10, PAL_HAIRLINE);
+            gfx_text(x + 9, y + 5, chips[i], PAL_TEXT_DIM);
+            x += cw + 8;
+        }
+    }
+
+    /* search box */
+    i32 sx = wx + 24, sy = wy + 70, sw = ww - 48;
+    gfx_round_rect_a(sx, sy, sw, 34, 17, PAL_PANEL_DEEP, 255);
+    gfx_round_outline(sx, sy, sw, 34, 17, PAL_ACCENT);
+    gfx_circle(sx + 16, sy + 17, 6, PAL_ACCENT);
+    if (falco_query_len == 0) {
+        gfx_text(sx + 30, sy + 10, "Search web cards, docs, packages...", PAL_TEXT_FAINT);
+    } else {
+        gfx_text(sx + 30, sy + 10, falco_query, PAL_TEXT);
+    }
+    if ((g_ticks / 50) & 1) {
+        i32 cx = sx + 30 + gfx_text_width(falco_query);
+        gfx_rect(cx, sy + 8, 2, 18, PAL_ACCENT);
+    }
+
+    i32 hits[12];
+    i32 hn = falco_collect_hits(hits, 12);
+    if (hn <= 0) falco_sel = 0;
+    else if (falco_sel >= hn) falco_sel = hn - 1;
+
+    i32 ry = sy + 42;
+    if (hn == 0) {
+        gfx_round_rect_a(sx, ry, sw, 32, 8, PAL_PANEL_DEEP, 255);
+        gfx_round_outline(sx, ry, sw, 32, 8, PAL_HAIRLINE);
+        gfx_text(sx + 12, ry + 9, "No result in local index. Network API fetch will appear here.", PAL_TEXT_DIM);
+    } else {
+        i32 rows = (wh - 140) / 44;
+        if (rows < 1) rows = 1;
+        if (rows > hn) rows = hn;
+        for (i32 i = 0; i < rows; i++) {
+            i32 idx = hits[i];
+            bool sel = (i == falco_sel);
+            i32 y = ry + i * 44;
+            gfx_round_rect_a(sx, y, sw, 38, 8, sel ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
+            gfx_round_outline(sx, y, sw, 38, 8, sel ? PAL_ACCENT : PAL_HAIRLINE);
+            gfx_text(sx + 10, y + 7,  FALCO_INDEX[idx].title, PAL_TEXT);
+            gfx_text(sx + 10, y + 22, FALCO_INDEX[idx].url,   PAL_TEXT_DIM);
+        }
+        if (falco_sel >= 0 && falco_sel < hn) {
+            const falco_doc_t *d = &FALCO_INDEX[hits[falco_sel]];
+            gfx_text(wx + 24, wy + wh - 24, d->desc, PAL_TEXT_FAINT);
+        }
+    }
+}
+
 /* --- Chrome (visual browser app) ----------------------------------------
  *  Goal: read like a real Chrome window. The window chrome (title bar +
  *  traffic lights) is drawn by the dispatcher; this routine paints
@@ -2468,10 +2777,10 @@ static i32 chrome_active_tab = 0;
 
 static void chrome_input_key(i32 key)
 {
-    /* Tab / Shift-Tab cycle the active tab; left/right also move it.   */
-    if (key == 0x09 /* TAB */ || key == 0x0E /* RIGHT */) {
+    /* Tab and arrow keys cycle tabs. */
+    if (key == KEY_TAB || key == KEY_RIGHT) {
         chrome_active_tab = (chrome_active_tab + 1) % 3;
-    } else if (key == 0x0D /* LEFT */ || key == 0x0B /* SHIFT-TAB */) {
+    } else if (key == KEY_LEFT) {
         chrome_active_tab = (chrome_active_tab + 2) % 3;
     }
 }
@@ -2749,6 +3058,7 @@ static app_def_t APPS[] = {
     { "Calendar",   "month view",          0x3070FF, render_calendar, NULL,             icon_calendar },
     { "Gallery",    "palette swatches",    0xC084FC, render_gallery,  NULL,             icon_gallery  },
     { "Video",      "software player",     0x16B5A8, render_video,    video_input_key,  icon_video    },
+    { "Falco",      "native web search",   0x2A66F5, render_falco,    falco_input_key,  icon_falco    },
     { "Chrome",     "Tab to switch tabs",  0x4285F4, render_browser, chrome_input_key,  icon_browser  },
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
@@ -2873,25 +3183,17 @@ void apps_render_active(u32 frame)
     if (active_app < 0) return;
     const app_def_t *a = &APPS[active_app];
 
-    /* dim + softly blur the desktop behind the window so the app card
-     * lifts off the wallpaper exactly like macOS sheets. We blur in
-     * horizontal strips to fit the BLUR scratch buffer; without Aero
-     * we just darken at a flat alpha as before.                       */
+    i32 wx, wy, ww, wh;
+    wm_window_rect(&wx, &wy, &ww, &wh);
+    /* Full-screen blur was expensive on QEMU/TCG; keep depth by dimming the
+     * whole desktop and blurring only a small halo around the active window. */
     if (SET.aero_enabled) {
-        i32 W = (i32)FB.width;
-        i32 H = (i32)FB.height;
-        i32 strip = 320;
-        for (i32 y = 0; y < H; y += strip) {
-            i32 sh = (y + strip > H) ? H - y : strip;
-            gfx_blur_rect(0, y, W, sh, 5);
-        }
-        gfx_rect_a(0, 0, W, H, COL_SHADOW, 70);
+        i32 hx = wx - 24, hy = wy - 24, hw = ww + 48, hh = wh + 48;
+        if (SET.theme == THEME_LIQUID) gfx_blur_rect(hx, hy, hw, hh, 4);
+        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 68);
     } else {
         gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 60);
     }
-
-    i32 wx, wy, ww, wh;
-    wm_window_rect(&wx, &wy, &ww, &wh);
 
     /* slide-in: 200 ms — only on first open, not while dragging */
     if (!wm_dragging && !wm_resizing) {

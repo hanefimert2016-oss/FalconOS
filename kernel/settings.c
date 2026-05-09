@@ -26,7 +26,7 @@ void settings_init(void)
 {
     k_memset(&SET, 0, sizeof(SET));
     SET.installed     = false;          /* installer wizard pending      */
-    SET.theme         = THEME_LIGHT;
+    SET.theme         = THEME_LIQUID;   /* default “Liquid Glass” desktop      */
     SET.accent        = ACC_BLUE;
     SET.lang          = LANG_TR;        /* repo owner is Turkish         */
     SET.kbd_layout    = KBD_TR_Q;       /* default for TR users          */
@@ -51,10 +51,7 @@ void settings_init(void)
      * the lock screen still shows a sensible local time.                */
     SET.tz_minutes    = 180;
     SET.welcome_shown = false;
-    /* FalconOS 1 — install target picked by the wizard. -1 means
-     * "RAM only".  diskdb_load() may overwrite this from the
-     * superblock if the saved settings already had a target.      */
-    SET.install_disk  = -1;
+    SET.install_disk  = -1;            /* güvenli çalıştırma unless user picks ATA */
     /* FalconOS 1 — Help drawer; auto-opens on first desktop session. */
     SET.help_seen     = false;
 

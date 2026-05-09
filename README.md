@@ -285,17 +285,20 @@ make run-headless         # no window — useful for screenshots / CI
 make run-fb               # boot the ELF directly via -kernel (faster iter)
 
 # ---- persistent disk: user accounts + settings survive reboots -----------
-# `make run-disk` creates a 64 MiB raw IDE drive at build/falcon.img on the
+# `make run-disk` creates a 4 GiB raw IDE drive at build/falcon.img on the
 # first run, then attaches it as the primary master. The kernel writes the
 # whole user database (incl. PBKDF2 hashes) to LBA0–3 on every change.
 make run-disk             # SDL window  + persistent disk
 make run-disk-headless    # no window   + persistent disk
 make wipe-disk            # delete build/falcon.img → installer next time
 
+# resource tuning (defaults are already high: RAM=12288, CPUS=6, VRAM=256)
+make run RAM=16384 CPUS=8 VRAM=512
+
 # ---- manually attach a disk image to a one-off run -----------------------
-qemu-system-x86_64 -cdrom build/FalconOS.iso -m 512M \
+qemu-system-x86_64 -cdrom build/FalconOS.iso -m 12288M -smp 6 \
     -drive file=build/falcon.img,format=raw,if=ide,index=0 \
-    -no-reboot -no-shutdown -display sdl -vga std -global VGA.vgamem_mb=64
+    -no-reboot -no-shutdown -display sdl -vga std -global VGA.vgamem_mb=256
 ```
 
 ### First boot — what to expect
@@ -361,8 +364,8 @@ USB device, leave "DD image" mode selected when Rufus prompts. Click
 | Component       | Minimum                                            |
 |-----------------|----------------------------------------------------|
 | CPU             | x86_64 (CPUID.80000001:EDX bit 29 = 1)             |
-| RAM             | 256 MiB at HD, 512 MiB at FHD, 1 GiB at 2K         |
-| Storage         | 64 MiB free (any IDE / SATA disk; FALC superblock) |
+| RAM             | 1 GiB minimum (4+ GiB recommended for Liquid)       |
+| Storage         | 4 GiB suggested (Falcon image defaults to 4 GiB)    |
 | Display         | VESA-compatible, ≥ 1024 × 768 at 32-bpp            |
 | Keyboard        | PS/2 or USB (auto-emulated)                        |
 | Mouse           | PS/2 or USB (auto-emulated). Optional.             |
@@ -426,10 +429,11 @@ buttons and a "yüklü" badge.
 | 9 | Calendar   | Month grid with "today" highlighted from uptime             |
 |10 | Gallery    | Lumen / Nox palette swatches with hex codes                 |
 |11 | Video      | Software-rendered demo video player (play/pause/seek)       |
-|12 | Chrome     | Chrome-style browser mock + docs/source tabs                |
-|13 | Heroic     | Linux game-launcher compatibility mock                       |
-|14 | Store      | prg package browser — search, install, uninstall            |
-|15 | About      | Version, native subsystem summary, ATA probe results        |
+|12 | Falco      | Native browser/search shell (indexed web cards + API-ready) |
+|13 | Chrome     | Chrome-style browser mock + docs/source tabs                |
+|14 | Heroic     | Linux game-launcher compatibility mock                       |
+|15 | Store      | prg package browser — search, install, uninstall            |
+|16 | About      | Version, native subsystem summary, ATA probe results        |
 
 ## Driver source attribution
 

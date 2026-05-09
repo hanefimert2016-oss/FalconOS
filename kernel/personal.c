@@ -37,7 +37,7 @@ static void draw_uptime_card(void)
 {
     i32 x = 24, y = 50, w = 240, h = 84;
     gfx_round_glass(x, y, w, h, 16);
-    gfx_text(x + 18, y + 14, T("Up-time", "Calisma"), PAL_TEXT_DIM);
+    gfx_text(x + 18, y + 14, T("Up-time", "Çalışma"), PAL_TEXT_DIM);
 
     u32 H, M, S; pit_uptime(&H, &M, &S);
     char buf[32], tmp[8];
@@ -117,8 +117,7 @@ static void draw_dock(void)
     if (SET.aero_enabled) {
         gfx_round_rect_a(dx + 2, dy + 8, dw, dh, 26, COL_SHADOW, 60);
         if (SET.theme == THEME_LIQUID) {
-            gfx_blur_rect(dx, dy, dw, dh, 8);
-            gfx_blur_rect(dx, dy, dw, dh, 4);
+            gfx_blur_rect(dx, dy, dw, dh, 6);
             gfx_round_rect_a(dx, dy, dw, dh, 26, 0xEAF7FF, 110);
             gfx_round_rect_a(dx + 6, dy + 2, dw - 12, 6, 4, 0xFFFFFF, 120);
         } else {
@@ -159,15 +158,22 @@ static void draw_dock(void)
         if (desktop_pin_is_pinned(i)) {
             gfx_circle(ix2 + rad - 4, iy2 - rad + 4, 4, COL_OK);
         }
+        /* yellow "minimized" marker for the app hidden by the traffic light */
+        if (apps_minimized() == i) {
+            gfx_round_rect(ix2 - 9, iy2 + rad + 6, 18, 4, 2, COL_WARN);
+        }
         /* highlight ring + label on hovered tile */
         if (hov) {
             gfx_circle_outline(ix2, iy2, rad + 4, PAL_ACCENT);
-            i32 lw = gfx_text_width(apps_name(i)) + 16;
+            char label[40];
+            k_strcpy(label, apps_name(i));
+            if (apps_minimized() == i) k_strcat(label, T(" (min)", " (küçük)"));
+            i32 lw = gfx_text_width(label) + 16;
             i32 lx = ix2 - lw / 2;
             i32 ly = iy2 + rad + 6;
             gfx_round_rect_a(lx, ly, lw, 18, 9, PAL_PANEL, 240);
             gfx_round_outline(lx, ly, lw, 18, 9, PAL_HAIRLINE);
-            gfx_text_centered(ix2, ly + 2, apps_name(i), PAL_TEXT);
+            gfx_text_centered(ix2, ly + 2, label, PAL_TEXT);
         }
 
         if (hov_m && clicked)  apps_open(i);
@@ -272,6 +278,14 @@ void mode_personal_render(u32 frame)
     desktop_pins_render(frame);
     draw_welcome_banner();
     draw_dock();
+    if (apps_active() < 0 && apps_minimized() >= 0) {
+        char hint[96];
+        k_strcpy(hint, T("App minimized: ", "Uygulama küçültüldü: "));
+        k_strcat(hint, apps_name(apps_minimized()));
+        k_strcat(hint, T(" — click its dock icon to restore.",
+                         " — geri getirmek için dock simgesine tıkla."));
+        gfx_text_centered((i32)FB.width / 2, (i32)FB.height - 44, hint, COL_WARN);
+    }
 
     /* nav hint */
     gfx_text_centered((i32)FB.width / 2,
@@ -287,29 +301,6 @@ void mode_personal_render(u32 frame)
      * underlying app sees nothing.                                       */
     {
         i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
-        
-        /* dock tile clicking (restore minimized app or launch) */
-        i32 dock_h = (i32)FB.height - 8 - (50 + SET.dock_size * 9) / 2;
-        if (my >= dock_h - 30 && my <= dock_h + 30 && ml && 
-            !mouse_peek_click() /* single click consumed */) {
-            i32 n = apps_count();
-            if (n > 7) n = 7;
-            i32 tile = 50 + SET.dock_size * 9;
-            i32 gap = 14 + SET.dock_size * 2;
-            i32 dock_w = (i32)FB.width / 2 - (n * (tile + gap)) / 2;
-            for (i32 i = 0; i < n; i++) {
-                i32 tx = dock_w + i * (tile + gap);
-                if (mx >= tx && mx <= tx + tile) {
-                    if (apps_minimized() == i) {
-                        apps_open(i);  /* restore minimized app */
-                    } else if (apps_active() != i) {
-                        apps_open(i);  /* launch new app */
-                    }
-                    (void)mouse_consume_click();
-                    break;
-                }
-            }
-        }
         
         if (apps_active() >= 0) {
             bool edge = mouse_peek_click();
