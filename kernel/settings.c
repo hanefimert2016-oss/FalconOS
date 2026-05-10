@@ -54,6 +54,10 @@ void settings_init(void)
     SET.install_disk  = -1;            /* güvenli çalıştırma unless user picks ATA */
     /* FalconOS 1 — Help drawer; auto-opens on first desktop session. */
     SET.help_seen     = false;
+    /* FalconOS 1.2 — workspaces + first-time tour                       */
+    SET.active_workspace = 0;
+    SET.workspace_count  = 4;
+    SET.toured           = false;
 
     /* Probe disk and try to restore the entire settings_t from LBA0. If a
      * superblock with matching magic+version+checksum is found, SET is

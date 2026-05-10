@@ -99,19 +99,25 @@ static void draw_res_card(void)
 static void draw_panel(void)
 {
     i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
-    bool clicked = false;
-    bool rclicked = false;
-    if (apps_active() < 0) {
-        clicked  = mouse_consume_click();
-        rclicked = mouse_consume_right();
-    }
-    (void)ml; (void)rclicked;
+    (void)ml;
 
     /* Panel dimensions: 52 px (Win11 default-ish, scales with text)        */
     const i32 ph = 52;
     i32 py  = (i32)FB.height - ph;
     i32 pw  = (i32)FB.width;
     i32 cy  = py + ph / 2;
+
+    /* Only consume clicks that actually fall ON this panel — clicks
+     * above land on desktop pins, the WM, or the top menu bar (workspace
+     * dots, Jarvis search). Without this gate the panel was eating every
+     * click in the frame and breaking the top bar entirely.            */
+    bool clicked = false;
+    bool rclicked = false;
+    if (apps_active() < 0 && my >= py) {
+        clicked  = mouse_consume_click();
+        rclicked = mouse_consume_right();
+    }
+    (void)rclicked;
 
     /* Panel background — frosted strip with subtle top hairline + a 1-px
      * sub-hairline 1 px below for a sense of depth.                       */

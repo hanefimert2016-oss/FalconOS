@@ -487,6 +487,20 @@ typedef struct {
      * 128 entries gives ~1.5× headroom over today's 85-entry catalogue and
      * fits comfortably inside the 2 048-byte FalconFS superblock budget. */
     u8          prg_installed[128];
+
+    /* FalconOS 1.2 — virtual desktops / workspaces.
+     *   active_workspace : 0..3, current workspace shown.
+     *   workspace_count  : how many user-visible workspaces (always 4).
+     * Apps that are spawned while a workspace is active are tagged with
+     * that workspace index and only show on the taskbar of that workspace
+     * (apps_workspace_for[]).                                            */
+    i32         active_workspace;
+    i32         workspace_count;
+
+    /* FalconOS 1.2 — first-time setup splash + tour. Once SET.toured = 1,
+     * never shown again. (welcome_shown is the legacy banner; toured is
+     * the new sliding 4-page tour.)                                     */
+    bool        toured;
 } settings_t;
 
 extern settings_t SET;
@@ -530,7 +544,7 @@ void hex_encode(const u8 *in, u32 n, char *out);   /* out >= n*2+1 chars   */
 
 /* ---- disk persistence: FalconFS superblock (kernel/diskdb.c) ------------- */
 #define FALCONFS_MAGIC      0x46414C43   /* 'FALC' */
-#define FALCONFS_VERSION    3            /* FalconOS 1.1: prg install state  */
+#define FALCONFS_VERSION    4            /* FalconOS 1.2: workspaces + tour  */
 #define FALCONFS_SECTOR     0            /* LBA0 of master ATA device      */
 
 void diskdb_load(void);          /* called from settings_init()             */

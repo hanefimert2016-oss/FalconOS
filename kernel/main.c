@@ -110,14 +110,66 @@ static void draw_menu_bar(void)
     gfx_circle(mx, H / 2, 4, accent);
     gfx_text(mx + 12, 7, label, PAL_TEXT_DIM);
 
-    /* hint pill (centered) */
+    /* === workspace dots (centre-left) — 4 little pips, click to switch
+     * the active workspace. The current workspace is shown filled with
+     * the accent colour, others are outline-only. Hovering shows a
+     * subtle highlight. */
     {
-        const char *hint = T("F2 Launchpad    F12 Power    Esc closes",
-                             "F2 Launchpad    F12 Guc    Esc kapatir");
-        i32 hw = gfx_text_width(hint) + 28;
-        i32 hx = (W - hw) / 2;
-        gfx_round_rect_a(hx, 4, hw, H - 8, 11, PAL_PANEL_DEEP, 255);
-        gfx_text(hx + 14, 7, hint, PAL_TEXT_DIM);
+        i32 wc = SET.workspace_count > 0 ? SET.workspace_count : 4;
+        if (wc > 8) wc = 8;
+        i32 dot_size = 14;
+        i32 dot_gap  = 8;
+        i32 dx_start = (W - (wc * dot_size + (wc - 1) * dot_gap)) / 2 - 80;
+        i32 mx_, my_; bool ml_; mouse_get(&mx_, &my_, &ml_); (void)ml_;
+        for (i32 i = 0; i < wc; i++) {
+            i32 dx = dx_start + i * (dot_size + dot_gap);
+            i32 dy = (H - dot_size) / 2;
+            bool active = (i == SET.active_workspace);
+            bool hover  = (mx_ >= dx && mx_ < dx + dot_size &&
+                           my_ >= dy && my_ < dy + dot_size);
+            if (active) {
+                gfx_round_rect_a(dx, dy, dot_size, dot_size, 4, PAL_ACCENT, 255);
+            } else if (hover) {
+                gfx_round_rect_a(dx, dy, dot_size, dot_size, 4, PAL_ACCENT, 90);
+            } else {
+                gfx_round_outline(dx, dy, dot_size, dot_size, 4, PAL_TEXT_DIM);
+            }
+            if (hover && mouse_peek_click()) {
+                (void)mouse_consume_click();
+                SET.active_workspace = i;
+                /* Switching workspace closes any centred app window so
+                 * the new workspace starts clean. Apps are still
+                 * available; they just aren't re-opened across spaces. */
+                apps_close();
+            }
+        }
+    }
+
+    /* === Jarvis quick-search pill (centre, just right of the dots) ====== */
+    {
+        const char *placeholder =
+            T("Search apps, settings, or ask Jarvis...",
+              "Uygulama ara veya Jarvis'e sor...");
+        i32 jw = gfx_text_width(placeholder) + 36;
+        i32 jx = (W - jw) / 2 + 80;
+        i32 jy = 4;
+        gfx_round_rect_a(jx, jy, jw, H - 8, 11, PAL_PANEL_DEEP, 255);
+        /* magnifier glyph */
+        gfx_circle_outline(jx + 12, H / 2, 5, PAL_TEXT_DIM);
+        gfx_line(jx + 16, H / 2 + 4, jx + 21, H / 2 + 9, PAL_TEXT_DIM);
+        gfx_text(jx + 28, 7, placeholder, PAL_TEXT_FAINT);
+        /* clicking opens Jarvis app */
+        i32 mxp, myp; bool mlp; mouse_get(&mxp, &myp, &mlp); (void)mlp;
+        if (mxp >= jx && mxp < jx + jw && myp >= 0 && myp < H &&
+            mouse_peek_click()) {
+            (void)mouse_consume_click();
+            for (i32 i = 0; i < apps_count(); i++) {
+                if (k_strcmp(apps_name(i), "Jarvis") == 0 ||
+                    k_strcmp(apps_name(i), "jarvis") == 0) {
+                    apps_open(i); break;
+                }
+            }
+        }
     }
 
     /* right: locale-formatted "DD <mon> HH:MM:SS"  +  lang badge      */
