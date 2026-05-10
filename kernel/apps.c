@@ -1935,6 +1935,153 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         k_strcpy(out, argv[1]); k_strcat(out, " not found");
         return 1;
     }
+    /* network — delegate to net_tools (ip / ping / arp / netstat) ---- */
+    if (k_strcmp(cmd, "ip") == 0 || k_strcmp(cmd, "ping") == 0 ||
+        k_strcmp(cmd, "arp") == 0 || k_strcmp(cmd, "netstat") == 0) {
+        char buf[256];
+        k_strcpy(buf, cmd);
+        for (i32 i = 1; i < argc; i++) {
+            k_strcat(buf, " ");
+            k_strcat(buf, argv[i]);
+        }
+        net_tools_dispatch(buf, out);
+        return 0;
+    }
+    if (k_strcmp(cmd, "ifconfig") == 0) {
+        net_tools_dispatch("ip addr", out);
+        return 0;
+    }
+    if (k_strcmp(cmd, "route") == 0) {
+        if (!net_present()) { k_strcpy(out, "route: no adapter"); return 1; }
+        k_strcpy(out, "Destination     Gateway         Iface\n0.0.0.0         ");
+        k_strcat(out, net_gateway());
+        k_strcat(out, "         eth0");
+        return 0;
+    }
+    if (k_strcmp(cmd, "wget") == 0 || k_strcmp(cmd, "curl") == 0) {
+        if (argc < 2) {
+            k_strcpy(out, cmd); k_strcat(out, ": missing URL");
+            return 1;
+        }
+        if (!net_connected()) {
+            k_strcpy(out, cmd); k_strcat(out, ": no network — Settings > Network or 'ip dhcp'");
+            return 1;
+        }
+        k_strcpy(out, cmd); k_strcat(out, ": HTTPS pending TLS port (FalconOS 1.2 in progress)");
+        return 1;
+    }
+    /* nl — number lines (mimics POSIX nl with default style)         */
+    if (k_strcmp(cmd, "nl") == 0) {
+        if (argc < 2) { k_strcpy(out, "nl: missing operand"); return 1; }
+        shfile_t *n = sh_file_find(argv[1]);
+        if (!n) { k_strcpy(out, "nl: "); k_strcat(out, argv[1]); k_strcat(out, ": no such file"); return 1; }
+        i32 ln = 1;
+        i32 oi = 0; out[0] = 0;
+        u32 i = 0;
+        while (i < n->len && oi < 1900) {
+            char nbuf[8];
+            k_itoa(ln, nbuf, 10);
+            for (i32 j = 0; nbuf[j] && oi < 1900; j++) out[oi++] = nbuf[j];
+            out[oi++] = '\t';
+            while (i < n->len && n->data[i] != '\n' && oi < 1900) out[oi++] = n->data[i++];
+            if (i < n->len && n->data[i] == '\n') { out[oi++] = '\n'; i++; ln++; }
+        }
+        out[oi] = 0;
+        return 0;
+    }
+    /* paste — paste multiple files line-by-line, tab-separated       */
+    if (k_strcmp(cmd, "paste") == 0) {
+        if (argc < 2) { k_strcpy(out, "paste: missing operand"); return 1; }
+        shfile_t *files[8] = {0};
+        i32 fc = 0;
+        for (i32 i = 1; i < argc && fc < 8; i++) {
+            files[fc] = sh_file_find(argv[i]);
+            if (!files[fc]) { k_strcpy(out, "paste: "); k_strcat(out, argv[i]); k_strcat(out, ": no such file"); return 1; }
+            fc++;
+        }
+        u32 pos[8] = {0};
+        i32 oi = 0; out[0] = 0;
+        bool any = true;
+        while (any && oi < 1900) {
+            any = false;
+            for (i32 f = 0; f < fc; f++) {
+                if (f) out[oi++] = '\t';
+                while (pos[f] < files[f]->len && files[f]->data[pos[f]] != '\n' && oi < 1900) {
+                    out[oi++] = files[f]->data[pos[f]++];
+                    any = true;
+                }
+                if (pos[f] < files[f]->len && files[f]->data[pos[f]] == '\n') {
+                    pos[f]++;
+                    any = true;
+                }
+            }
+            if (any && oi < 1900) out[oi++] = '\n';
+        }
+        out[oi] = 0;
+        return 0;
+    }
+    /* awk -F<sep> '{print $N}' file — minimal field extraction        */
+    if (k_strcmp(cmd, "awk") == 0) {
+        if (argc < 4) { k_strcpy(out, "awk: usage: awk -F<sep> {print $N} <file>"); return 1; }
+        char sep = ' ';
+        i32 ai = 1;
+        if (argv[ai][0] == '-' && argv[ai][1] == 'F' && argv[ai][2]) {
+            sep = argv[ai][2]; ai++;
+        }
+        i32 col = 0;
+        char *prog = argv[ai];
+        for (i32 j = 0; prog[j]; j++) {
+            if (prog[j] == '$' && prog[j+1] >= '0' && prog[j+1] <= '9') {
+                col = prog[j+1] - '0';
+                break;
+            }
+        }
+        ai++;
+        shfile_t *n = sh_file_find(argv[ai]);
+        if (!n) { k_strcpy(out, "awk: "); k_strcat(out, argv[ai]); k_strcat(out, ": no such file"); return 1; }
+        i32 oi = 0; out[0] = 0;
+        u32 i = 0;
+        while (i < n->len && oi < 1900) {
+            i32 c = 1;
+            while (i < n->len && n->data[i] != '\n') {
+                if (c == col || col == 0) {
+                    if (oi < 1900) out[oi++] = n->data[i];
+                }
+                if (n->data[i] == sep) c++;
+                i++;
+            }
+            if (i < n->len) { out[oi++] = '\n'; i++; }
+        }
+        out[oi] = 0;
+        return 0;
+    }
+    /* sed s/X/Y/ <file> — single-rule substitution                   */
+    if (k_strcmp(cmd, "sed") == 0) {
+        if (argc < 3 || argv[1][0] != 's' || argv[1][1] != '/') {
+            k_strcpy(out, "sed: usage: sed s/X/Y/ <file>");
+            return 1;
+        }
+        char from[64] = {0}, to[64] = {0};
+        i32 sai = 2; /* skip s and / */
+        i32 fi = 0;
+        while (argv[1][sai] && argv[1][sai] != '/' && fi < 63) from[fi++] = argv[1][sai++];
+        if (argv[1][sai] == '/') sai++;
+        i32 ti = 0;
+        while (argv[1][sai] && argv[1][sai] != '/' && ti < 63) to[ti++] = argv[1][sai++];
+        shfile_t *n = sh_file_find(argv[2]);
+        if (!n) { k_strcpy(out, "sed: "); k_strcat(out, argv[2]); k_strcat(out, ": no such file"); return 1; }
+        i32 fl = k_strlen(from);
+        i32 tl = k_strlen(to);
+        i32 oi = 0; out[0] = 0;
+        for (u32 i = 0; i < n->len && oi < 1900;) {
+            bool match = (fl > 0 && i + (u32)fl <= n->len);
+            for (i32 k = 0; k < fl && match; k++) if (n->data[i+k] != from[k]) match = false;
+            if (match) { for (i32 k = 0; k < tl && oi < 1900; k++) out[oi++] = to[k]; i += fl; }
+            else       { out[oi++] = n->data[i++]; }
+        }
+        out[oi] = 0;
+        return 0;
+    }
     /* unknown */
     k_strcpy(out, cmd); k_strcat(out, ": command not found");
     return 127;
