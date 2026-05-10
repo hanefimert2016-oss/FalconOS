@@ -361,6 +361,42 @@ void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r)
                 }
             }
 
+            /* (8b) animated specular sweep — Liquid Glass v3.
+             *
+             * A soft 80-px-wide diagonal highlight band traverses the
+             * panel horizontally every ~6 s. It's the same trick Apple
+             * uses on the Lock Screen + Control Center "wet glass" — a
+             * slow procedural sweep that gives the surface motion even
+             * when nothing else on the desktop is animating.
+             *
+             * We modulate the alpha with a smooth triangle so the band
+             * fades in at the leading edge and out at the trailing
+             * edge, never appearing as a hard line.                  */
+            {
+                /* one full sweep every 6 seconds at 100 Hz tick rate */
+                u32 period   = 600;
+                u32 phase    = g_ticks % period;
+                /* travel: -80 .. w + 80                              */
+                i32 sweep_x  = -80 + (i32)((phase * (u32)(w + 160)) / period);
+                i32 band_w   = 80;
+                for (i32 i = 0; i < band_w; i++) {
+                    i32 px = sweep_x + i;
+                    if (px <= r || px >= w - r) continue;
+                    /* triangle envelope 0..255..0                    */
+                    i32 d   = i < band_w / 2 ? i : (band_w - 1 - i);
+                    u8  amp = (u8)((d * 240) / (band_w / 2)); /* 0..240 */
+                    u8  a   = (u8)(amp * 22 / 240);           /* peak ~22 */
+                    if (a == 0) continue;
+                    /* sweep covers the top half of the panel only —
+                     * matches macOS Tahoe lock-screen sweep behavior */
+                    i32 rows = h / 2;
+                    if (rows > 40) rows = 40;
+                    for (i32 j = 1; j < rows; j++) {
+                        gfx_pixel_a(x + px, y + j, 0xFFFFFF, a);
+                    }
+                }
+            }
+
             /* (8) crisp polish */
             gfx_round_outline(x, y, w, h, r, PAL_HAIRLINE);
             gfx_round_inset_highlight(x, y, w, h, r);
@@ -649,6 +685,28 @@ static i32 glyph_index(u32 cp)
         case 0x015F: return 104;    /* ş */
         case 0x00DC: return 105;    /* Ü */
         case 0x00FC: return 106;    /* ü */
+        /* Loanword diacritics — map circumflex letters to their base
+         * glyph so kâr / kâğıt / Â / hayâl render legibly. We don't
+         * carry a separate glyph because: (a) ASCII fallback is what
+         * Pardus / Solus / Ubuntu Turkish keyboards do in TUI mode,
+         * (b) adding 6 more glyphs inflates font_data.c by 4-5 KiB,
+         * (c) genfont.py would need re-running with DejaVu present.
+         * Net: â → 'a', î → 'i', û → 'u' (same case-folded glyph). */
+        case 0x00C2: return (i32)('A' - 0x20); /* Â */
+        case 0x00E2: return (i32)('a' - 0x20); /* â */
+        case 0x00CE: return (i32)('I' - 0x20); /* Î */
+        case 0x00EE: return (i32)('i' - 0x20); /* î */
+        case 0x00DB: return (i32)('U' - 0x20); /* Û */
+        case 0x00FB: return (i32)('u' - 0x20); /* û */
+        /* Stress / accents on common loanwords (resmî, askerî, etc.) */
+        case 0x00C9: return (i32)('E' - 0x20); /* É */
+        case 0x00E9: return (i32)('e' - 0x20); /* é */
+        /* No-break / soft chars commonly leaked from copy-paste     */
+        case 0x00A0: return (i32)(' ' - 0x20); /* NBSP -> space      */
+        case 0x2013: return (i32)('-' - 0x20); /* en dash            */
+        case 0x2014: return (i32)('-' - 0x20); /* em dash            */
+        case 0x2018: case 0x2019: return (i32)('\'' - 0x20);
+        case 0x201C: case 0x201D: return (i32)('"' - 0x20);
     }
     return -1;
 }
