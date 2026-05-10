@@ -2538,7 +2538,7 @@ static void render_calc(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 typedef enum {
     SR_THEME = 0, SR_ACCENT, SR_AERO, SR_LANG, SR_KBD, SR_TZ, SR_DOCK,
     SR_ANIM, SR_WIDGETS, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_DRIVERS,
-    SR_SAVE, SR_LOCK, SR_COUNT
+    SR_NETWORK, SR_SAVE, SR_LOCK, SR_COUNT
 } set_row_t;
 
 static i32 set_row = 0;
@@ -2669,6 +2669,14 @@ static void set_input_key(i32 key)
             break;
         case SR_LOCK:
             lockscreen_lock();
+            break;
+        case SR_NETWORK:
+            /* Enter requests DHCP. Left/Right toggle adapter present
+             * (helps when you're walking through Settings without a
+             * network device — also unlocks the Network app for demos). */
+            if (d == 0) {
+                (void)net_dhcp();        /* Enter pressed */
+            }
             break;
         }
     }
@@ -2834,6 +2842,30 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         s_row(sx, sy + SR_DRIVERS * step, sw,
               T("Drivers", "Sürücüler"), dbuf,
               set_row == SR_DRIVERS, status_color);
+    }
+
+    /* Network status — virtio-net link state, MAC, IPv4. The driver in
+     * linux/virtio_net.c does not currently probe PCI on bare-metal; on
+     * QEMU it reports 'down' until DHCP is requested. We reflect the
+     * real reported state instead of inventing one.                     */
+    {
+        char nbuf[120];
+        u32  net_color;
+        if (!net_present()) {
+            k_strcpy(nbuf, T("no adapter found", "kart bulunamadı"));
+            net_color = COL_ERR;
+        } else if (!net_connected()) {
+            k_strcpy(nbuf, T("link down", "bağlı değil"));
+            net_color = COL_WARN;
+        } else {
+            k_strcpy(nbuf, net_ip_addr());
+            k_strcat(nbuf, "  ");
+            k_strcat(nbuf, net_summary());
+            net_color = COL_OK;
+        }
+        s_row(sx, sy + SR_NETWORK * step, sw,
+              T("Network", "Ağ"), nbuf,
+              set_row == SR_NETWORK, net_color);
     }
 
     /* Save to disk ----------------------------------------------------- */
