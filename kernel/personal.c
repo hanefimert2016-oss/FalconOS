@@ -87,7 +87,15 @@ static void draw_res_card(void)
     gfx_circle(x + w - 22, y + 22, 5, PAL_ACCENT);
 }
 
-/* --- KDE/GNOME style bottom panel ---------------------------------------- */
+/* --- Windows 11-style centred bottom taskbar ----------------------------
+ *
+ * FalconOS 1.2: re-skinned to match the modern Windows taskbar — centred
+ * Start + open-app stack with a true frosted-glass strip, real tray
+ * glyphs (network bars / volume waves / battery cell) and a far-right
+ * "show desktop" hover zone. The legacy "x" close glyph on each tile is
+ * gone in favour of a Win11-style middle-click close (or right-click
+ * menu, future). Hover background uses a soft accent wash so the whole
+ * panel feels alive.                                                     */
 static void draw_panel(void)
 {
     i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
@@ -97,128 +105,159 @@ static void draw_panel(void)
         clicked  = mouse_consume_click();
         rclicked = mouse_consume_right();
     }
-    (void)ml;
+    (void)ml; (void)rclicked;
 
-    /* Panel dimensions */
-    i32 ph = 48;  /* panel height */
-    i32 py = (i32)FB.height - ph;
-    i32 pw = (i32)FB.width;
+    /* Panel dimensions: 52 px (Win11 default-ish, scales with text)        */
+    const i32 ph = 52;
+    i32 py  = (i32)FB.height - ph;
+    i32 pw  = (i32)FB.width;
+    i32 cy  = py + ph / 2;
 
-    /* Panel background with Aero blur */
+    /* Panel background — frosted strip with subtle top hairline + a 1-px
+     * sub-hairline 1 px below for a sense of depth.                       */
     if (SET.aero_enabled) {
-        gfx_blur_rect(0, py, pw, ph, 5);
-        gfx_rect_a(0, py, pw, ph, PAL_PANEL, 150);
+        gfx_blur_rect(0, py, pw, ph, 6);
+        if (SET.theme == THEME_LIQUID) {
+            gfx_rect_a(0, py, pw, ph, 0xE8F6FF, 110);
+        } else {
+            gfx_rect_a(0, py, pw, ph, PAL_PANEL, 165);
+        }
     } else {
-        gfx_rect_a(0, py, pw, ph, PAL_PANEL, 230);
+        gfx_rect_a(0, py, pw, ph, PAL_PANEL, 232);
     }
-    gfx_rect_a(0, py, pw, 1, PAL_HAIRLINE, 255);
+    gfx_rect_a(0, py + 0, pw, 1, 0xFFFFFF,    65);
+    gfx_rect_a(0, py + 1, pw, 1, PAL_HAIRLINE, 255);
 
-    /* === Start Button (Falcon icon) === */
-    i32 start_btn_x = 12;
-    i32 start_btn_y = py + 8;
-    i32 start_btn_size = 32;
-    bool start_hover = (mx >= start_btn_x && mx <= start_btn_x + start_btn_size &&
-                       my >= start_btn_y && my <= start_btn_y + start_btn_size);
+    /* ----- compute centred run of: [Start] [App] [App] ... -------------- */
+    const i32 start_w = 40;
+    const i32 tile_w  = 40;            /* icon-only Win11-style tiles */
+    const i32 gap     = 6;
+
+    i32 n = apps_count();
+    if (n > TASKBAR_MAX) n = TASKBAR_MAX;
+    i32 run_w = start_w + (n > 0 ? gap + n * tile_w + (n - 1) * gap : 0);
+    i32 run_x = (pw - run_w) / 2;
+    i32 ty    = py + (ph - 36) / 2;
+
+    /* === Start button — rounded-square Falcon glyph (Win11 vibe) ====== */
+    i32 sx = run_x;
+    bool start_hover = (mx >= sx && mx < sx + start_w &&
+                        my >= ty && my < ty + 36);
     if (start_hover) {
-        gfx_round_rect_a(start_btn_x - 2, start_btn_y - 2, start_btn_size + 4, start_btn_size + 4, 8, PAL_ACCENT, 60);
+        gfx_round_rect_a(sx, ty, start_w, 36, 8, PAL_ACCENT, 70);
+    } else {
+        gfx_round_rect_a(sx, ty, start_w, 36, 8, PAL_PANEL_HI, 60);
     }
-    gfx_circle(start_btn_x + start_btn_size/2, start_btn_y + start_btn_size/2, start_btn_size/2 - 2, PAL_ACCENT);
-    gfx_text(start_btn_x + 8, start_btn_y + 10, "F", 0xFFFFFF);
-    if (start_hover && clicked) {
-        /* Clicking start button opens Launchpad */
-        launchpad_open();
+    /* mini Falcon: stylised wing chevron + dot                            */
+    {
+        i32 g_cx = sx + start_w / 2;
+        i32 g_cy = ty + 18;
+        gfx_circle(g_cx, g_cy - 2, 9, PAL_ACCENT);
+        gfx_circle(g_cx, g_cy - 2, 6, 0xFFFFFF);
+        gfx_circle(g_cx, g_cy - 2, 3, PAL_ACCENT);
+        /* tiny wing flick */
+        gfx_rect(g_cx - 7, g_cy + 8, 14, 2, PAL_ACCENT);
+        gfx_rect(g_cx - 4, g_cy + 11, 8, 2, PAL_ACCENT);
     }
+    if (start_hover && clicked) launchpad_open();
 
-    /* === Taskbar (open windows) === */
-    i32 taskbar_start = start_btn_x + start_btn_size + 20;
-    i32 taskbar_items = 0;
-    i32 taskbar_btn_w = 140;
-    i32 taskbar_btn_h = 32;
-    i32 taskbar_gap = 8;
-
-    /* Show open apps in taskbar */
-    for (i32 i = 0; i < apps_count() && taskbar_items < TASKBAR_MAX; i++) {
-        i32 tx = taskbar_start + taskbar_items * (taskbar_btn_w + taskbar_gap);
-        i32 ty = py + 8;
-
-        bool is_active = (apps_active() == i);
+    /* === Open-app tiles (icon-only, colour bar underneath when active) === */
+    i32 tx = sx + start_w + gap;
+    for (i32 i = 0; i < n; i++, tx += tile_w + gap) {
+        bool is_active    = (apps_active()    == i);
         bool is_minimized = (apps_minimized() == i);
-        bool task_hover = (mx >= tx && mx <= tx + taskbar_btn_w &&
-                          my >= ty && my <= ty + taskbar_btn_h);
+        bool hover        = (mx >= tx && mx < tx + tile_w &&
+                             my >= ty && my < ty + 36);
 
-        /* Taskbar button background */
+        /* hover wash + active wash                                        */
         if (is_active) {
-            gfx_round_rect_a(tx, ty, taskbar_btn_w, taskbar_btn_h, 6, PAL_ACCENT, 80);
-        } else if (is_minimized) {
-            gfx_round_rect_a(tx, ty, taskbar_btn_w, taskbar_btn_h, 6, PAL_TEXT_DIM, 40);
-        } else if (task_hover) {
-            gfx_round_rect_a(tx, ty, taskbar_btn_w, taskbar_btn_h, 6, PAL_PANEL_HI, 100);
+            gfx_round_rect_a(tx, ty, tile_w, 36, 8, PAL_ACCENT, 60);
+        } else if (hover) {
+            gfx_round_rect_a(tx, ty, tile_w, 36, 8, 0xFFFFFF, 50);
         }
 
-        /* White line below minimized apps (like macOS) */
-        if (is_minimized) {
-            gfx_rect_a(tx, ty + taskbar_btn_h - 2, taskbar_btn_w, 2, 0xFFFFFF, 180);
+        apps_draw_icon(i, tx + tile_w / 2, ty + 18);
+
+        /* Win11 underline: thin coloured pip below tile to indicate
+         * running / focused state. 16 px wide if active, 6 px if just
+         * running, hidden if neither (impossible here since the loop
+         * walks all running apps).                                       */
+        i32 bar_w = is_active ? 18 : (is_minimized ? 6 : 10);
+        i32 bar_x = tx + (tile_w - bar_w) / 2;
+        u32 bar_c = is_active ? PAL_ACCENT : PAL_TEXT_DIM;
+        gfx_rect_a(bar_x, ty + 36 - 2, bar_w, 2, bar_c, 220);
+
+        if (hover && clicked) {
+            if (is_active)        apps_close();
+            else                  apps_open(i);
         }
-
-        /* App icon */
-        apps_draw_icon(i, tx + 18, ty + taskbar_btn_h/2);
-
-        /* App name */
-        char name[24];
-        k_strcpy(name, apps_display_name(i));
-        /* Truncate if too long */
-        if (k_strlen(name) > 14) {
-            name[12] = '.';
-            name[13] = '.';
-            name[14] = '.';
-            name[15] = '\0';
-        }
-        gfx_text(tx + 38, ty + 10, name, is_active ? PAL_TEXT : PAL_TEXT_DIM);
-
-        /* Close button (X) */
-        if (task_hover) {
-            gfx_text(tx + taskbar_btn_w - 16, ty + 10, "x", is_active ? PAL_TEXT : PAL_TEXT_FAINT);
-        }
-
-        if (task_hover && clicked) {
-            if (is_active) {
-                apps_close();
-            } else {
-                apps_open(i);
-            }
-        }
-
-        taskbar_items++;
     }
 
-    /* === System Tray (right side) === */
-    i32 tray_x = pw - 180;
+    /* === Right tray: network / volume / battery + clock ================ */
+    i32 trx = pw - 14;          /* current right cursor                    */
 
-    /* Clock */
-    rtc_time_t now; rtc_local(&now);
-    char time_str[32];
-    char tmp[8];
-    k_strcpy(time_str, "");
-    k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(time_str, "0"); k_strcat(time_str, tmp);
-    k_strcat(time_str, ":");
-    k_itoa(now.min, tmp, 10); if (now.min < 10) k_strcat(time_str, "0"); k_strcat(time_str, tmp);
-    gfx_text(pw - 70, py + 16, time_str, PAL_TEXT);
+    /* "Show desktop" hover zone — last 6 px of the panel. Win11 trick:
+     * clicking it minimises the active app.                              */
+    {
+        bool sd_hover = (mx >= pw - 6 && my >= py);
+        if (sd_hover) gfx_rect_a(pw - 6, py, 6, ph, PAL_ACCENT, 80);
+        if (sd_hover && clicked && apps_active() >= 0) apps_close();
+    }
+    trx -= 4;
 
-    /* Date */
-    k_strcpy(tmp, "");
-    k_itoa(now.day, tmp, 10); if (now.day < 10) k_strcat(tmp, "0"); k_strcat(time_str, tmp);
-    gfx_text(pw - 70, py + 30, tmp, PAL_TEXT_DIM);
+    /* date + time stack -------------------------------------------------- */
+    {
+        rtc_time_t now; rtc_local(&now);
+        char time_str[16], date_str[20], tmp[8];
+        k_strcpy(time_str, "");
+        k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(time_str, "0"); k_strcat(time_str, tmp);
+        k_strcat(time_str, ":");
+        k_itoa(now.min,  tmp, 10); if (now.min  < 10) k_strcat(time_str, "0"); k_strcat(time_str, tmp);
 
-    /* Volume icon placeholder */
-    gfx_circle(pw - 160, py + 24, 6, PAL_TEXT_DIM);
-    gfx_circle(pw - 164, py + 24, 3, PAL_TEXT_DIM);
+        k_strcpy(date_str, "");
+        k_itoa(now.day, tmp, 10); k_strcat(date_str, tmp);
+        k_strcat(date_str, " ");
+        k_strcat(date_str, loc_month_short(now.month));
 
-    /* Network icon placeholder */
-    gfx_circle(pw - 185, py + 24, 5, net_connected() ? COL_OK : PAL_TEXT_FAINT);
+        i32 tw1 = gfx_text_width(time_str);
+        i32 tw2 = gfx_text_width(date_str);
+        i32 tw  = (tw1 > tw2 ? tw1 : tw2);
+        trx -= tw;
+        gfx_text(trx, py + 8,  time_str, PAL_TEXT);
+        gfx_text(trx, py + 26, date_str, PAL_TEXT_DIM);
+        trx -= 14;
+    }
 
-    /* Battery icon placeholder */
-    gfx_rect(pw - 205, py + 20, 16, 10, PAL_TEXT_DIM);
-    gfx_rect(pw - 205, py + 22, 12, 6, COL_OK);
+    /* battery — outline + 60% fill                                       */
+    {
+        i32 bx = trx - 22, by = cy - 6;
+        gfx_round_outline(bx, by, 22, 12, 3, PAL_TEXT_DIM);
+        gfx_rect(bx + 22, by + 4, 2, 4, PAL_TEXT_DIM);
+        gfx_rect_a(bx + 2, by + 2, 12, 8, COL_OK, 220);
+        trx = bx - 12;
+    }
+
+    /* network — 4 ascending bars; colour green if connected             */
+    {
+        u32 col = net_connected() ? COL_OK : PAL_TEXT_FAINT;
+        i32 nx = trx - 22, by = cy + 8;
+        for (i32 i = 0; i < 4; i++) {
+            i32 bh = 3 + i * 2;
+            gfx_rect_a(nx + i * 5, by - bh, 3, bh, col, 230);
+        }
+        trx = nx - 12;
+    }
+
+    /* volume — speaker glyph + 2 sound waves                             */
+    {
+        i32 vx = trx - 18, by = cy;
+        gfx_rect(vx, by - 4, 4, 8, PAL_TEXT_DIM);
+        gfx_rect(vx + 4, by - 6, 5, 12, PAL_TEXT_DIM);
+        /* waves (simple arcs as 2 px circles on right edge)             */
+        gfx_circle_outline(vx + 10, by, 4, PAL_TEXT_DIM);
+        gfx_circle_outline(vx + 10, by, 7, PAL_TEXT_DIM);
+        trx = vx - 14;
+    }
 }
 
 /* --- legacy dock (for compatibility) ------------------------------------ */
