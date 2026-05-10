@@ -38,6 +38,47 @@ opens the **Launchpad** (a full-screen 4 × 4 grid of all built-in
 apps). Inside the Launchpad, press **P** on a tile to pin / unpin it
 to the desktop. **Esc** closes the active app or Launchpad.
 
+## What's new in **FalconOS 1.2 — "Network Edition"**
+
+The 1.2 milestone is a polish-and-finish round on top of FalconOS 1:
+
+- **Windows-11-style centred taskbar** replaces the Big-Sur dock —
+  Start button + active-app pips + frosted-glass strip + real tray
+  glyphs (battery, network, volume, locale-formatted clock).
+- **Top panel** gains 4 workspace dots (centre-left) and a **Jarvis
+  search pill** (centre) that opens the assistant directly.
+- **First-boot is empty** — wallpaper + panels only, no centred
+  hero / no widgets / no banners. Widgets are opt-in from Settings.
+- **Liquid Glass v3** — the cam compositor now has an animated
+  specular sweep (80 px white band, 6 s cycle, triangle-envelope fade)
+  matching the macOS Tahoe / iOS 26 lock-screen sheets.
+- **Pardus-style Store** — two-pane layout: list on the left, hero
+  banner + summary + dependency chain + big Install button on the
+  right. Hero colour is a deterministic function of category palette.
+- **More terminal commands** — `ip`, `ping`, `arp`, `netstat`,
+  `ifconfig`, `route`, `nl`, `paste`, `awk -F<sep> '{print $N}'`,
+  `sed s/X/Y/` — all wired into the same shfs-backed shell.
+- **Network row in Settings** — surfaces real `net_present()` /
+  `net_connected()` / `net_ip_addr()` state; Enter requests DHCP.
+- **Extra Turkish + smart-quote glyph fallbacks** — `â î û Â Î Û`
+  and curly quotes / NBSP / en/em dashes all render legibly.
+- **`tools/build_prg.py`** — Python scaffolder that emits a
+  package manifest + cover screenshot + the C row for `prg.c`.
+
+### What's deliberately *not* in 1.2 (honest deferred list)
+
+- Real internet access (HTTPS to `api.duckduckgo.com`) needs a real
+  PCI virtio-net probe + lwIP TCP/IP + BearSSL TLS + a CA bundle —
+  ~50 K LOC of porting on bare metal. The `net_*` driver in
+  `linux/virtio_net.c` is a stub that returns `present=false` until
+  the probe lands.  Settings reflects this honestly.
+- `wget` / `curl` print "HTTPS pending TLS port" instead of pretending
+  to fetch.  Browser ships with cached / built-in results.
+- Jarvis remains a **deterministic intent engine**, not an LLM. There
+  is no model in the ISO and no network call from Jarvis.
+- EXE / AppImage runtime — not implemented. `prg install foo.exe`
+  copies the file but does not execute it.
+
 ## What's new in **FalconOS 1**
 
 This is the **canonical 1.0 release**. Everything below is built into a
