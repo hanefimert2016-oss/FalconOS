@@ -310,28 +310,23 @@ static void draw_welcome_banner(void)
 /* --- entry point --------------------------------------------------------- */
 void mode_personal_render(u32 frame)
 {
-    /* desktop chrome — order matters (back to front)                       */
-    draw_uptime_card();
-    draw_res_card();
-    widgets_render(frame);
+    /* desktop chrome — order matters (back to front)
+     *
+     * FalconOS 1.2: clean first-boot desktop. The Big-Sur uptime + display
+     * cards and the central 6-card widget grid are no longer drawn by
+     * default — desktop = wallpaper + the two panels only, like Windows /
+     * GNOME / Plasma. Widgets can be re-enabled from Settings (which sets
+     * SET.widgets_shown=true and persists). The legacy "App minimized"
+     * floating hint and the keyboard cheat-sheet at the bottom edge were
+     * also removed: the same info is in the Help drawer (?) glyph.       */
+    if (SET.widgets_shown) {
+        draw_uptime_card();
+        draw_res_card();
+        widgets_render(frame);
+    }
     desktop_pins_render(frame);
     draw_welcome_banner();
     draw_dock();
-    if (apps_active() < 0 && apps_minimized() >= 0) {
-        char hint[96];
-        k_strcpy(hint, T("App minimized: ", "Uygulama küçültüldü: "));
-        k_strcat(hint, apps_display_name(apps_minimized()));
-        k_strcat(hint, T(" — click its dock icon to restore.",
-                         " — geri getirmek için dock simgesine tıkla."));
-        gfx_text_centered((i32)FB.width / 2, (i32)FB.height - 44, hint, COL_WARN);
-    }
-
-    /* nav hint */
-    gfx_text_centered((i32)FB.width / 2,
-                      (i32)FB.height - 18,
-                      T("<- ->  navigate    Enter open    F2 Launchpad    right-click pins to desktop",
-                        "<- ->  gez    Enter aç    F2 Launchpad    sağ-tık masaüstüne sabitle"),
-                      PAL_TEXT_DIM);
 
     /* desktop-pin clicks fire BEFORE active app render so a click on a pin
      * launches an app immediately.  When an app IS active, hand the

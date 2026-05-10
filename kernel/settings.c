@@ -34,7 +34,7 @@ void settings_init(void)
     SET.dock_size     = 2;
     SET.viewport_w    = 0;              /* native                        */
     SET.viewport_h    = 0;
-    SET.widgets_shown = true;
+    SET.widgets_shown = false;          /* clean first-boot desktop      */
     SET.center_circle = false;          /* removed in v5 by user request */
     k_strcpy(SET.password, "");
     k_strcpy(SET.owner,    "Falcon");
