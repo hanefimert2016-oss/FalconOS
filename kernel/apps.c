@@ -612,7 +612,18 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     gfx_round_outline(inst_x, chip_y, inst_w, 20, 10, all_on ? PAL_HAIRLINE : PAL_ACCENT);
     gfx_text(inst_x + 10, chip_y + 5, chip_inst, all_on ? PAL_TEXT_DIM : PAL_ACCENT);
 
-    i32 lx = wx + 24, ly = wy + 82, lw = ww - 48;
+    /* Two-pane layout: left = package list (40%), right = detail card.
+     * Pardus / GNOME Software / KDE Discover all have a hero banner +
+     * description + Install button in a single card. We synthesise the
+     * banner from the package category palette + a large glyph because
+     * shipping per-package PNGs would multiply the ISO size and pull a
+     * PNG decoder into the kernel.                                    */
+    i32 list_w = (ww - 48) * 5 / 12;     /* ~42% of usable width */
+    if (list_w < 240) list_w = 240;
+    i32 lx = wx + 24, ly = wy + 82, lw = list_w;
+    i32 detail_x = lx + lw + 16;
+    i32 detail_w = ww - 24 - detail_x + wx;
+    if (detail_w < 220) detail_w = 220;
     i32 row_h = 32;
     i32 visible_total = store_visible_count();
     i32 visible = (wh - 112) / row_h;
@@ -662,45 +673,103 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         else if (p->category[0] == 'g') cat_color = COL_PURPLE;   /* games   */
         else if (p->category[0] == 'c') cat_color = 0x3070FF;     /* compat  */
         gfx_circle(lx + 14, y + 14, 5, cat_color);
-        /* name + version */
+        /* name only — summary moves to right pane */
         gfx_text(lx + 30, y + 8, p->name, PAL_TEXT);
-        gfx_text(lx + 30 + gfx_text_width(p->name) + 8,
-                 y + 8, p->version, PAL_TEXT_FAINT);
-        /* summary */
-        gfx_text(lx + 30 + gfx_text_width(p->name) + 8 + gfx_text_width(p->version) + 14,
-                 y + 8, p->summary, PAL_TEXT_DIM);
-
-        /* status/action pill */
-        bool installed = prg_is_installed(i);
-        const char *badge =
-            p->builtin             ? T("built-in",  "yerlesik") :
-            installed              ? T("remove",    "kaldir")   :
-                                     T("get",       "yükle");
-        i32 bw = gfx_text_width(badge) + 14;
-        i32 bx = lx + lw - bw - 10;
-        u32 bc = p->builtin ? PAL_PANEL_HI : (installed ? 0xEBC9C8 : PAL_ACCENT);
-        u32 tc = p->builtin ? PAL_TEXT_DIM : 0xFFFFFF;
-        gfx_round_rect_a(bx, y + 4, bw, row_h - 12, 8, bc, 255);
-        gfx_round_outline(bx, y + 4, bw, row_h - 12, 8, PAL_HAIRLINE);
-        gfx_text(bx + 7, y + 8, badge, tc);
+        /* installed checkmark on the right edge of the row */
+        bool inst_l = prg_is_installed(i);
+        if (inst_l) {
+            gfx_text(lx + lw - 22, y + 8,
+                     p->builtin ? "*" : "v", inst_l ? COL_OK : PAL_TEXT_FAINT);
+        }
 
         if (edge && !click_used &&
             mx >= lx && mx <= lx + lw && my >= y && my <= y + row_h - 4) {
             store_cursor = v;
-            if (mx >= bx && mx <= bx + bw && my >= y + 4 && my <= y + row_h - 8 && !p->builtin) {
-                if (installed) (void)prg_remove(i);
-                else           (void)prg_install(i);
-            }
             click_used = true;
         }
     }
 
-    /* footer status */
-    const prg_pkg_t *cur = prg_at(store_visible_to_pkg(store_cursor));
-    char foot[80];
-    k_strcpy(foot, T("category: ", "kategori: "));
-    k_strcat(foot, cur->category);
-    gfx_text(wx + 24, wy + wh - 22, foot, PAL_TEXT_FAINT);
+    /* ---- right pane: synthetic Pardus-style detail card ---------------- */
+    {
+        const prg_pkg_t *p = prg_at(store_visible_to_pkg(store_cursor));
+        i32 dy = ly;
+        i32 dh = wh - 112;
+
+        /* card body */
+        gfx_round_rect_a(detail_x, dy, detail_w, dh, 12, PAL_PANEL_DEEP, 255);
+        gfx_round_outline(detail_x, dy, detail_w, dh, 12, PAL_HAIRLINE);
+
+        /* hero banner: 96 px tall gradient strip per category */
+        u32 hero = 0x3070FF;
+        char hero_glyph = '?';
+        if (p->category[0] == 'd') { hero = 0xE9A341; hero_glyph = 'D'; }
+        else if (p->category[0] == 't') { hero = 0xE85D9C; hero_glyph = 'T'; }
+        else if (p->category[0] == 'l') { hero = 0x16B5A8; hero_glyph = 'L'; }
+        else if (p->category[0] == 'g') { hero = 0xA45EE5; hero_glyph = 'G'; }
+        else if (p->category[0] == 'c') { hero = 0x3070FF; hero_glyph = 'C'; }
+        else if (p->category[0] == 'a') { hero = 0x2BB673; hero_glyph = 'A'; }
+        else if (p->category[0] == 'f') { hero = 0xC79624; hero_glyph = 'F'; }
+        else if (p->category[0] == 's') { hero = 0xCB4B43; hero_glyph = 'S'; }
+        gfx_round_rect_a(detail_x + 8, dy + 8, detail_w - 16, 96, 10, hero, 255);
+        /* faux gradient: top half lighter, bottom darker — single-pass         */
+        gfx_rect_a(detail_x + 8, dy + 8, detail_w - 16, 30, 0xFFFFFF, 32);
+        gfx_rect_a(detail_x + 8, dy + 80, detail_w - 16, 24, 0x000000, 32);
+        /* hero glyph (huge letter) — anchors the banner like the Pardus       *
+         * "ribbon" cards do. Centred horizontally with a soft white halo.    */
+        i32 glyph_x = detail_x + 32;
+        for (i32 k = 0; k < 32; k++) {
+            i32 thickness = 32 - k;
+            (void)thickness;
+        }
+        char gs[2]; gs[0] = hero_glyph; gs[1] = 0;
+        gfx_text(glyph_x, dy + 36, gs, 0xFFFFFF);
+        /* package name overlaid right of the glyph */
+        gfx_text(glyph_x + 32, dy + 24, p->name, 0xFFFFFF);
+        gfx_text(glyph_x + 32, dy + 44, p->version, 0xFFFFFF);
+        gfx_text(glyph_x + 32, dy + 64, p->category, 0xFFFFFF);
+
+        /* description */
+        gfx_text(detail_x + 16, dy + 120, p->summary, PAL_TEXT);
+
+        /* metadata strip */
+        char meta[80], buf[12];
+        k_strcpy(meta, T("size: ", "boyut: "));
+        k_itoa(p->size_kb, buf, 10);
+        k_strcat(meta, buf);
+        k_strcat(meta, T(" KB", " KB"));
+        gfx_text(detail_x + 16, dy + 144, meta, PAL_TEXT_DIM);
+        if (p->depends && p->depends[0]) {
+            char dep[160];
+            k_strcpy(dep, T("requires: ", "gerek: "));
+            k_strcat(dep, p->depends);
+            gfx_text(detail_x + 16, dy + 160, dep, PAL_TEXT_DIM);
+        }
+
+        /* big install/remove button */
+        bool installed = prg_is_installed(store_visible_to_pkg(store_cursor));
+        const char *btn =
+            p->builtin   ? T("built-in",  "yerleşik") :
+            installed    ? T("Remove",    "Kaldır")   :
+                           T("Install",   "Kur");
+        u32 bc = p->builtin ? PAL_PANEL_HI : (installed ? 0xEBC9C8 : PAL_ACCENT);
+        u32 tc = p->builtin ? PAL_TEXT_DIM : 0xFFFFFF;
+        i32 bw = 140;
+        i32 bx = detail_x + detail_w - bw - 16;
+        i32 by = dy + dh - 44;
+        gfx_round_rect_a(bx, by, bw, 28, 10, bc, 255);
+        gfx_round_outline(bx, by, bw, 28, 10, PAL_HAIRLINE);
+        gfx_text(bx + (bw - gfx_text_width(btn)) / 2, by + 8, btn, tc);
+
+        if (edge && !click_used && !p->builtin &&
+            mx >= bx && mx <= bx + bw && my >= by && my <= by + 28) {
+            i32 pkg_i = store_visible_to_pkg(store_cursor);
+            if (pkg_i >= 0) {
+                if (installed) (void)prg_remove(pkg_i);
+                else           (void)prg_install(pkg_i);
+            }
+            click_used = true;
+        }
+    }
 
     if (click_used) (void)mouse_consume_click();
 }
