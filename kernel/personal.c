@@ -1,32 +1,32 @@
 /* =============================================================================
  *  FalconOS — Personal Kernel UI (FalconOS 1)
  * -----------------------------------------------------------------------------
- *  v5 desktop layout (tema-aware Lumen *and* Nox):
+ *  v6 desktop layout (KDE/GNOME hybrid bottom panel):
  *    - top: 30px frosted menu bar  (handled in main.c)
  *    - left edge: pinned desktop shortcuts (kernel/desktop_pins.c)
  *    - centre: 6-card widget grid     (kernel/widgets.c)
  *    - top corners: uptime + display cards
- *    - bottom: macOS-style dock
+ *    - bottom: KDE/GNOME-style panel with app launcher, taskbar, system tray
  *
  *  The v4 hero circle has been removed at the user's request — the desktop is
  *  now "dolu dolu" (busy) by default.
  *
- *  Mouse-driven dock; arrow keys + Enter as keyboard fallback; F2 opens
- *  Launchpad; right-click on any dock tile pins it to the desktop.
+ *  Bottom panel: Start button + taskbar + clock + system tray
+ *  F2 opens Launchpad
  * ============================================================================= */
 #include "falcon.h"
 
 static i32 dock_idx = 2;        /* keyboard hover */
 
-/* up to this many tiles fit on the dock; the rest live in the Launchpad */
-#define DOCK_MAX 7
+/* up to this many tiles fit on the taskbar */
+#define TASKBAR_MAX 12
 
 void mode_personal_input(i32 key)
 {
     if (apps_active() >= 0) { apps_input_active(key); return; }
 
     i32 n = apps_count();
-    if (n > DOCK_MAX) n = DOCK_MAX;
+    if (n > TASKBAR_MAX) n = TASKBAR_MAX;
     if (key == KEY_LEFT  && dock_idx > 0)        dock_idx--;
     if (key == KEY_RIGHT && dock_idx < n - 1)    dock_idx++;
     if (key == KEY_ENTER || key == ' ')          apps_open(dock_idx);
@@ -87,106 +87,145 @@ static void draw_res_card(void)
     gfx_circle(x + w - 22, y + 22, 5, PAL_ACCENT);
 }
 
-/* --- bottom dock ---------------------------------------------------------- */
-static void draw_dock(void)
+/* --- KDE/GNOME style bottom panel ---------------------------------------- */
+static void draw_panel(void)
 {
     i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
     bool clicked = false;
     bool rclicked = false;
-    /* When an app window is open, keep the dock visually alive but do not
-     * consume click edges here; the active window / app gets first shot. */
     if (apps_active() < 0) {
         clicked  = mouse_consume_click();
         rclicked = mouse_consume_right();
     }
     (void)ml;
 
-    i32 n = apps_count();
-    if (n > DOCK_MAX) n = DOCK_MAX;
+    /* Panel dimensions */
+    i32 ph = 48;  /* panel height */
+    i32 py = (i32)FB.height - ph;
+    i32 pw = (i32)FB.width;
 
-    /* dock tile size scales with SET.dock_size */
-    i32 tile = 50 + SET.dock_size * 9;       /* 50 .. 86 */
-    i32 gap  = 14 + SET.dock_size * 2;
-    i32 dw   = n * tile + (n - 1) * gap + 36;
-    i32 dh   = tile + 32;
-    i32 dx   = ((i32)FB.width - dw) / 2;
-    i32 dy   = (i32)FB.height - dh - 22;
-
-    /* glass tray — Aero blur underneath when enabled, flat overlay when
-     * the user has turned Aero off in Settings.                         */
+    /* Panel background with Aero blur */
     if (SET.aero_enabled) {
-        gfx_round_rect_a(dx + 2, dy + 8, dw, dh, 26, COL_SHADOW, 60);
-        if (SET.theme == THEME_LIQUID) {
-            gfx_blur_rect(dx, dy, dw, dh, 6);
-            gfx_round_rect_a(dx, dy, dw, dh, 26, 0xEAF7FF, 110);
-            gfx_round_rect_a(dx + 6, dy + 2, dw - 12, 6, 4, 0xFFFFFF, 120);
-        } else {
-            gfx_blur_rect(dx, dy, dw, dh, 7);
-            gfx_round_rect_a(dx, dy, dw, dh, 26, PAL_PANEL, 140);
-        }
-        gfx_round_outline(dx, dy, dw, dh, 26, PAL_HAIRLINE);
+        gfx_blur_rect(0, py, pw, ph, 5);
+        gfx_rect_a(0, py, pw, ph, PAL_PANEL, 150);
     } else {
-        gfx_round_rect_a(dx + 2, dy + 8, dw, dh, 26, COL_SHADOW, 60);
-        gfx_round_rect_a(dx, dy, dw, dh, 26, PAL_PANEL, 220);
-        gfx_round_outline(dx, dy, dw, dh, 26, PAL_HAIRLINE);
+        gfx_rect_a(0, py, pw, ph, PAL_PANEL, 230);
+    }
+    gfx_rect_a(0, py, pw, 1, PAL_HAIRLINE, 255);
+
+    /* === Start Button (Falcon icon) === */
+    i32 start_btn_x = 12;
+    i32 start_btn_y = py + 8;
+    i32 start_btn_size = 32;
+    bool start_hover = (mx >= start_btn_x && mx <= start_btn_x + start_btn_size &&
+                       my >= start_btn_y && my <= start_btn_y + start_btn_size);
+    if (start_hover) {
+        gfx_round_rect_a(start_btn_x - 2, start_btn_y - 2, start_btn_size + 4, start_btn_size + 4, 8, PAL_ACCENT, 60);
+    }
+    gfx_circle(start_btn_x + start_btn_size/2, start_btn_y + start_btn_size/2, start_btn_size/2 - 2, PAL_ACCENT);
+    gfx_text(start_btn_x + 8, start_btn_y + 10, "F", 0xFFFFFF);
+    if (start_hover && clicked) {
+        /* Clicking start button opens Launchpad */
+        launchpad_open();
     }
 
-    for (i32 i = 0; i < n; i++) {
-        i32 ix    = dx + 18 + i * (tile + gap) + tile / 2;
-        i32 iy    = dy + 16 + tile / 2;
-        i32 rad_f = tile / 2;
+    /* === Taskbar (open windows) === */
+    i32 taskbar_start = start_btn_x + start_btn_size + 20;
+    i32 taskbar_items = 0;
+    i32 taskbar_btn_w = 140;
+    i32 taskbar_btn_h = 32;
+    i32 taskbar_gap = 8;
 
-        bool hov_m = (mx >= ix - rad_f && mx <= ix + rad_f &&
-                      my >= iy - rad_f - 4 && my <= iy + rad_f + 4);
-        bool hov_k = (i == dock_idx);
-        bool hov   = hov_m || hov_k;
+    /* Show open apps in taskbar */
+    for (i32 i = 0; i < apps_count() && taskbar_items < TASKBAR_MAX; i++) {
+        i32 tx = taskbar_start + taskbar_items * (taskbar_btn_w + taskbar_gap);
+        i32 ty = py + 8;
 
-        i32 lift  = hov ? -10 : 0;
-        i32 rad   = hov ? rad_f : rad_f - 4;
-        i32 ix2   = ix;
-        i32 iy2   = iy + lift;
+        bool is_active = (apps_active() == i);
+        bool is_minimized = (apps_minimized() == i);
+        bool task_hover = (mx >= tx && mx <= tx + taskbar_btn_w &&
+                          my >= ty && my <= ty + taskbar_btn_h);
 
-        /* drop shadow */
-        gfx_circle_a(ix2 + 2, iy2 + 4, rad, COL_SHADOW, 80);
-        /* tile */
-        gfx_circle(ix2, iy2, rad, apps_tint(i));
-        /* gloss highlight */
-        gfx_circle_a(ix2 - rad / 3, iy2 - rad / 3, rad / 3, 0xFFFFFF, 80);
-        /* glyph */
-        apps_draw_icon(i, ix2, iy2);
-        /* pinned indicator dot */
-        if (desktop_pin_is_pinned(i)) {
-            gfx_circle(ix2 + rad - 4, iy2 - rad + 4, 4, COL_OK);
-        }
-        /* yellow "minimized" marker for the app hidden by the traffic light */
-        if (apps_minimized() == i) {
-            gfx_round_rect(ix2 - 9, iy2 + rad + 6, 18, 4, 2, COL_WARN);
-        }
-        /* highlight ring + label on hovered tile */
-        if (hov) {
-            gfx_circle_outline(ix2, iy2, rad + 4, PAL_ACCENT);
-            char label[40];
-            k_strcpy(label, apps_display_name(i));
-            if (apps_minimized() == i) k_strcat(label, T(" (min)", " (küçük)"));
-            i32 lw = gfx_text_width(label) + 16;
-            i32 lx = ix2 - lw / 2;
-            i32 ly = iy2 + rad + 6;
-            gfx_round_rect_a(lx, ly, lw, 18, 9, PAL_PANEL, 240);
-            gfx_round_outline(lx, ly, lw, 18, 9, PAL_HAIRLINE);
-            gfx_text_centered(ix2, ly + 2, label, PAL_TEXT);
+        /* Taskbar button background */
+        if (is_active) {
+            gfx_round_rect_a(tx, ty, taskbar_btn_w, taskbar_btn_h, 6, PAL_ACCENT, 80);
+        } else if (is_minimized) {
+            gfx_round_rect_a(tx, ty, taskbar_btn_w, taskbar_btn_h, 6, PAL_TEXT_DIM, 40);
+        } else if (task_hover) {
+            gfx_round_rect_a(tx, ty, taskbar_btn_w, taskbar_btn_h, 6, PAL_PANEL_HI, 100);
         }
 
-        if (hov_m && clicked)  apps_open(i);
-        if (hov_m && rclicked) desktop_pin_toggle(i);
+        /* White line below minimized apps (like macOS) */
+        if (is_minimized) {
+            gfx_rect_a(tx, ty + taskbar_btn_h - 2, taskbar_btn_w, 2, 0xFFFFFF, 180);
+        }
+
+        /* App icon */
+        apps_draw_icon(i, tx + 18, ty + taskbar_btn_h/2);
+
+        /* App name */
+        char name[24];
+        k_strcpy(name, apps_display_name(i));
+        /* Truncate if too long */
+        if (k_strlen(name) > 14) {
+            name[12] = '.';
+            name[13] = '.';
+            name[14] = '.';
+            name[15] = '\0';
+        }
+        gfx_text(tx + 38, ty + 10, name, is_active ? PAL_TEXT : PAL_TEXT_DIM);
+
+        /* Close button (X) */
+        if (task_hover) {
+            gfx_text(tx + taskbar_btn_w - 16, ty + 10, "x", is_active ? PAL_TEXT : PAL_TEXT_FAINT);
+        }
+
+        if (task_hover && clicked) {
+            if (is_active) {
+                apps_close();
+            } else {
+                apps_open(i);
+            }
+        }
+
+        taskbar_items++;
     }
 
-    /* "more" indicator if there are more apps in the launchpad */
-    if (apps_count() > DOCK_MAX) {
-        i32 mx2 = dx + dw - 14;
-        gfx_circle(mx2,     dy + dh - 8, 2, PAL_TEXT_FAINT);
-        gfx_circle(mx2 - 6, dy + dh - 8, 2, PAL_TEXT_FAINT);
-        gfx_circle(mx2 - 12,dy + dh - 8, 2, PAL_TEXT_FAINT);
-    }
+    /* === System Tray (right side) === */
+    i32 tray_x = pw - 180;
+
+    /* Clock */
+    rtc_time_t now; rtc_local(&now);
+    char time_str[32];
+    char tmp[8];
+    k_strcpy(time_str, "");
+    k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(time_str, "0"); k_strcat(time_str, tmp);
+    k_strcat(time_str, ":");
+    k_itoa(now.min, tmp, 10); if (now.min < 10) k_strcat(time_str, "0"); k_strcat(time_str, tmp);
+    gfx_text(pw - 70, py + 16, time_str, PAL_TEXT);
+
+    /* Date */
+    k_strcpy(tmp, "");
+    k_itoa(now.day, tmp, 10); if (now.day < 10) k_strcat(tmp, "0"); k_strcat(time_str, tmp);
+    gfx_text(pw - 70, py + 30, tmp, PAL_TEXT_DIM);
+
+    /* Volume icon placeholder */
+    gfx_circle(pw - 160, py + 24, 6, PAL_TEXT_DIM);
+    gfx_circle(pw - 164, py + 24, 3, PAL_TEXT_DIM);
+
+    /* Network icon placeholder */
+    gfx_circle(pw - 185, py + 24, 5, net_connected() ? COL_OK : PAL_TEXT_FAINT);
+
+    /* Battery icon placeholder */
+    gfx_rect(pw - 205, py + 20, 16, 10, PAL_TEXT_DIM);
+    gfx_rect(pw - 205, py + 22, 12, 6, COL_OK);
+}
+
+/* --- legacy dock (for compatibility) ------------------------------------ */
+static void draw_dock(void)
+{
+    /* Redirect to new panel */
+    draw_panel();
 }
 
 /* --- first-run welcome banner -------------------------------------------- */

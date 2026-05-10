@@ -347,18 +347,25 @@ static void draw_blue_dragon(i32 cx, i32 cy, u8 alpha)
 /* --------------------------------------------------------------------------- */
 static void boot_splash(void)
 {
-    /* run for ~200 ticks (2000 ms at 100 Hz) — show logo while loading */
+    /* run for ~150 ticks (1500 ms at 100 Hz) — clean simple boot */
     u32 start = g_ticks;
-    while (g_ticks - start < 200) {
+    while (g_ticks - start < 150) {
         u32 dt = g_ticks - start;
 
-        /* Dark blue gradient background for dragon theme */
-        gfx_gradient_v(0x0A1628, 0x152238);
+        /* Clean gradient background */
+        gfx_gradient_v(0x1a1a2e, 0x16213e);
 
         i32 cx = (i32)FB.width  / 2;
-        i32 cy = (i32)FB.height / 2 - 30;
+        i32 cy = (i32)FB.height / 2;
 
-        u8  alpha = dt < 15 ? (u8)(dt * 17) : 255;
+        u8  alpha = dt < 20 ? (u8)(dt * 12) : 240;
+
+        /* Simple FalconOS text - clean and modern */
+        gfx_text_lg(cx - 90, cy - 40, "FalconOS", 0x4A90FF);
+        gfx_text_lg(cx + 50, cy - 40, "1", 0x6AAFFF);
+
+        /* Version text */
+        gfx_text_centered(cx, cy + 10, "Blue Dragon Edition", 0x8899AA);
         i32 r     = 70 + (i32)(dt / 2);
 
         /* Outer glow rings */
