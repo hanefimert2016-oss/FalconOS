@@ -79,6 +79,46 @@ The 1.2 milestone is a polish-and-finish round on top of FalconOS 1:
 - EXE / AppImage runtime — not implemented. `prg install foo.exe`
   copies the file but does not execute it.
 
+## In-flight: **FalconOS 1.3 "TLS"** branch — real HTTPS
+
+Live on [`feat/falconos-1.3-tls`](https://github.com/hanefimert2016-oss/FalconOS/tree/feat/falconos-1.3-tls).
+The plan is to land genuine HTTPS support in three commit-bundles:
+
+| Step | Status | Files | Symbols |
+| --- | --- | --- | --- |
+| 1. **Vendor BearSSL** (~25 K LOC, MIT, zero-malloc TLS 1.2 client) | **done** | `vendor/bearssl/` (3.0 MB src, 277 .c files) | `libbearssl.a` 791 KB, 276 objs |
+| 2. **Freestanding shim** so BearSSL compiles under `-nostdinc -mno-sse` | **done** | `vendor/bearssl-shim/{string,limits,stdlib}.h`, `strops.c` | `memcpy/memmove/memset/memcmp/strlen/strcpy/strcmp/strchr` |
+| 3. **Static archive linked into kernel ELF** | **done** | `Makefile` (BEARSSL_CFLAGS, pattern rule, `libbearssl.a`) | falcon.elf 272 KB → 396 KB (+120 KB code) |
+| 4. **TLS client wrapper** — engine init + HMAC_DRBG seeder + X.509 minimal validator | **done** | `kernel/tls_client.c`, `kernel/tls_roots.c` | 200 `br_*` symbols resident in falcon.elf |
+| 5. **Real virtio-net** — PCI BAR mapping, virtqueue setup, TX/RX rings | next session | `linux/virtio_net.c` | adapter→up→link |
+| 6. **bareTCP** — ARP + IPv4 + ICMP + UDP + DHCP + DNS + TCP retransmit + RTO | next session | `kernel/net/*` (~3–5 K LOC) | full L4 |
+| 7. **Mozilla NSS root bundle** — ~150 CAs PEM→DER→C array | next session | `tools/build_roots.py`, `kernel/tls_roots.c` | full chain validation |
+| 8. **HTTPS GET demo** — `wget https://api.duckduckgo.com/?q=falconos&format=json` | next session | `kernel/apps.c` | end-to-end |
+
+How to verify step 4 in the current build:
+
+```
+make iso
+make run
+```
+
+In Terminal: `wget https://example.com` returns
+```
+wget https://example.com
+  TLS engine : BearSSL 0.6 (vendored)
+  status     : TLS linked, bareTCP transport pending
+```
+
+Jarvis chat: `tls` (or `https`, `ssl`, `sertifika`) answers
+```
+TLS engine: BearSSL 0.6 (vendored)
+```
+
+If you see those two strings, the entire BearSSL static archive is
+*genuinely* linked into the kernel ELF — `nm build/falcon.elf | grep br_`
+should print 200 lines.  Steps 5–8 are the remaining work to make
+the engine talk to a real server.
+
 ## What's new in **FalconOS 1**
 
 This is the **canonical 1.0 release**. Everything below is built into a
