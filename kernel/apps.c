@@ -786,20 +786,13 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 #define TERM_LINES 12
 #define TERM_COLS  80
 #define SH_VARS    16
-#define SH_FILES   80          /* hierarchical entries (dirs + files)         */
-#define SH_FBYTES  512
-#define SH_PATHLEN 64          /* absolute path length per entry              */
-
 /* shfs entry: every entry stores an ABSOLUTE path.  is_dir distinguishes
  * directories (no payload) from files.  ls/cd walk this flat array but
- * filter by parent path, giving a real hierarchy without a tree.        */
-typedef struct {
-    char name[SH_PATHLEN];     /* full absolute path, e.g. /home/falcon/x.txt */
-    u32  len;                  /* file payload length                          */
-    char data[SH_FBYTES];      /* file payload (ignored for dirs)              */
-    bool is_dir;               /* true = directory, false = regular file       */
-    bool used;                 /* slot occupancy                               */
-} shfile_t;
+ * filter by parent path, giving a real hierarchy without a tree.
+ *
+ * The shfile_t type and SH_FILES / SH_FBYTES / SH_PATHLEN macros live in
+ * <falcon.h> so kernel/diskdb.c can serialise sh_files[] to disk and
+ * restore it on the next boot.                                           */
 typedef struct { char name[16]; char value[64]; bool used; } shvar_t;
 
 static char term_buf[TERM_LINES][TERM_COLS];
@@ -807,7 +800,7 @@ static i32  term_init_done = 0;
 static i32  term_input_len = 0;
 static char term_input[TERM_COLS];
 static char sh_cwd[SH_PATHLEN] = "/home/falcon";
-static shfile_t sh_files[SH_FILES];
+shfile_t sh_files[SH_FILES];   /* declared extern in falcon.h, persisted via shfs_save() */
 static shvar_t  sh_vars [SH_VARS];
 
 static void term_push(const char *s)
@@ -855,6 +848,9 @@ static void term_init(void)
     term_push(T("Type 'help', 'hwinfo', or open Mağaza for prg.",
                 "'help', 'hwinfo' yazın; paketler için Mağaza."));
     term_push("");
+    /* If shfs_load() restored the shfs from disk we keep the user's
+     * files verbatim — only re-seed when the array is empty.            */
+    if (sh_files[0].used) return;
     /* Seed a hierarchical filesystem.  Entries are flat-stored but every
      * path is absolute, so ls/cd can scope listings to a parent.        */
     i32 slot = 0;
@@ -924,6 +920,7 @@ static shfile_t *sh_file_open_w(const char *n, bool append)
         f->len = 0;
         f->data[0] = 0;
     }
+    shfs_mark_dirty();
     return f;
 }
 
@@ -1044,6 +1041,7 @@ void apps_pkg_on_remove(i32 idx)
         f->used = false;
         f->name[0] = 0;
         f->len     = 0;
+        shfs_mark_dirty();
     }
 }
 
@@ -1621,6 +1619,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             }
             f->used = false;
         }
+        shfs_mark_dirty();
         return 0;
     }
     if (k_strcmp(cmd, "touch") == 0) {
@@ -1664,6 +1663,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         dst->len = src->len;
         dst->data[dst->len] = 0;
         if (k_strcmp(cmd, "mv") == 0) src->used = false;
+        shfs_mark_dirty();
         return 0;
     }
     if (k_strcmp(cmd, "mkdir") == 0) {
@@ -1718,6 +1718,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             sh_files[slot].data[0] = 0;
             k_strcpy(sh_files[slot].name, abs);
         }
+        shfs_mark_dirty();
         return 0;
     }
     if (k_strcmp(cmd, "rmdir") == 0) {
@@ -1738,6 +1739,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             }
             d->used = false;
         }
+        shfs_mark_dirty();
         return 0;
     }
     /* head / tail [-n N] file --------------------------------------- */
@@ -2520,6 +2522,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         sh_files[slot].len = 0; sh_files[slot].data[0] = 0;
         k_strcpy(sh_files[slot].name, name);
         k_strcpy(out, name);
+        shfs_mark_dirty();
         return 0;
     }
     if (k_strcmp(cmd, "tty") == 0)    { k_strcpy(out, "/dev/tty0"); return 0; }
@@ -3168,6 +3171,7 @@ static void files_input_key(i32 key)
                         sh_files[slot].len    = 0;
                         sh_files[slot].data[0] = 0;
                         k_strcpy(sh_files[slot].name, abs);
+                        shfs_mark_dirty();
                         files_set_status(files_mode == 1
                             ? T("created folder",  "klasör oluşturuldu")
                             : T("created file",    "dosya oluşturuldu"));
@@ -3233,6 +3237,7 @@ static void files_input_key(i32 key)
                 }
             }
             f->used = false;
+            shfs_mark_dirty();
             files_set_status(T("deleted",
                                "silindi"));
             if (files_sel >= n - 1 && files_sel > 0) files_sel--;
@@ -3853,6 +3858,22 @@ static char falco_query[80] = "FalconOS";
 static i32  falco_query_len = 8;
 static i32  falco_sel = 0;
 
+/* Live DuckDuckGo Instant Answer state -----------------------------------
+ *  When the user presses Enter in the Falco search box, we build the
+ *  full DDG Instant Answer URL and hand it to tls_https_get(), which
+ *  is backed by the vendored BearSSL static archive.  Today the call
+ *  returns TLS_ERR_UNCONFIGURED because the underlying TCP/IP transport
+ *  ships on a later v1.3-tls commit-set; once that lands the same code
+ *  path will read JSON straight off the wire.
+ *
+ *  Honest principle: we surface the real tls_result_t to the user
+ *  instead of synthesising a fake "200 OK" — that way the moment TCP
+ *  starts working there is zero behavioural change for callers.        */
+static char falco_url[256];        /* fully built https://... URL       */
+static char falco_response[1024];  /* body / error message              */
+static tls_result_t falco_last_status = TLS_ERR_UNCONFIGURED;
+static bool falco_have_response = false;
+
 static void falco_set_query(const char *q)
 {
     falco_query_len = 0;
@@ -3882,15 +3903,66 @@ static i32 falco_collect_hits(i32 out_idx[], i32 cap)
     return n;
 }
 
+/* RFC 3986 percent-encoder for the query string portion of a URL.
+ * We only allow unreserved characters through unmodified; everything
+ * else is %XX hex-encoded so the DuckDuckGo backend parses the q=
+ * parameter cleanly.                                                  */
+static void falco_urlencode(const char *src, char *dst, i32 cap)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    i32 oi = 0;
+    for (i32 i = 0; src[i] && oi + 3 < cap; i++) {
+        unsigned char c = (unsigned char)src[i];
+        bool unres = ((c >= 'A' && c <= 'Z') ||
+                      (c >= 'a' && c <= 'z') ||
+                      (c >= '0' && c <= '9') ||
+                       c == '-' || c == '_' ||
+                       c == '.' || c == '~');
+        if (unres) {
+            dst[oi++] = (char)c;
+        } else {
+            dst[oi++] = '%';
+            dst[oi++] = hex[c >> 4];
+            dst[oi++] = hex[c & 15];
+        }
+    }
+    dst[oi] = 0;
+}
+
+/* Build the live DuckDuckGo Instant Answer endpoint for the current
+ * search box content and dispatch it through the BearSSL-backed
+ * tls_https_get().  The result populates falco_response[] /
+ * falco_last_status for the next render pass.                       */
+static void falco_dispatch_search(void)
+{
+    char encoded[256];
+    falco_urlencode(falco_query, encoded, sizeof encoded);
+
+    /* https://api.duckduckgo.com/?q=<encoded>&format=json&no_html=1&skip_disambig=1 */
+    k_strcpy(falco_url, "https://api.duckduckgo.com/?q=");
+    k_strcat(falco_url, encoded);
+    k_strcat(falco_url, "&format=json&no_html=1&skip_disambig=1");
+
+    falco_last_status = tls_https_get(falco_url,
+                                      falco_response,
+                                      sizeof falco_response);
+    falco_have_response = true;
+}
+
 static void falco_input_key(i32 key)
 {
     if (key == KEY_BACKSPACE) {
         sh_buf_pop_utf8(falco_query, &falco_query_len);
+        falco_have_response = false;
         return;
     }
     if (key == KEY_UP && falco_sel > 0) { falco_sel--; return; }
     if (key == KEY_DOWN) { falco_sel++; return; }
-    if (key == KEY_ENTER) return;
+    if (key == KEY_ENTER) {
+        falco_dispatch_search();
+        return;
+    }
+    falco_have_response = false;
     (void)sh_buf_append_key(falco_query, &falco_query_len, 80, key);
 }
 
@@ -3898,8 +3970,8 @@ static void render_falco(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
     section(wx, wy, "Falco",
-            T("Local index search — virtio-net ile tam web araması planlanır",
-              "Yerel indeks araması — tam internet araması için virtio-net planlanır"));
+            T("DuckDuckGo Instant Answer (BearSSL-backed) + local fallback",
+              "DuckDuckGo Instant Answer (BearSSL ile) + yerel yedek"));
 
     /* provider chips */
     {
@@ -3932,12 +4004,98 @@ static void render_falco(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         gfx_rect(cx, sy + 8, 2, 18, PAL_ACCENT);
     }
 
+    /* Live DuckDuckGo Instant Answer panel.  Shown only after the user
+     * has pressed Enter at least once.  The status string is generated
+     * from the real tls_result_t returned by tls_https_get(), which
+     * routes through the linked BearSSL engine.  No mock 200 OK is
+     * drawn — when TCP transport isn't there, we say so out loud.   */
+    i32 ddg_y = sy + 42;
+    if (falco_have_response) {
+        i32 dh = 70;
+        const char *status_label = "?";
+        const char *status_detail = "";
+        u32 status_col = PAL_TEXT_DIM;
+        switch (falco_last_status) {
+            case TLS_OK:
+                status_label = "200 OK"; status_col = 0x2EBB60;
+                status_detail = falco_response;
+                break;
+            case TLS_ERR_NO_NETWORK:
+                status_label = T("No adapter", "Ag karti yok");
+                status_detail = T("virtio-net adapter not present",
+                                  "virtio-net adaptoru yok");
+                status_col = 0xE26A6A;
+                break;
+            case TLS_ERR_NO_DHCP:
+                status_label = "DHCP";
+                status_detail = T("No DHCP lease yet",
+                                  "DHCP kirasi alinmadi");
+                status_col = 0xE2A93B;
+                break;
+            case TLS_ERR_DNS:
+                status_label = "DNS";
+                status_detail = T("api.duckduckgo.com did not resolve",
+                                  "api.duckduckgo.com cozulemedi");
+                status_col = 0xE2A93B;
+                break;
+            case TLS_ERR_TCP_CONNECT:
+                status_label = "TCP";
+                status_detail = T("TCP connect failed",
+                                  "TCP baglantisi basarisiz");
+                status_col = 0xE26A6A;
+                break;
+            case TLS_ERR_TLS_HANDSHAKE:
+                status_label = "TLS";
+                status_detail = T("BearSSL handshake rejected the chain",
+                                  "BearSSL sertifika zincirini reddetti");
+                status_col = 0xE26A6A;
+                break;
+            case TLS_ERR_HTTP:
+                status_label = "HTTP";
+                status_detail = T("Malformed URL or non-2xx response",
+                                  "Bozuk URL veya 2xx olmayan yanit");
+                status_col = 0xE2A93B;
+                break;
+            case TLS_ERR_TIMEOUT:
+                status_label = T("Timeout", "Zaman asimi");
+                status_detail = T("I/O timed out",
+                                  "G/C zaman asimina ugradi");
+                status_col = 0xE2A93B;
+                break;
+            case TLS_ERR_BUFFER_FULL:
+                status_label = "Buffer";
+                status_detail = T("Response buffer too small",
+                                  "Yanit tamponu kucuk");
+                status_col = 0xE2A93B;
+                break;
+            case TLS_ERR_UNCONFIGURED:
+            default:
+                status_label = T("TLS linked, bareTCP pending",
+                                 "TLS bagli, bareTCP bekleniyor");
+                status_detail = T("BearSSL engine is up; TCP/IP stack lands next.",
+                                  "BearSSL motoru hazir; TCP/IP yigini sirada.");
+                status_col = 0x6FA9FF;
+                break;
+        }
+        gfx_round_rect_a(sx, ddg_y, sw, dh, 10, PAL_PANEL_DEEP, 255);
+        gfx_round_outline(sx, ddg_y, sw, dh, 10, status_col);
+        /* status pill */
+        i32 pw = gfx_text_width(status_label) + 18;
+        gfx_round_rect(sx + 12, ddg_y + 10, pw, 18, 9, status_col);
+        gfx_text(sx + 21, ddg_y + 12, status_label, 0xFFFFFF);
+        /* engine + url */
+        gfx_text(sx + 12 + pw + 10, ddg_y + 12, tls_version(), PAL_TEXT);
+        gfx_text(sx + 12, ddg_y + 32, falco_url, PAL_TEXT_DIM);
+        gfx_text(sx + 12, ddg_y + 50, status_detail, PAL_TEXT_FAINT);
+        ddg_y += dh + 8;
+    }
+
     i32 hits[12];
     i32 hn = falco_collect_hits(hits, 12);
     if (hn <= 0) falco_sel = 0;
     else if (falco_sel >= hn) falco_sel = hn - 1;
 
-    i32 ry = sy + 42;
+    i32 ry = ddg_y;
     if (hn == 0) {
         gfx_round_rect_a(sx, ry, sw, 32, 8, PAL_PANEL_DEEP, 255);
         gfx_round_outline(sx, ry, sw, 32, 8, PAL_HAIRLINE);

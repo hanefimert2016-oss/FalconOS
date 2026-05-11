@@ -1,602 +1,108 @@
-# FalconOS
+<div align="center">
 
-> A bare-metal **x86_64** operating system with **two kernels in one**:
-> switch between a macOS-styled *Personal Kernel* and a hacker-grade
-> *Developer Kernel* live, with a single key-press.
+# FalconOS 1 — *Born To Fly*
 
-```
-      ___---___
-    //  (   )  \\         F a l c o n O S
-   /  (  ~~~  )  \
-  |  / O\   /O \  |        FalconOS 1
-  |  |   \ /   |  |       64-bit long mode
-   \ |  _/~~~\_  | /
-    \|_/       \_|/        << Born  to  Fly >>
-         |   |
-        /|   |\
-       / |___| \
-      ~~~~~~~~~~~
-```
+A 64-bit bare-metal operating system written from scratch.
+GUI shell, multi-user auth, package manager, real disk persistence,
+Liquid Glass theming, deterministic Jarvis assistant, vendored
+BearSSL TLS engine.
 
-## What is it?
+**Full documentation, screenshots, downloads, and changelog → [falconos.tech](https://falconos.tech/)**
 
-FalconOS is a self-hosted, ~84 kB freestanding **64-bit** kernel that
-boots through GRUB (Multiboot2) into a configurable linear framebuffer
-(HD / 1080p / 2K), identity-maps the first 4 GiB of physical RAM with
-2-MiB huge pages, and renders its entire UI in software — no BIOS, no
-DOS, no host OS, no external libraries.
+</div>
 
-Two kernels live inside the same binary:
+---
 
-| Mode                    | What you get |
-|-------------------------|--------------|
-| **Personal Kernel**     | A "dolu dolu" desktop — top menu bar, 6 information widgets (Weather, Calendar, System, Now-Playing, Recents, Quick), pinnable desktop shortcuts down the left edge, a Big-Sur dock with 7 visible tiles, Launchpad (F2). No more centred breathing circle. |
-| **Developer Kernel**    | Live CPU register snapshot, scrollable memory inspector, BIOS memory-map panel, scrolling kernel log, interactive REPL — everything refreshes every frame |
+## Quick start
 
-Hit **F1** at any time to flip between them. **F2** in Personal mode
-opens the **Launchpad** (a full-screen 4 × 4 grid of all built-in
-apps). Inside the Launchpad, press **P** on a tile to pin / unpin it
-to the desktop. **Esc** closes the active app or Launchpad.
+```bash
+# 1. install build deps  (Debian / Ubuntu)
+sudo apt-get install -y nasm gcc make grub-pc-bin grub-common xorriso \
+                        mtools qemu-system-x86 python3
 
-## What's new in **FalconOS 1.2 — "Network Edition"**
-
-The 1.2 milestone is a polish-and-finish round on top of FalconOS 1:
-
-- **Windows-11-style centred taskbar** replaces the Big-Sur dock —
-  Start button + active-app pips + frosted-glass strip + real tray
-  glyphs (battery, network, volume, locale-formatted clock).
-- **Top panel** gains 4 workspace dots (centre-left) and a **Jarvis
-  search pill** (centre) that opens the assistant directly.
-- **First-boot is empty** — wallpaper + panels only, no centred
-  hero / no widgets / no banners. Widgets are opt-in from Settings.
-- **Liquid Glass v3** — the cam compositor now has an animated
-  specular sweep (80 px white band, 6 s cycle, triangle-envelope fade)
-  matching the macOS Tahoe / iOS 26 lock-screen sheets.
-- **Pardus-style Store** — two-pane layout: list on the left, hero
-  banner + summary + dependency chain + big Install button on the
-  right. Hero colour is a deterministic function of category palette.
-- **More terminal commands** — `ip`, `ping`, `arp`, `netstat`,
-  `ifconfig`, `route`, `nl`, `paste`, `awk -F<sep> '{print $N}'`,
-  `sed s/X/Y/` — all wired into the same shfs-backed shell.
-- **Network row in Settings** — surfaces real `net_present()` /
-  `net_connected()` / `net_ip_addr()` state; Enter requests DHCP.
-- **Extra Turkish + smart-quote glyph fallbacks** — `â î û Â Î Û`
-  and curly quotes / NBSP / en/em dashes all render legibly.
-- **`tools/build_prg.py`** — Python scaffolder that emits a
-  package manifest + cover screenshot + the C row for `prg.c`.
-
-### What's deliberately *not* in 1.2 (honest deferred list)
-
-- Real internet access (HTTPS to `api.duckduckgo.com`) needs a real
-  PCI virtio-net probe + lwIP TCP/IP + BearSSL TLS + a CA bundle —
-  ~50 K LOC of porting on bare metal. The `net_*` driver in
-  `linux/virtio_net.c` is a stub that returns `present=false` until
-  the probe lands.  Settings reflects this honestly.
-- `wget` / `curl` print "HTTPS pending TLS port" instead of pretending
-  to fetch.  Browser ships with cached / built-in results.
-- Jarvis remains a **deterministic intent engine**, not an LLM. There
-  is no model in the ISO and no network call from Jarvis.
-- EXE / AppImage runtime — not implemented. `prg install foo.exe`
-  copies the file but does not execute it.
-
-## In-flight: **FalconOS 1.3 "TLS"** branch — real HTTPS
-
-Live on [`feat/falconos-1.3-tls`](https://github.com/hanefimert2016-oss/FalconOS/tree/feat/falconos-1.3-tls).
-The plan is to land genuine HTTPS support in three commit-bundles:
-
-| Step | Status | Files | Symbols |
-| --- | --- | --- | --- |
-| 1. **Vendor BearSSL** (~25 K LOC, MIT, zero-malloc TLS 1.2 client) | **done** | `vendor/bearssl/` (3.0 MB src, 277 .c files) | `libbearssl.a` 791 KB, 276 objs |
-| 2. **Freestanding shim** so BearSSL compiles under `-nostdinc -mno-sse` | **done** | `vendor/bearssl-shim/{string,limits,stdlib}.h`, `strops.c` | `memcpy/memmove/memset/memcmp/strlen/strcpy/strcmp/strchr` |
-| 3. **Static archive linked into kernel ELF** | **done** | `Makefile` (BEARSSL_CFLAGS, pattern rule, `libbearssl.a`) | falcon.elf 272 KB → 396 KB (+120 KB code) |
-| 4. **TLS client wrapper** — engine init + HMAC_DRBG seeder + X.509 minimal validator | **done** | `kernel/tls_client.c`, `kernel/tls_roots.c` | 200 `br_*` symbols resident in falcon.elf |
-| 5. **Real virtio-net** — PCI BAR mapping, virtqueue setup, TX/RX rings | next session | `linux/virtio_net.c` | adapter→up→link |
-| 6. **bareTCP** — ARP + IPv4 + ICMP + UDP + DHCP + DNS + TCP retransmit + RTO | next session | `kernel/net/*` (~3–5 K LOC) | full L4 |
-| 7. **Mozilla NSS root bundle** — ~150 CAs PEM→DER→C array | next session | `tools/build_roots.py`, `kernel/tls_roots.c` | full chain validation |
-| 8. **HTTPS GET demo** — `wget https://api.duckduckgo.com/?q=falconos&format=json` | next session | `kernel/apps.c` | end-to-end |
-
-How to verify step 4 in the current build:
-
-```
+# 2. build the ISO  (≈ 5.5 MB)
 make iso
+
+# 3. boot it in QEMU  (8 GiB RAM, persistent qcow2 disk)
 make run
 ```
 
-In Terminal: `wget https://example.com` returns
-```
-wget https://example.com
-  TLS engine : BearSSL 0.6 (vendored)
-  status     : TLS linked, bareTCP transport pending
-```
+The ISO is **one file** that boots HD / FHD / 2K via the GRUB menu, runs
+on real x86_64 hardware (BIOS or UEFI) and on every major hypervisor
+(QEMU, VirtualBox, VMware, Hyper-V).
 
-Jarvis chat: `tls` (or `https`, `ssl`, `sertifika`) answers
-```
-TLS engine: BearSSL 0.6 (vendored)
-```
+## What ships in the box
 
-If you see those two strings, the entire BearSSL static archive is
-*genuinely* linked into the kernel ELF — `nm build/falcon.elf | grep br_`
-should print 200 lines.  Steps 5–8 are the remaining work to make
-the engine talk to a real server.
+|  |  |
+| --- | --- |
+| **Boot** | 3D "FalconOS 1 / Born To Fly" wordmark splash, single ISO for HD/FHD/2K |
+| **Install wizard** | 11 UI languages (TR EN DE FR ES IT PT RU AR ZH JA), keyboard layouts (TR-Q / TR-F / US), disk picker over ATA-PIO, password confirm with live mismatch warning |
+| **Desktop** | Windows 11-style centred icon taskbar, top panel with 4 workspaces + Jarvis pill, animated Liquid Glass v3 (specular sweep), 5 themes (Lumen / Nox / Liquid / Nordic / Rose Gold), 7 accent colours |
+| **Apps** | 18 built-ins — Files, Terminal, Editor, Settings, Notes, Calc, Music, Falco browser, Mağaza (Pardus-style two-pane), Jarvis chat, Calendar, Clock, Image Viewer, Tic-Tac-Toe, Snake, Stopwatch, Help drawer |
+| **Filesystem** | Hierarchical shfs (`/`, `/home/falcon/...`, `/etc`, `/tmp`, `/usr`, `/var/prg`); real `mkdir -p / touch / cp / mv / rm -r`; Files app + Terminal share the same store; install state persists across reboots |
+| **Shell** | ≈ 110 POSIX commands (`ls / cd / pwd / cat / grep / awk / sed / find / wget / ip / ps / df / tar / md5sum / tree / xxd / cowsay …`) |
+| **Jarvis** | ≈ 56 deterministic intents (no LLM). Switches themes, installs packages, reports network, opens apps, answers status questions |
+| **Store** | 158 packages (apps / dev tools / themes / fonts / locales / games / libs); install state saved to disk |
+| **Multi-user** | ≤ 8 users, PBKDF2 password hashing, lock-screen, ATA-backed `users.bin`/`creds.bin` |
+| **Network** | Real PCI virtio-net probe + MAC injection. `ip` / `arp` / `route` / `ifconfig` / `wget` route through real driver state |
+| **TLS** | **Vendored BearSSL 0.6** (MIT, 25 K LoC, constant-time, zero-malloc) linked into the kernel ELF — 200 `br_*` symbols, `libbearssl.a` is 791 KB |
 
-## What's new in **FalconOS 1**
+For the full feature list, architecture diagrams, in-depth screenshots,
+boot videos, package screenshots, and the deferred-features roadmap,
+visit **[falconos.tech](https://falconos.tech/)**.
 
-This is the **canonical 1.0 release**. Everything below is built into a
-single ISO that boots on real hardware (BIOS + UEFI) or in QEMU, with
-no external runtime, no libc, and no host OS dependency.
+## Architecture (short version)
 
-- **Liquid-Glass theme + theme picker** — five preset themes ship in
-  the box (`Lumen`, `Nox`, `Liquid`, `Nordic`, `Rose Gold`) and can be
-  switched at runtime from `Settings ▸ Theme`. The new "Liquid" preset
-  pushes the Aero blur radius and tint further for a true frosted-
-  glass / refraction look across every panel and modal.
-- **Window manager** — every app window can now be **dragged from the
-  title bar**, **resized from the bottom-right corner**, **minimised**
-  to the dock, **maximised** to fill the workspace, or **closed** via
-  the macOS-style traffic-light buttons. State is per-window, no
-  global override.
-- **POSIX shell in Terminal** — Terminal app now hosts a real shell
-  that understands `cd`, `ls`, `cat`, `echo`, `pwd`, `clear`, `help`,
-  variable assignment (`X=value`), `$X` expansion, simple pipes
-  (`a | b`), output redirection (`> file`), and `if/then/fi` +
-  `for ... in ... do ... done`. Built-in commands plus a small set of
-  GNU-style coreutils — enough to run shipped FalconOS shell scripts.
-- **Differentiated Developer Kernel UI** — the dev mode is no longer
-  the same shell with different colours: it's an IDE-style layout
-  with a left navigator pane (CPU / Memory / Map / Disk), a top tool
-  strip (Build / Run / Step / Stop), and the bottom REPL is now a
-  full-width drawer. Personal and Developer kernels feel like two
-  different operating systems in one binary.
-- **Real-hardware boot** — the GRUB hybrid ISO is verified BIOS +
-  UEFI capable; `dd` it to a USB stick and it boots a 64-bit PC
-  directly with no extra packaging.
-- **Improved installer flow** — the language picker now shows a
-  highlighted accent pip per language (visible "you are here" cue),
-  and the password step asks twice (with live-confirmed match) before
-  committing the PBKDF2 hash. Strength meter still live (Weak / OK /
-  Strong, in 5 languages).
-- **More packages in the Store** — `app-paint`, `app-music`,
-  `app-snake`, `app-dosbox-lite`, `theme-nordic`, `theme-rosegold`,
-  `lib-png`, `lib-zlib` ship as built-in catalogue entries; install /
-  remove from the GUI Store or via `prg install <pkg>` in the
-  Developer Kernel REPL.
-- **Native driver labels** — the About panel and on-screen status
-  strips no longer use "Linux"-prefixed names. Drivers are documented
-  as native FalconOS subsystems (`ATA / 2 disks`, `Keymap: 13 keys`).
-  Source attribution for driver code lives in `linux/README.md` only.
-- **Doubled PBKDF2 (50 k → 100 k rounds)** + persistent fail counter
-  + `failed_attempts / last_login_uptime / last_fail_uptime` survive
-  reboots so the throttle window is not bypassable by power-cycling.
-- **Better drivers** — proper `Shift / Ctrl / Alt / CapsLock` modifier
-  state, extended-prefix scancodes (`Home / End / PgUp / PgDn / Del`),
-  and a macOS-style mouse acceleration curve (1:1 for fine motion,
-  quadratic boost capped at 16× for fast flicks). Double-click is
-  detected within a 350 ms window.
-- **All carry-over from previous releases** — Aero frosted-glass on
-  every panel and every modal sheet, RTC + timezone (13 cities),
-  5 languages (EN / TR / DE / FR / ES) with locale-aware date and
-  number formatting, multi-user (≤ 8 accounts) with disk-persistent
-  records, x86_64 long mode, two kernels in one binary.
+* **boot**: GRUB 2 multiboot2 → 64-bit long mode → handover to `kernel/main.c`
+* **kernel**: freestanding C, no libc, no malloc, no dynamic loader
+* **drivers**: PIT, RTC, PIC, ATA-PIO, PS/2 keyboard + mouse, USB stub, virtio-net (PCI probe), framebuffer (VBE / GOP)
+* **graphics**: software 2D pipeline (`gfx_*`), separable Gaussian blur cascade, 7-tap Liquid Glass, alpha compositing
+* **filesystem**: shfs hierarchy persisted in a FALCONFS superblock on the install disk
+* **TLS**: vendored BearSSL + freestanding shim (`vendor/bearssl-shim/`) so the library compiles under `-nostdinc -mno-sse`
 
-## Legacy: v5.2 — "Aero"
+Source layout, line counts, design rationale, and the v1.3-tls roadmap
+(virtio-net virtqueues, bareTCP stack, Mozilla root bundle, end-to-end
+HTTPS GET) are documented in detail on **[falconos.tech](https://falconos.tech/)**.
 
-- **Frosted-glass transparency (Aero)** — every translucent panel
-  now actually blurs the pixels behind it instead of using a flat
-  alpha overlay. The dock, top menu bar, lockscreen password pill,
-  Launchpad backdrop, app window chrome and every glass widget all
-  go through `gfx_aero_round_rect()`, which runs a two-pass
-  separable box blur over the live back buffer (radius capped at 8,
-  scratch buffer 1920 × 480 in BSS) and then tints the result.
-  Toggle globally from Settings ▸ "Aero" if you're on a slow box —
-  fallback is the previous flat panel look.
-- **Real wall-clock + timezone** — the menu bar and lockscreen now
-  show the actual time of day from the CMOS RTC (MC146818 reader in
-  `kernel/rtc.c`, handles BCD/binary, 12h/24h, update-in-progress
-  polling). The timezone is configurable: Settings ▸ "Timezone"
-  cycles 13 curated cities from Honolulu (UTC-10) to Sydney
-  (UTC+10), including UTC+5:30 for Mumbai. Date is rolled across
-  midnight / month / year boundaries (incl. leap February) when the
-  offset crosses a day.
-- **5 languages, locale-aware formatting** — Türkçe and English get
-  full coverage; Deutsch / Français / Español are at baseline
-  (installer, lockscreen, settings labels, login welcome). New
-  `TX(en, tr, de, fr, es)` helper in `kernel/locale.c` falls back to
-  English on missing translations. Date formatting is locale-correct
-  too: MM/DD/YYYY for English, DD.MM.YYYY for German, DD/MM/YYYY
-  everywhere else, with localised month abbreviations (`Oca / Jan /
-  Ene` etc.). The number grouping helper switches `1,234.56` ↔
-  `1.234,56` as appropriate.
-- **First-run welcome banner** — after the installer finishes, the
-  desktop shows a one-shot greeting card with the user's name in
-  their language ("Welcome, mert!" / "Hosgeldin, mert!" / etc.) and
-  the three keyboard shortcuts that get a normal user productive
-  immediately (F2 / F1 / Esc). Dismissed by clicking *OK* — the
-  dismissal is persisted to disk so it never reappears.
-- **Smarter keyboard defaults** — picking a non-Turkish language in
-  the installer auto-selects US-QWERTY instead of TR-Q. Existing
-  Turkish-speaking users still get TR-Q out of the box.
+## Controls (cheat-sheet)
 
-## What's new in v5 — "Aurora"
+| Key | Action |
+| --- | --- |
+| **F1** | Help drawer |
+| **F2** | Launchpad |
+| **F3** | Jarvis chat |
+| **F12** | Power menu |
+| **Ctrl + Alt + ← / →** | Switch workspace |
+| **Esc** | Close modal / back |
+| **Super** | Taskbar focus |
 
-- **64-bit (x86_64) long mode** — boot stub flips the CPU into long
-  mode, builds a 4-level page table, identity-maps 4 GiB with 2-MiB
-  huge pages, loads a 64-bit GDT, and tail-calls into a System-V AMD64
-  C entry point. Kernel itself is a 64-bit ELF.
-- **Multi-user system (up to 8 accounts)** — every user has its own
-  name, accent colour, and password hash. The first user created
-  becomes the system **default**: every cold boot opens the lock
-  screen focused on that user (auto-login target). ←/→ on the lock
-  screen switches between user avatars.
-- **PBKDF2-HMAC-SHA256 password hashing** — passwords are *never*
-  stored as plaintext. Each account carries a 16-byte random salt
-  (TSC-seeded RNG) and a 32-byte PBKDF2-HMAC-SHA256 hash stretched
-  50 000 rounds. Verification uses constant-time comparison, and
-  every transient password buffer (in the installer, in the lock
-  screen, and inside `users_verify()`) is wiped with a volatile
-  `k_explicit_bzero()` so plaintext doesn't linger in BSS. The lock
-  screen also throttles brute-force attempts: after 3 wrong tries it
-  freezes new submissions for 5 seconds. See `kernel/auth.c` for the
-  full SHA-256 + HMAC + PBKDF2 implementation (RFC 2898 §5.2,
-  FIPS 198-1, FIPS 180-4 — clean-room, no libcrypto).
-- **Disk-backed user database (FalconFS)** — the entire `settings_t`
-  (including all 8 user records, salts and hashes) is written to
-  LBA0–3 of the primary IDE disk on every change, with a custom
-  `'FALC'`-magic superblock and a Fletcher-16 checksum. Cold reboots
-  restore the user list and skip the installer. See `kernel/diskdb.c`
-  + `linux/ata_pio.c` (LBA28 PIO read/write).
-- **Multi-step installer wizard** — language (Türkçe / English), theme
-  (Lumen / Nox), accent colour (5 presets), **keyboard layout
-  (TR-Q / TR-F / US-QWERTY)**, then a repeating *user create* loop
-  (name + password) until the operator picks "Hayır, bitir".
-- **Switchable keyboard layout** — TR-Q (default for Turkish), TR-F
-  (typewriter heritage) and US-QWERTY scancode tables in `kernel/kbd.c`.
-  The layout selected in the installer is stored in
-  `SET.kbd_layout`; Settings ▸ Klavye düzeni cycles between them at
-  runtime.
-- **Lock screen with multi-user picker** — avatar strip with one
-  circle per active user; the system-default user is highlighted by
-  a green pip and is auto-focused. ←/→ scrolls users, type to enter
-  the password (masked, caret blink), Enter calls
-  `users_verify()` (PBKDF2 compare) — wrong password triggers a
-  shake animation, correct password records `SET.active_user` and
-  hands off to the desktop.
-- **Dark theme "Nox"** — full counterpart to the v4 "Lumen" light
-  theme. Every render call goes through a runtime palette so flipping
-  `SET.theme = THEME_DARK` changes the entire shell on the next frame.
-- **Desktop widgets (no centre circle)** — 6 information cards in a
-  3 × 2 grid replace the v4 hero animation: Weather, Calendar mini,
-  System, Now-Playing, Recents, Quick actions.
-- **Desktop shortcuts** — pin any app to the wallpaper from inside
-  the Launchpad with `P`. Pinned apps render as icon tiles down the
-  left edge and launch with a single click.
-- **Runtime Settings app** — theme, accent, language, dock size,
-  animations toggle, viewport (letterbox) resolution, password change,
-  lock-now action.
-- **`prg` package manager + Store app** — unified package manager
-  with a Linux-style CLI shape (`prg list / search / info / install /
-  remove / installed`). Built-in catalog of 16 packages (6 OS
-  built-ins, 10 user-installable extras across themes, apps, libs,
-  Linux-compat). The Store app browses, installs and uninstalls
-  packages live.
-- **Linux integration (real, not mocked)** — three concrete pieces of
-  Linux code are wired into the kernel:
-  1. **Linux UAPI shim** (`linux/uapi.h`) — clean-room
-     reimplementation of the small subset of `<linux/types.h>`,
-     `<linux/ata.h>` and `<linux/hid.h>` that the kernel uses.
-     Future Linux drivers can drop in unmodified.
-  2. **`libata`-style ATA PIO driver** (`linux/ata_pio.c`) —
-     port-style probe + `IDENTIFY DEVICE` + LBA28 PIO read/write
-     against the primary IDE controller, modelled after Linux's
-     `drivers/ata/libata-core.c`. Detected drives + model strings are
-     surfaced in Settings ▸ About.
-  3. **PS/2 ↔ Linux HID keymap** (`linux/hid_keymap.c`) — Linux
-     `KEY_*` codes mapped from PS/2 scancode set 1, modelled after
-     `drivers/input/keyboard/atkbd.c`.
+## Honest deferred list (what isn't real yet)
 
-  All three are clean-room (specifications + public headers, no Linux
-  source code copied) and ship under the same MIT licence as the rest
-  of FalconOS.
+* **HTTPS to a live server** — BearSSL is linked but the TCP/IP stack
+  and real virtio-net virtqueue setup are queued for the next commit-set
+  on the [`feat/falconos-1.3-tls`](https://github.com/hanefimert2016-oss/FalconOS/tree/feat/falconos-1.3-tls)
+  branch.  `wget https://...` returns `TLS engine: BearSSL 0.6 (vendored)
+  / status: TLS linked, bareTCP transport pending` instead of a fake
+  200 OK.
+* **LLM Jarvis** — there is no model in the ISO; Jarvis is a deterministic
+  intent engine with ~56 hand-written handlers.
+* **EXE / AppImage runtime** — `prg install foo.exe` copies the file but
+  does not execute it (no Win32 / glibc personality).
+* **CJK / Cyrillic / Arabic glyphs in body text** — the installer headline
+  renders them, but the kernel body font is still Latin-only.
 
-## Boot flow
-
-```
-GRUB Multiboot2
-    │
-    ▼
-boot/multiboot2.asm  (32-bit)
-    ├─ build PML4 / PDPT / PD  (identity-map 4 GiB)
-    ├─ enable PAE + IA32_EFER.LME
-    ├─ enable CR0.PG  (long mode active)
-    ├─ load 64-bit GDT, far-jump
-    ▼
-kernel/main.c long_start (64-bit)
-    ├─ parse Multiboot2 framebuffer + memory map
-    ├─ install IDT / PIC / PIT / mouse / Linux-compat / Settings
-    ├─ boot splash (~700 ms, palette-aware fade)
-    │
-    ├─ first boot? ─ yes ─▶  installer wizard
-    │                          (lang → theme → accent → password → owner)
-    │
-    ├─ lock screen  (owner avatar + password input)
-    │
-    └─ desktop loop @ 50 FPS
-         ├─ Personal Kernel  ──── F1 ──▶ Developer Kernel
-         │     ├─ uptime card
-         │     ├─ resolution card
-         │     ├─ widgets_render()       6-card grid
-         │     ├─ desktop_pins_render()  left-edge shortcuts
-         │     └─ dock + apps
-         └─ Developer Kernel
-               ├─ CPU / MEM / MMAP / LOG panels
-               └─ REPL prompt
-```
-
-## Build & boot
-
-### Requirements (Debian / Ubuntu)
-
-```bash
-sudo apt install -y gcc nasm grub-pc-bin grub-common xorriso mtools \
-                    qemu-system-x86 fonts-dejavu-core python3-pil
-```
-
-> The kernel builds with the host's native 64-bit gcc using
-> `-m64 -ffreestanding -mno-red-zone -mcmodel=kernel -mno-sse -mno-sse2`,
-> so no x86_64-elf-gcc cross compiler is required.
-
-### Build the kernel and ISO
-
-```bash
-# Single ISO — supports HD / FHD / 2K resolutions out of the same image.
-# Pick the resolution from the GRUB boot menu, or change it any time
-# at runtime from Settings → Resolution.
-make iso                  # build/FalconOS.iso
-
-make            # just build/falcon.elf  (~150 kB ELF64)
-make font       # regenerate kernel/font_data.c from DejaVu
-make clean
-```
-
-### Run in QEMU
-
-```bash
-# ---- ephemeral (no disk; installer wizard runs every cold boot) ----------
-make run                  # SDL window — pick resolution at the GRUB menu
-make run-headless         # no window — useful for screenshots / CI
-make run-fb               # boot the ELF directly via -kernel (faster iter)
-
-# ---- persistent disk: user accounts + settings survive reboots -----------
-# `make run-disk` creates a 4 GiB raw IDE drive at build/falcon.img on the
-# first run, then attaches it as the primary master. The kernel writes the
-# whole user database (incl. PBKDF2 hashes) to LBA0–3 on every change.
-make run-disk             # SDL window  + persistent disk
-make run-disk-headless    # no window   + persistent disk
-make wipe-disk            # delete build/falcon.img → installer next time
-
-# resource tuning (defaults are already high: RAM=12288, CPUS=6, VRAM=256)
-make run RAM=16384 CPUS=8 VRAM=512
-
-# ---- manually attach a disk image to a one-off run -----------------------
-qemu-system-x86_64 -cdrom build/FalconOS.iso -m 12288M -smp 6 \
-    -drive file=build/falcon.img,format=raw,if=ide,index=0 \
-    -no-reboot -no-shutdown -display sdl -vga std -global VGA.vgamem_mb=256
-```
-
-### First boot — what to expect
-
-1. **Boot splash** — animated rings + "starting FalconOS 1", ≈ 700 ms.
-2. **Installer wizard** (only on the very first cold boot, or after
-   `make wipe-disk`):
-   1. Language ─ Türkçe / English
-   2. Theme ─ Light (Lumen) / Dark (Nox)
-   3. Accent ─ Blue / Purple / Green / Pink / Graphite
-   4. Keyboard ─ TR-Q / TR-F / US-QWERTY
-   5. User name (24 chars max, type → Enter)
-   6. User password (24 chars max — type → Enter; PBKDF2 hashed)
-   7. *"Add another user?"* — Yes opens steps 5–6 again, No commits
-      `SET.installed = true` and writes the whole settings + user
-      table to LBA0 via `diskdb_save()`.
-3. **Lock screen** — focused on the system-default user (the first
-   one created); ←/→ to switch user, type the password, Enter to
-   unlock. The desktop shell starts when `users_verify()` succeeds.
-4. **Desktop** — top menu bar, six widgets, dock, Launchpad on F2.
-   `Settings ▸ Diske kaydet` writes any subsequent changes back to
-   the disk; on the next cold boot the wizard is skipped entirely.
-
-### Boot on real hardware (USB stick → bare-metal PC)
-
-The `grub-mkrescue` build produces a **hybrid ISO** that contains both
-an `isolinux`-style BIOS bootblock and an EFI System Partition with
-GRUB's `bootx64.efi`, so the same image works on:
-
-- 64-bit BIOS / Legacy boot PCs and laptops
-- 64-bit UEFI PCs (Secure Boot must be **disabled** — the kernel is
-  not signed)
-- Most virtual machines (QEMU, VirtualBox, VMware Workstation)
-
-#### Linux / macOS host
-
-```bash
-# 1. Identify your USB stick (DO NOT pick the wrong device — this wipes it).
-lsblk                                          # Linux
-diskutil list                                  # macOS
-
-# 2. Write the ISO directly. The hybrid layout means no extra packaging.
-sudo dd if=build/FalconOS.iso of=/dev/sdX bs=4M status=progress oflag=sync   # Linux
-sudo dd if=build/FalconOS.iso of=/dev/diskN bs=4m                            # macOS
-sync
-```
-
-#### Windows host
-
-Use **Rufus** (https://rufus.ie) — open `build/FalconOS.iso`, pick the
-USB device, leave "DD image" mode selected when Rufus prompts. Click
-*Start*, wait, eject.
-
-#### Boot it
-
-1. Plug the USB stick in, power-cycle the machine.
-2. Tap your boot-menu hotkey (F12 / F10 / Esc — vendor-specific).
-3. Pick the USB stick.
-4. GRUB loads → kernel splash → installer wizard on first boot.
-
-#### Hardware requirements
-
-| Component       | Minimum                                            |
-|-----------------|----------------------------------------------------|
-| CPU             | x86_64 (CPUID.80000001:EDX bit 29 = 1)             |
-| RAM             | 1 GiB minimum (4+ GiB recommended for Liquid)       |
-| Storage         | 4 GiB suggested (Falcon image defaults to 4 GiB)    |
-| Display         | VESA-compatible, ≥ 1024 × 768 at 32-bpp            |
-| Keyboard        | PS/2 or USB (auto-emulated)                        |
-| Mouse           | PS/2 or USB (auto-emulated). Optional.             |
-
-If long mode is unavailable the boot stub `hlt`s with a clear panic
-banner instead of triple-faulting.
-
-## Controls
-
-| Key            | Mode       | Action                                          |
-|----------------|------------|-------------------------------------------------|
-| **F1**         | desktop    | Toggle Personal ↔ Developer kernel              |
-| **F2**         | Personal   | Open / close the Launchpad                      |
-| **Esc**        | any        | Close active app or Launchpad                   |
-| ← / → / ↑ / ↓  | Personal   | Navigate dock / Launchpad                       |
-| **Enter**      | Launchpad  | Open the highlighted app                        |
-| **P**          | Launchpad  | Pin / unpin the highlighted app to the desktop  |
-| Mouse click    | Personal   | Click pinned shortcut, dock tile or Launchpad   |
-| Mouse right    | Personal   | Pin / unpin the dock tile under the cursor      |
-| typing         | installer  | Password & owner-name input                     |
-| typing         | lockscreen | Password input                                  |
-| ↑ / ↓          | Developer  | Page the memory inspector (± 0x80 / press)      |
-| **L**          | Developer  | Push a manual log line                          |
-| typing         | Developer  | Forwarded to the REPL prompt                    |
-| typing         | Apps       | Forwarded to the active app                     |
-
-## prg package manager
-
-`prg` is a unified package manager that ships with FalconOS. Its CLI
-deliberately mirrors `apt` / `pacman` so future Linux-package
-compatibility layers drop in seamlessly. Inside the Developer Kernel
-REPL:
-
-```
-prg list                   # all known packages
-prg installed              # only installed ones
-prg search <term>          # substring filter on name + summary
-prg info <pkg>             # show metadata for one package
-prg install <pkg>          # mark installed
-prg remove  <pkg>          # mark removed (built-ins refuse)
-```
-
-The Personal Kernel ships a graphical **Store** app that wraps the
-same package database with category filters, install / uninstall
-buttons and a "yüklü" badge.
-
-## Built-in apps
-
-| # | App        | What it does                                                |
-|---|------------|-------------------------------------------------------------|
-| 1 | Home       | Quick-link cards (Recent / System / Network / Theme)        |
-| 2 | Files      | Mock file browser with a striped 12-row table              |
-| 3 | Clock      | Analog dial + digital readout, driven by PIT IRQ0           |
-| 4 | Stats      | tsc / uptime / ticks / RAM / FB resolution + pulse bar      |
-| 5 | Terminal   | POSIX-style shell + `prg` package commands                  |
-| 6 | Calculator | 4-function arithmetic with a clickable keypad               |
-| 7 | Settings   | Theme, accent, language, **keyboard layout**, dock size,    |
-|   |            | animations, widgets, viewport, password change, **default**  |
-|   |            | **user picker, save-to-disk, lock now**                     |
-| 8 | Notes      | Free-form text pad with caret blink                         |
-| 9 | Calendar   | Month grid with "today" highlighted from uptime             |
-|10 | Gallery    | Lumen / Nox palette swatches with hex codes                 |
-|11 | Video      | Software-rendered demo video player (play/pause/seek)       |
-|12 | Falco      | Native browser/search shell (indexed web cards + API-ready) |
-|13 | Chrome     | Chrome-style browser mock + docs/source tabs                |
-|14 | Heroic     | Linux game-launcher compatibility mock                       |
-|15 | Store      | prg package browser — search, install, uninstall            |
-|16 | About      | Version, native subsystem summary, ATA probe results        |
-
-## Driver source attribution
-
-FalconOS drivers ship as native subsystems with their own names
-(`ATA / 2 disks`, `Keymap: 13 keys`). The `linux/` directory in the
-repo is **source attribution only** — it documents which Linux public
-specifications and clean-room patterns the FalconOS drivers were
-modelled after, so the licence story stays correct:
-
-```
-linux/
-  README.md             ── what was modelled and from where, with credits
-  uapi.h                ── clean-room subset of <linux/types.h> et al.
-  ata_pio.c             ── libata-style PIO driver pattern (no copy)
-  hid_keymap.c          ── PS/2 set-1 → keycode table
-```
-
-None of these files copy Linux source code. They are MIT-licensed
-like the rest of FalconOS, and the runtime never advertises itself
-as "Linux"-anything to the user.
-
-## Architecture (≈ 5 900 LOC)
-
-```
-boot/
-  multiboot2.asm     32-bit GRUB header + long-mode bootstrap
-  isr.asm            32 exception + 16 IRQ stubs (IDT thunks)
-  grub.cfg           one-liner GRUB menu
-linker.ld            kernel loaded at 1 MiB (ELF64)
-kernel/
-  falcon.h           public types, runtime palette, module API
-  cpu.c              inb / outb / inw / outw / insw / outsw / rdtsc + libc
-  gfx.c              software renderer (AA circle, glass cards, text,
-                     viewport letterbox)
-  font_data.c        8 × 16 bitmap font (auto-generated)
-  gdt.c              GDT no-op on x86_64 (boot stub already loaded)
-  idt.c              IDT setup + dispatch table
-  pic.c              8259A remap (IRQs 32-47)
-  pit.c              100 Hz timer, HH:MM:SS uptime
-  kbd.c              IRQ1 PS/2 keyboard (async, ring buffer)
-  mouse.c            IRQ12 PS/2 mouse + cursor + right-click edge
-  mmap.c             Multiboot2 memory-map parser
-  settings.c         runtime SET + PAL() palette dispatcher + T()
-                     + diskdb_load() bootstrap on init
-  auth.c             SHA-256 + HMAC-SHA256 + PBKDF2 + TSC-seeded RNG
-                     (RFC 2898 §5.2 / FIPS 198-1 / FIPS 180-4)
-  users.c            multi-user database (≤ 8 accounts, default user
-                     promotion, constant-time hash compare)
-  diskdb.c           FalconFS superblock + Fletcher-16 checksum
-                     persisting SET to LBA0–3 via libata-style PIO
-  installer.c        first-boot wizard (lang/theme/accent/kbd/users)
-  lockscreen.c       multi-user picker + PBKDF2 verify + shake-on-error
-  widgets.c          6-card desktop widget grid
-  desktop_pins.c     pinned-app shortcuts down the left edge
-  prg.c              package database + CLI primitives
-  main.c             entry, framebuffer parse, mode dispatcher,
-                     menu bar, F1/F2 hot-keys, boot splash, modal loops
-  personal.c         Personal Kernel — uptime + res cards, widgets,
-                     pins, dock
-  launchpad.c        Full-screen 4 × 4 app grid (F2) with P-pin
-  apps.c             apps + window chrome + per-app input (Settings,
-                     Store, About now palette- and Linux-aware)
-  dev.c              Developer Kernel — CPU / MEM / MMAP / LOG / REPL
-  repl.c             Interactive command parser
-linux/
-  uapi.h             Linux UAPI shim (types, ATA, HID)
-  ata_pio.c          libata-style ATA PIO driver
-  hid_keymap.c       PS/2 set-1 → Linux KEY_* table
-tools/
-  genfont.py         regenerates font_data.c from DejaVu Sans Mono
-```
-
-## Roadmap
-
-- [ ] FAT12 read-only "Files" app backed by a real disk image
-- [ ] Userland processes + cooperative scheduler
-- [ ] UEFI loader (gnu-efi)
-- [ ] PCI bus walk + AHCI driver
-- [ ] Real Linux driver port — `drivers/input/keyboard/atkbd.c` →
-      hooked through `linux/hid_keymap.c`
-- [ ] Networking stack (RTL8139 + minimal TCP)
+More detail and the full roadmap: **[falconos.tech](https://falconos.tech/)**.
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT.  All third-party code (BearSSL, GRUB stubs, the optional Mozilla
+NSS bundle) ships with its own original licences preserved in
+`vendor/*/LICENSE` and `LICENSE`.
+
+---
+
+<div align="center">
+
+[falconos.tech](https://falconos.tech/) · [Releases](https://github.com/hanefimert2016-oss/FalconOS/releases) · [Issues](https://github.com/hanefimert2016-oss/FalconOS/issues) · [v1.3-tls branch](https://github.com/hanefimert2016-oss/FalconOS/tree/feat/falconos-1.3-tls)
+
+</div>

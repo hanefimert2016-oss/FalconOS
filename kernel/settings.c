@@ -63,6 +63,11 @@ void settings_init(void)
      * superblock with matching magic+version+checksum is found, SET is
      * overwritten and the installer wizard is skipped automatically.    */
     diskdb_load();
+
+    /* Restore the shfs hierarchy (real files / folders the user created
+     * the previous session).  shfs_load() is a no-op on a fresh disk; in
+     * that case term_init() seeds the default tree (/home/falcon, ...). */
+    shfs_load();
 }
 
 /* ---- runtime palette ----------------------------------------------------- */

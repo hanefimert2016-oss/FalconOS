@@ -557,6 +557,35 @@ void diskdb_load(void);          /* called from settings_init()             */
 bool diskdb_save(void);          /* writes SET into LBA0                    */
 bool diskdb_present(void);       /* true if last load found a magic block   */
 
+/* ---- disk-backed shfs (real file/folder persistence, kernel/diskdb.c) ----
+ *  The hierarchical shfs (sh_files[]) is serialised to a dedicated disk
+ *  region after the FalconFS superblock.  Layout:
+ *      LBA 16 .. 16+SHFS_SECTORS-1   shfs payload
+ *  The first sector carries an SHFS_MAGIC / SHFS_VERSION / fletcher checksum
+ *  header so corrupted or pre-format disks are safely ignored.            */
+#define SHFS_MAGIC          0x53484653   /* 'SHFS' */
+#define SHFS_VERSION        1
+#define SHFS_SECTOR         16
+
+#define SH_FILES            80
+#define SH_FBYTES           512
+#define SH_PATHLEN          64
+
+typedef struct {
+    char name[SH_PATHLEN];
+    u32  len;
+    char data[SH_FBYTES];
+    bool is_dir;
+    bool used;
+} shfile_t;
+
+extern shfile_t sh_files[SH_FILES];
+
+void shfs_mark_dirty(void);          /* call after every sh_files mutation  */
+void shfs_load(void);                /* called at boot                       */
+bool shfs_save(void);                /* explicit flush (returns true on OK)  */
+void shfs_flush_if_dirty(void);      /* main-loop hook, writes if changed    */
+
 /* ---- ATA PIO (linux/ata_pio.c) ------------------------------------------- */
 void ata_init(void);
 bool ata_read_lba28 (i32 dev, u32 lba, u8 *buf512, u32 sectors);

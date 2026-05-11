@@ -657,6 +657,12 @@ void long_start(u64 magic, u64 info_ptr)
         gfx_present();
         g_tick++;
 
+        /* Coalesced shfs persistence — if any shell / Files mutation flagged
+         * the in-memory array, push it back to disk at most once a second.
+         * The internal coalescing window in shfs_flush_if_dirty() prevents
+         * write-amplification while users type rapid `touch x.txt` commands. */
+        shfs_flush_if_dirty();
+
         /* pace at ~50 FPS (every 2 PIT ticks) — halt CPU between frames     */
         while (g_ticks - last < 2) __asm__ volatile ("hlt");
         last = g_ticks;
