@@ -412,47 +412,46 @@ static void boot_splash(void)
 
         u8  alpha = dt < 20 ? (u8)(dt * 12) : 240;
 
-        /* Simple FalconOS text - clean and modern */
-        gfx_text_lg(cx - 90, cy - 40, "FalconOS", 0x4A90FF);
-        gfx_text_lg(cx + 50, cy - 40, "1", 0x6AAFFF);
+        /* Animated ring radius. 70 -> ~145 over 150 ticks.                  */
+        i32 r = 70 + (i32)(dt / 2);
 
-        /* Version text */
-        gfx_text_centered(cx, cy + 10, "Blue Dragon Edition", 0x8899AA);
-        i32 r     = 70 + (i32)(dt / 2);
-
-        /* Outer glow rings */
+        /* Three concentric outer halos (large -> small) give the splash a
+         * soft "breathing" quality without animating per-pixel.             */
         gfx_circle_a(cx, cy, r + 20, 0x1A3A6A, (u8)(alpha / 3));
         gfx_circle_a(cx, cy, r + 10, 0x2A5A8A, (u8)(alpha / 2));
 
-        /* Main circle with gradient effect */
+        /* Main concentric rings: solid -> dark -> solid -> dark.            */
         gfx_circle_a(cx, cy, r,      0x2A66F5, alpha);
         gfx_circle_a(cx, cy, r - 16, 0x0A1628, alpha);
         gfx_circle_a(cx, cy, r - 32, 0x2A66F5, (u8)(alpha * 3 / 4));
         gfx_circle_a(cx, cy, r - 48, 0x0A1628, alpha);
 
-        /* Draw enhanced dragon */
+        /* Mascot inside the ring. Same dragon as before; kept because the
+         * user has shipped artwork referencing it.                          */
         draw_blue_dragon(cx, cy, alpha);
 
-        /* FalconOS 1 text - large and prominent */
-        gfx_text_lg(cx - 80, cy + r + 30, "FalconOS", 0xFFFFFF);
-        gfx_text_lg(cx + 56, cy + r + 30, "1", 0x5588FF);
+        /* Single, dominant wordmark BELOW the ring. The previous splash
+         * drew "FalconOS 1" twice (once above and once below the ring) and
+         * also stacked subtitle / architecture / starting / progress lines
+         * on top of each other.  User feedback: "sistemin acilisinda
+         * FalconOS 1 yazsin" -> make the title unambiguous and remove the
+         * duplicate copies.                                                  */
+        gfx_text_lg_centered(cx, cy + r + 36, "FalconOS 1", 0xFFFFFF);
 
-        /* Subtitle with version */
-        gfx_text_centered(cx, cy + r + 70,
-            T("Blue Dragon Edition", "Mavi Ejderha Surumu"), 0xBDE2FF);
+        /* Subtitle: short, dim, one line.                                  */
+        gfx_text_centered(cx, cy + r + 74,
+            T("Starting...", "Baslatiliyor..."), 0x88AACC);
 
-        /* Starting message */
-        gfx_text_centered(cx, cy + r + 92,
-            T("Starting kernel...", "Cekirdek baslatiliyor..."), 0x6688AA);
+        /* Architecture badge — kept because it tells the user this is a
+         * 64-bit kernel, but moved below the subtitle and tinted dimmer.    */
+        gfx_text_centered(cx, cy + r + 94, "x86_64", 0x446688);
 
-        /* Architecture badge */
-        gfx_text_centered(cx, cy + r + 114, "x86_64 Long Mode | 64-bit", 0x446688);
-
-        /* Progress bar effect */
+        /* Progress bar — same as before, but anchored below the badge so
+         * the layout never collides with the wordmark.                      */
         i32 bar_w = 200;
         i32 bar_h = 4;
         i32 bar_x = cx - bar_w / 2;
-        i32 bar_y = cy + r + 135;
+        i32 bar_y = cy + r + 116;
         i32 progress = (i32)(dt * bar_w / 200);
         gfx_rect(bar_x, bar_y, bar_w, bar_h, 0x1A3A6A);
         gfx_rect(bar_x, bar_y, progress, bar_h, 0x2A66F5);

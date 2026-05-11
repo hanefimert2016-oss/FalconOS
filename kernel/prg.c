@@ -188,6 +188,53 @@ static const prg_pkg_t CATALOG[] = {
     { "app-magnifier",   "1.0.0","Screen magnifier for accessibility",        "accessibility","falcon-apps",    6, false },
     { "app-reader",      "1.0.0","Text-to-speech reader (planned)",           "accessibility","falcon-apps",   24, false },
     { "app-high-contrast","1.0.0","High contrast display mode",               "accessibility","falcon-apps",    4, false },
+
+    /* ====== FalconOS 1.2.1: catalogue expansion (productivity + dev) ====== */
+    /* developer tools */
+    { "app-vscode-lite", "1.0.0","Code editor: syntax + folding + minimap",   "dev",     "falcon-apps",        72, false },
+    { "app-vim",         "9.0",  "Vim text editor (modal, ex commands)",      "dev",     "falcon-apps",        48, false },
+    { "app-nano",        "7.2",  "Nano editor — friendly modeless",           "dev",     "falcon-apps",        18, false },
+    { "app-emacs-tiny",  "29.1", "Emacs subset: buffers + dired + shell",     "dev",     "falcon-apps",        92, false },
+    { "app-gdb",         "13.2", "GNU debugger frontend (stub)",              "dev",     "app-vscode-lite",    38, false },
+    { "app-make",        "4.4",  "GNU make - build automation",               "dev",     "falcon-apps",        14, false },
+    { "app-clang",       "17.0", "Clang/LLVM C+C++ compiler frontend",        "dev",     "falcon-apps",       120, false },
+    { "app-rust",        "1.74", "Rust compiler scaffold",                    "dev",     "falcon-apps",       180, false },
+    { "app-go",          "1.21", "Go compiler scaffold",                      "dev",     "falcon-apps",        90, false },
+    { "app-python3",     "3.12", "Python 3 interpreter scaffold",             "dev",     "falcon-apps",        76, false },
+    { "app-node",        "20.5", "Node.js scaffold",                          "dev",     "falcon-apps",        88, false },
+    { "app-curl",        "8.5",  "URL retriever (HTTP/1.1, deferred to v1.3)","dev",     "falcon-apps",         8, false },
+    { "app-jq",          "1.7",  "JSON processor",                            "dev",     "falcon-apps",         6, false },
+    { "app-tmux",        "3.4",  "Terminal multiplexer",                      "dev",     "falcon-apps",        14, false },
+    { "app-htop",        "3.3",  "Interactive process viewer",                "tools",   "falcon-apps",         9, false },
+
+    /* productivity */
+    { "app-libreoffice", "7.6",  "Office suite (Writer/Calc/Impress)",        "office",  "falcon-apps",       380, false },
+    { "app-gimp-lite",   "2.10", "GIMP-style image editor (single layer)",    "media",   "falcon-apps",       120, false },
+    { "app-inkscape",    "1.3",  "Vector graphics editor scaffold",           "media",   "falcon-apps",       150, false },
+    { "app-vlc",         "3.0",  "Media player scaffold (frame-only)",        "media",   "falcon-apps",       110, false },
+    { "app-blender-lite","4.0",  "3-D modelling scaffold",                    "media",   "falcon-apps",       200, false },
+
+    /* communication / network */
+    { "app-irc",         "1.0.0","IRC client (deferred to v1.3-tls)",         "network", "falcon-apps",        18, false },
+    { "app-ssh",         "9.5",  "OpenSSH client scaffold",                   "network", "falcon-apps",        24, false },
+    { "app-mosh",        "1.4",  "Mobile shell scaffold",                     "network", "falcon-apps",        18, false },
+    { "app-ftp",         "1.0.0","FTP client scaffold",                       "network", "falcon-apps",        10, false },
+
+    /* themes */
+    { "theme-tokyonight","1.0.0","Tokyo Night — dark deep purple",            "themes",  "falcon-shell",        3, false },
+    { "theme-gruvbox",   "1.0.0","Gruvbox dark warm contrast theme",          "themes",  "falcon-shell",        3, false },
+    { "theme-catppuccin","1.0.0","Catppuccin Mocha pastel theme",             "themes",  "falcon-shell",        3, false },
+    { "theme-everforest","1.0.0","Everforest moss-green theme",               "themes",  "falcon-shell",        3, false },
+    { "theme-aurora-blue","1.0.0","Aurora Blue — original FalconOS",          "themes",  "falcon-shell",        3, false },
+
+    /* GNU/system shims (provide command surface for the shell) */
+    { "gnu-coreutils",   "9.4",  "coreutils 90+ (cat ls sort wc head tail...)","system", "falcon-shell",       12, true  },
+    { "gnu-binutils",    "2.41", "GNU binutils stub (as/ld/objdump)",         "system",  "falcon-shell",       20, false },
+    { "gnu-bash",        "5.2",  "Bash-compatible shell stub",                "system",  "falcon-shell",       18, false },
+    { "gnu-grep",        "3.11", "GNU grep with -i/-n/-v/-E (in-tree)",       "system",  "falcon-shell",        4, true  },
+    { "gnu-sed",         "4.9",  "sed stream editor",                         "system",  "falcon-shell",        4, false },
+    { "gnu-awk",         "5.3",  "awk record processor",                      "system",  "falcon-shell",        6, false },
+    { "gnu-tar",         "1.35", "tar archiver",                              "system",  "falcon-shell",        8, false },
 };
 
 #define N_CATALOG ((i32)(sizeof(CATALOG) / sizeof(CATALOG[0])))
