@@ -2400,6 +2400,258 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         out[oi] = 0;
         return 0;
     }
+    /* ==================== FalconOS 1.2.1 — added shell commands ==================== */
+    if (k_strcmp(cmd, "tac") == 0) {
+        if (argc < 2) { k_strcpy(out, "tac: missing operand"); return 1; }
+        shfile_t *f = sh_resolve(argv[1]);
+        if (!f || f->is_dir) { k_strcpy(out, "tac: not a file"); return 1; }
+        i32 oi = 0; out[0] = 0;
+        i32 line_starts[64]; i32 lc = 0; line_starts[lc++] = 0;
+        for (u32 i = 0; i < f->len && lc < 64; i++)
+            if (f->data[i] == '\n' && i + 1 < f->len) line_starts[lc++] = (i32)i + 1;
+        for (i32 li = lc - 1; li >= 0 && oi < 1900; li--) {
+            i32 s = line_starts[li];
+            i32 e = (li + 1 < lc) ? line_starts[li + 1] - 1 : (i32)f->len;
+            for (i32 i = s; i < e && oi < 1900; i++) out[oi++] = f->data[i];
+            if (oi < 1900) out[oi++] = '\n';
+        }
+        out[oi] = 0;
+        return 0;
+    }
+    if (k_strcmp(cmd, "rev") == 0) {
+        if (argc < 2) { k_strcpy(out, ""); return 0; }
+        i32 al = k_strlen(argv[1]);
+        for (i32 i = 0; i < al; i++) out[i] = argv[1][al - 1 - i];
+        out[al] = 0; return 0;
+    }
+    if (k_strcmp(cmd, "realpath") == 0 || k_strcmp(cmd, "readlink") == 0) {
+        if (argc < 2) { k_strcpy(out, cmd); k_strcat(out, ": missing operand"); return 1; }
+        char abs[SH_PATHLEN]; sh_path_join(argv[1], abs);
+        k_strcpy(out, abs); return 0;
+    }
+    if (k_strcmp(cmd, "stat") == 0) {
+        if (argc < 2) { k_strcpy(out, "stat: missing operand"); return 1; }
+        shfile_t *f = sh_resolve(argv[1]);
+        if (!f) { k_strcpy(out, "stat: no such file: "); k_strcat(out, argv[1]); return 1; }
+        char num[24];
+        k_strcpy(out, "  File: ");
+        k_strcat(out, f->name);
+        k_strcat(out, f->is_dir ? "\n  Type: directory\n  Size: -" : "\n  Type: regular file\n  Size: ");
+        if (!f->is_dir) { k_itoa(f->len, num, 10); k_strcat(out, num); k_strcat(out, " bytes"); }
+        k_strcat(out, "\n  Mode: 644  Uid: 1000  Gid: 1000");
+        return 0;
+    }
+    if (k_strcmp(cmd, "tree") == 0) {
+        const char *base = (argc >= 2) ? argv[1] : ".";
+        char root[SH_PATHLEN]; sh_path_join(base, root);
+        i32 oi = 0; out[0] = 0;
+        k_strcpy(out, root); k_strcat(out, "\n"); oi = k_strlen(out);
+        i32 rl = k_strlen(root);
+        for (i32 i = 0; i < SH_FILES && oi < 1900; i++) {
+            if (!sh_files[i].used) continue;
+            const char *p = sh_files[i].name;
+            i32 j = 0; while (j < rl && p[j] == root[j]) j++;
+            if (j != rl) continue;
+            if (!p[j]) continue;
+            if (rl > 1 && p[j] != '/') continue;
+            i32 depth = 0;
+            for (i32 k = (rl > 1 ? rl + 1 : rl); p[k]; k++) if (p[k] == '/') depth++;
+            for (i32 d = 0; d <= depth && oi < 1898; d++) { out[oi++] = ' '; out[oi++] = ' '; }
+            const char *base2 = sh_path_basename(p);
+            for (i32 k = 0; base2[k] && oi < 1898; k++) out[oi++] = base2[k];
+            if (sh_files[i].is_dir && oi < 1899) out[oi++] = '/';
+            if (oi < 1899) out[oi++] = '\n';
+        }
+        out[oi] = 0; return 0;
+    }
+    if (k_strcmp(cmd, "chmod") == 0 || k_strcmp(cmd, "chown") == 0 || k_strcmp(cmd, "chgrp") == 0) {
+        /* FalconFS has no permission bits; accept silently like /bin/true. */
+        return 0;
+    }
+    if (k_strcmp(cmd, "ln") == 0) {
+        /* Hard/symlinks would need a separate field; emit a copy as the
+         * best approximation while keeping the same exit code shape. */
+        if (argc < 3) { k_strcpy(out, "ln: missing operand"); return 1; }
+        i32 t_argc = 3;
+        const char *t_argv[3] = { "cp", argv[argc - 2], argv[argc - 1] };
+        (void)t_argc; (void)t_argv;
+        k_strcpy(out, "ln: symlinks not supported; use cp(1)");
+        return 1;
+    }
+    if (k_strcmp(cmd, "mktemp") == 0) {
+        u32 seed = g_ticks ^ 0xA5A5A5A5u;
+        char name[SH_PATHLEN]; k_strcpy(name, "/tmp/tmp.");
+        i32 nl = k_strlen(name);
+        for (i32 k = 0; k < 6; k++) {
+            seed = seed * 1103515245u + 12345u;
+            name[nl++] = 'a' + (char)((seed >> 16) % 26);
+        }
+        name[nl] = 0;
+        if (sh_file_find(name)) { k_strcpy(out, "mktemp: name collision"); return 1; }
+        i32 slot = -1;
+        for (i32 k = 0; k < SH_FILES; k++) if (!sh_files[k].used) { slot = k; break; }
+        if (slot < 0) { k_strcpy(out, "mktemp: shfs full"); return 1; }
+        sh_files[slot].used = true; sh_files[slot].is_dir = false;
+        sh_files[slot].len = 0; sh_files[slot].data[0] = 0;
+        k_strcpy(sh_files[slot].name, name);
+        k_strcpy(out, name);
+        return 0;
+    }
+    if (k_strcmp(cmd, "tty") == 0)    { k_strcpy(out, "/dev/tty0"); return 0; }
+    if (k_strcmp(cmd, "logname") == 0){
+        const falcon_user_t *u = users_at(SET.active_user);
+        k_strcpy(out, (u && u->name[0]) ? u->name : "falcon"); return 0;
+    }
+    if (k_strcmp(cmd, "nproc") == 0) { k_strcpy(out, "1"); return 0; }
+    if (k_strcmp(cmd, "arch") == 0)  { k_strcpy(out, "x86_64"); return 0; }
+    if (k_strcmp(cmd, "machine") == 0) { k_strcpy(out, "FalconOS-1"); return 0; }
+    if (k_strcmp(cmd, "lsmem") == 0) {
+        k_strcpy(out, "RANGE             SIZE  STATE\n0x000000-0x1FFFFFFF  512M  online (kernel image + framebuffer + BSS)");
+        return 0;
+    }
+    if (k_strcmp(cmd, "uptime-pretty") == 0) {
+        u32 hh = 0, mm = 0, ss = 0; pit_uptime(&hh, &mm, &ss);
+        char num[12];
+        k_strcpy(out, "up "); k_itoa(hh, num, 10); k_strcat(out, num); k_strcat(out, "h ");
+        k_itoa(mm, num, 10); k_strcat(out, num); k_strcat(out, "m ");
+        k_itoa(ss, num, 10); k_strcat(out, num); k_strcat(out, "s");
+        return 0;
+    }
+    if (k_strcmp(cmd, "diff") == 0 || k_strcmp(cmd, "cmp") == 0) {
+        if (argc < 3) { k_strcpy(out, cmd); k_strcat(out, ": need 2 files"); return 1; }
+        shfile_t *a = sh_resolve(argv[1]);
+        shfile_t *b = sh_resolve(argv[2]);
+        if (!a || !b) { k_strcpy(out, cmd); k_strcat(out, ": file missing"); return 1; }
+        if (a->len != b->len) {
+            k_strcpy(out, "files differ (size: ");
+            char n[12]; k_itoa(a->len, n, 10); k_strcat(out, n); k_strcat(out, " vs ");
+            k_itoa(b->len, n, 10); k_strcat(out, n); k_strcat(out, ")");
+            return 1;
+        }
+        for (u32 i = 0; i < a->len; i++) if (a->data[i] != b->data[i]) {
+            char n[12]; k_strcpy(out, "first differ at byte "); k_itoa(i, n, 10); k_strcat(out, n);
+            return 1;
+        }
+        out[0] = 0; return 0;
+    }
+    if (k_strcmp(cmd, "md5sum") == 0 || k_strcmp(cmd, "sha256sum") == 0) {
+        /* Bare-metal placeholder: emit a deterministic hash by simply
+         * folding the bytes into a 64-bit accumulator and hex-printing.  
+         * Not crypto, but unique-per-content and good enough for "did
+         * this change" checks at the prompt. */
+        if (argc < 2) { k_strcpy(out, cmd); k_strcat(out, ": missing operand"); return 1; }
+        shfile_t *f = sh_resolve(argv[1]);
+        if (!f) { k_strcpy(out, cmd); k_strcat(out, ": no such file"); return 1; }
+        u64 acc = 0x1505u;
+        for (u32 i = 0; i < f->len; i++)
+            acc = ((acc << 5) + acc) ^ (u8)f->data[i];
+        char hex[17];
+        for (i32 i = 15; i >= 0; i--) {
+            u8 d = (u8)(acc & 0xF); acc >>= 4;
+            hex[i] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+        }
+        hex[16] = 0;
+        k_strcpy(out, hex); k_strcat(out, "  "); k_strcat(out, f->name);
+        return 0;
+    }
+    if (k_strcmp(cmd, "env") == 0) {
+        out[0] = 0;
+        for (i32 i = 0; i < SH_VARS; i++) {
+            if (!sh_vars[i].used) continue;
+            k_strcat(out, sh_vars[i].name); k_strcat(out, "=");
+            k_strcat(out, sh_vars[i].value); k_strcat(out, "\n");
+        }
+        if (!out[0]) k_strcpy(out, "PATH=/bin\nHOME=/home/falcon\nSHELL=/bin/falcon-sh");
+        return 0;
+    }
+    if (k_strcmp(cmd, "which") == 0) {
+        if (argc < 2) { k_strcpy(out, "which: missing operand"); return 1; }
+        /* "everything is a builtin" — report /usr/bin/<name>           */
+        k_strcpy(out, "/usr/bin/"); k_strcat(out, argv[1]);
+        return 0;
+    }
+    if (k_strcmp(cmd, "whereis") == 0) {
+        if (argc < 2) { k_strcpy(out, "whereis: missing operand"); return 1; }
+        k_strcpy(out, argv[1]); k_strcat(out, ": /usr/bin/"); k_strcat(out, argv[1]);
+        return 0;
+    }
+    if (k_strcmp(cmd, "ip") == 0) {
+        if (!net_present()) { k_strcpy(out, "no link"); return 1; }
+        char mac[32]; net_mac_string(mac);
+        k_strcpy(out, "1: virtio0  link/ether ");
+        k_strcat(out, mac);
+        k_strcat(out, net_connected() ? "  state UP" : "  state DOWN");
+        if (net_connected()) {
+            k_strcat(out, "\n    inet "); k_strcat(out, net_ip_addr());
+            k_strcat(out, "/24 gw "); k_strcat(out, net_gateway());
+        }
+        return 0;
+    }
+    if (k_strcmp(cmd, "dmesg") == 0) {
+        k_strcpy(out,
+            "[    0.000000] FalconOS 1 x86_64 long-mode boot\n"
+            "[    0.000123] gdt: tss installed (rsp0 -> ist0)\n"
+            "[    0.000201] idt: 256 vectors, exc 0..31, irq 0..15\n"
+            "[    0.000334] pic remapped 0x20..0x2F, irq mask 0xFFFD\n"
+            "[    0.001005] pit: 100Hz tick\n"
+            "[    0.010222] ata: primary master = QEMU HARDDISK\n"
+            "[    0.022100] fb: 2560x1440 32bpp at 0xFD000000\n"
+            "[    0.030000] kbd: ps/2 layout=TR-Q\n"
+            "[    0.030100] mouse: ps/2 enabled, sample 100Hz\n"
+            "[    0.500000] prg: catalogue loaded (158 entries)\n");
+        return 0;
+    }
+    if (k_strcmp(cmd, "lspci") == 0) {
+        k_strcpy(out,
+            "00:00.0 Host bridge: Intel 440FX (QEMU)\n"
+            "00:01.0 ISA bridge: PIIX3\n"
+            "00:01.1 IDE controller: PIIX3\n"
+            "00:02.0 VGA: stdvga\n"
+            "00:03.0 Ethernet: virtio-net (DOWN)\n");
+        return 0;
+    }
+    if (k_strcmp(cmd, "lsusb") == 0) {
+        k_strcpy(out,
+            "Bus 001 Device 001: 1d6b:0001 Linux UHCI root hub\n"
+            "Bus 001 Device 002: 0627:0001 QEMU USB Tablet\n");
+        return 0;
+    }
+    if (k_strcmp(cmd, "blkid") == 0) {
+        k_strcpy(out, "/dev/sda: TYPE=\"falconfs\" UUID=\"FALC-0001\"\n");
+        return 0;
+    }
+    if (k_strcmp(cmd, "service") == 0 || k_strcmp(cmd, "systemctl") == 0) {
+        if (argc >= 3) {
+            k_strcpy(out, cmd); k_strcat(out, ": ");
+            k_strcat(out, argv[2]); k_strcat(out, " — managed");
+            return 0;
+        }
+        k_strcpy(out, cmd); k_strcat(out, ": init system stub (FalconOS uses cooperative scheduling)");
+        return 0;
+    }
+    if (k_strcmp(cmd, "fortune") == 0) {
+        static const char *F[] = {
+            "Inanc dağları yerinden oynatır; dahası onları yeniden derler.",
+            "git push origin life",
+            "Real artists ship.",
+            "Read the code, not the manual.",
+            "Hello, FalconOS!",
+        };
+        i32 idx = (i32)((g_ticks ^ 0xAB) % 5);
+        k_strcpy(out, F[idx]); return 0;
+    }
+    if (k_strcmp(cmd, "banner") == 0) {
+        const char *t = (argc >= 2) ? argv[1] : "FalconOS";
+        k_strcpy(out, "##\n## "); k_strcat(out, t); k_strcat(out, "\n##");
+        return 0;
+    }
+    if (k_strcmp(cmd, "cowsay") == 0) {
+        const char *t = (argc >= 2) ? argv[1] : "Moo!";
+        k_strcpy(out, " ___\n< "); k_strcat(out, t);
+        k_strcat(out, " >\n ---\n        \\   ^__^\n         \\  (oo)\\_______\n            (__)\\       )\\/\\\n                ||----w |\n                ||     ||");
+        return 0;
+    }
+
     /* unknown */
     k_strcpy(out, cmd); k_strcat(out, ": command not found");
     return 127;
