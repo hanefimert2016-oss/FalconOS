@@ -281,178 +281,167 @@ static void draw_cursor(void)
     gfx_circle(mx, my, 5, ml ? PAL_ACCENT : PAL_PANEL);
 }
 
-static void draw_blue_dragon(i32 cx, i32 cy, u8 alpha)
+/* ----------------------------------------------------------------------------
+ *  draw_3d_wordmark — perspective-projected "FalconOS 1" mark
+ * ----------------------------------------------------------------------------
+ *  We treat each letter as a row of vertical "bars" sampled from a 5x7 glyph
+ *  matrix.  Every bar is then rendered twice: once for the front face and
+ *  once for the back face (offset by a 3D depth vector) and the two faces
+ *  are joined by side struts so the mark reads as an extruded slab.
+ *
+ *  A subtle Y-axis rotation (sweep ±18°) is driven by the splash tick so the
+ *  mark looks alive without burning a real 3D pipeline.                    */
+
+/* 5 wide x 7 tall bitmap font, 1 = stroke, 0 = empty.                     */
+typedef struct { char ch; const char *bits; } glyph5x7_t;
+static const glyph5x7_t G3D[] = {
+    { 'F', "11111""10000""10000""11110""10000""10000""10000" },
+    { 'a', "00000""00000""01110""00001""01111""10001""01111" },
+    { 'l', "01100""00100""00100""00100""00100""00100""01110" },
+    { 'c', "00000""00000""01110""10001""10000""10001""01110" },
+    { 'o', "00000""00000""01110""10001""10001""10001""01110" },
+    { 'n', "00000""00000""10110""11001""10001""10001""10001" },
+    { 'O', "01110""10001""10001""10001""10001""10001""01110" },
+    { 'S', "01111""10000""10000""01110""00001""00001""11110" },
+    { 'B', "11110""10001""10001""11110""10001""10001""11110" },
+    { 'r', "00000""00000""10110""11001""10000""10000""10000" },
+    { 'T', "11111""00100""00100""00100""00100""00100""00100" },
+    { 'F', "11111""10000""10000""11110""10000""10000""10000" },
+    { 'y', "00000""00000""10001""10001""01111""00001""11110" },
+    { '1', "00100""01100""00100""00100""00100""00100""01110" },
+    { ' ', "00000""00000""00000""00000""00000""00000""00000" },
+};
+static const char *glyph_bits(char c)
 {
-    /* Professional blue dragon emblem - detailed and realistic */
-    u32 deep_blue  = 0x0A1628;
-    u32 body_blue  = 0x1E4A8C;
-    u32 mid_blue   = 0x2A66F5;
-    u32 bright_blue= 0x4A88FF;
-    u32 glow_blue  = 0x5588FF;
-    u32 ice_blue   = 0xBDE2FF;
-    u32 white      = 0xFFFFFF;
-    u32 gold       = 0xFFD700;
-    u32 dark       = 0x050A14;
-
-    /* Outer glow layers - atmosphere around dragon */
-    gfx_circle_a(cx, cy, 90, dark, (u8)(alpha / 4));
-    gfx_circle_a(cx, cy, 80, deep_blue, (u8)(alpha / 3));
-    gfx_circle_a(cx, cy, 70, body_blue, (u8)(alpha / 2));
-
-    /* Main body - sinuous serpentine body */
-    gfx_circle_a(cx - 25, cy + 35, 28, body_blue, alpha);
-    gfx_circle_a(cx - 15, cy + 25, 30, body_blue, alpha);
-    gfx_circle_a(cx - 5, cy + 15, 32, mid_blue, alpha);
-    gfx_circle_a(cx + 5, cy + 5, 34, mid_blue, alpha);
-    gfx_circle_a(cx + 15, cy - 5, 32, mid_blue, alpha);
-    gfx_circle_a(cx + 20, cy - 18, 28, bright_blue, alpha);
-
-    /* Body scales pattern - subtle scale effect */
-    gfx_circle_a(cx - 20, cy + 30, 12, body_blue, (u8)(alpha * 3 / 4));
-    gfx_circle_a(cx - 10, cy + 20, 14, body_blue, (u8)(alpha * 3 / 4));
-    gfx_circle_a(cx, cy + 10, 16, mid_blue, (u8)(alpha * 3 / 4));
-    gfx_circle_a(cx + 10, cy, 14, mid_blue, (u8)(alpha * 3 / 4));
-
-    /* Dragon neck and head - elegant curve */
-    gfx_circle_a(cx + 25, cy - 25, 22, bright_blue, alpha);
-    gfx_circle_a(cx + 30, cy - 32, 18, bright_blue, alpha);
-    gfx_circle_a(cx + 35, cy - 38, 14, mid_blue, alpha);
-
-    /* Dragon snout */
-    gfx_circle_a(cx + 42, cy - 40, 10, body_blue, alpha);
-    gfx_circle_a(cx + 48, cy - 42, 6, body_blue, alpha);
-
-    /* Dragon eye socket */
-    gfx_circle_a(cx + 32, cy - 36, 8, dark, alpha);
-    /* Glowing eye */
-    gfx_circle_a(cx + 33, cy - 37, 5, gold, alpha);
-    gfx_circle_a(cx + 33, cy - 37, 3, white, alpha);
-    gfx_circle_a(cx + 34, cy - 38, 1, white, alpha);
-
-    /* Dragon horns - sharp and angular */
-    gfx_line(cx + 28, cy - 42, cx + 18, cy - 60, ice_blue);
-    gfx_line(cx + 30, cy - 44, cx + 22, cy - 62, ice_blue);
-    gfx_line(cx + 32, cy - 45, cx + 26, cy - 64, white);
-    /* Horn tips - glowing */
-    gfx_circle_a(cx + 18, cy - 60, 3, white, alpha);
-    gfx_circle_a(cx + 22, cy - 62, 3, white, alpha);
-    gfx_circle_a(cx + 26, cy - 64, 2, white, alpha);
-
-    /* Dragon ears/frills */
-    gfx_line(cx + 24, cy - 35, cx + 14, cy - 48, bright_blue);
-    gfx_line(cx + 22, cy - 34, cx + 12, cy - 46, bright_blue);
-    gfx_circle_a(cx + 14, cy - 48, 4, ice_blue, alpha);
-    gfx_circle_a(cx + 12, cy - 46, 3, ice_blue, alpha);
-
-    /* Dragon wings - large and impressive */
-    /* Left wing (viewer's left, dragon's right) */
-    gfx_line(cx + 10, cy - 5, cx - 15, cy - 35, glow_blue);
-    gfx_line(cx + 8, cy - 3, cx - 20, cy - 38, glow_blue);
-    gfx_line(cx + 5, cy, cx - 28, cy - 40, bright_blue);
-    gfx_line(cx + 2, cy + 2, cx - 35, cy - 38, bright_blue);
-    gfx_line(cx - 2, cy + 4, cx - 42, cy - 32, mid_blue);
-    /* Wing membrane details */
-    gfx_circle_a(cx - 15, cy - 35, 8, bright_blue, (u8)(alpha * 2 / 3));
-    gfx_circle_a(cx - 28, cy - 40, 6, bright_blue, (u8)(alpha * 2 / 3));
-    gfx_circle_a(cx - 40, cy - 35, 5, mid_blue, (u8)(alpha * 2 / 3));
-    /* Wing tip feathers */
-    gfx_circle_a(cx - 15, cy - 35, 4, ice_blue, alpha);
-    gfx_circle_a(cx - 28, cy - 40, 3, ice_blue, alpha);
-    gfx_circle_a(cx - 40, cy - 35, 2, ice_blue, alpha);
-
-    /* Dragon tail - long and flowing */
-    gfx_circle_a(cx - 35, cy + 45, 20, body_blue, alpha);
-    gfx_circle_a(cx - 45, cy + 55, 14, body_blue, alpha);
-    gfx_circle_a(cx - 55, cy + 62, 10, deep_blue, alpha);
-    gfx_circle_a(cx - 62, cy + 68, 6, deep_blue, alpha);
-    gfx_circle_a(cx - 68, cy + 72, 3, mid_blue, alpha);
-    /* Tail tuft */
-    gfx_line(cx - 68, cy + 72, cx - 75, cy + 78, bright_blue);
-    gfx_line(cx - 68, cy + 72, cx - 78, cy + 75, bright_blue);
-    gfx_line(cx - 68, cy + 72, cx - 76, cy + 80, ice_blue);
-
-    /* Dragon claws - sharp and dangerous */
-    gfx_line(cx + 20, cy + 15, cx + 25, cy + 35, body_blue);
-    gfx_line(cx + 18, cy + 18, cx + 22, cy + 38, body_blue);
-    gfx_line(cx + 22, cy + 20, cx + 30, cy + 36, body_blue);
-    gfx_line(cx + 25, cy + 22, cx + 35, cy + 34, body_blue);
-    /* Claw tips */
-    gfx_circle_a(cx + 25, cy + 35, 2, white, alpha);
-    gfx_circle_a(cx + 22, cy + 38, 2, white, alpha);
-    gfx_circle_a(cx + 30, cy + 36, 2, white, alpha);
-    gfx_circle_a(cx + 35, cy + 34, 2, white, alpha);
-
-    /* Belly scales - lighter underbelly */
-    gfx_circle_a(cx - 5, cy + 18, 10, ice_blue, (u8)(alpha / 2));
-    gfx_circle_a(cx + 5, cy + 8, 12, ice_blue, (u8)(alpha / 2));
-    gfx_circle_a(cx + 15, cy - 2, 10, ice_blue, (u8)(alpha / 2));
-
-    /* Nostril smoke/breath effect */
-    gfx_circle_a(cx + 50, cy - 41, 3, (u8)(alpha / 2), (u8)(alpha / 2));
-    gfx_circle_a(cx + 52, cy - 40, 2, (u8)(alpha / 3), (u8)(alpha / 3));
-
-    /* Final glow ring */
-    gfx_circle_outline(cx, cy, 65, glow_blue);
-    gfx_circle_outline(cx, cy, 68, (u8)(alpha / 2));
+    for (u32 i = 0; i < sizeof G3D / sizeof G3D[0]; i++)
+        if (G3D[i].ch == c) return G3D[i].bits;
+    return G3D[14].bits;  /* space */
 }
+
+/* Project (x,y,z) using a soft Y-axis rotation by angle (8-bit cos/sin
+ * approximated from a 256-entry table-less reduction) and a pinhole
+ * perspective at z = 1024.                                              */
+static void p3d(i32 px, i32 py, i32 pz, i32 ang_sx256,
+                i32 ox, i32 oy, i32 *outx, i32 *outy)
+{
+    /* small-angle sin/cos: |ang| <= 32 so radians ~ ang/100; use cubic. */
+    i32 s = ang_sx256;                      /* sin*256 approx           */
+    i32 c = 256 - (s * s) / 512;            /* cos*256 ~ 1 - s^2/2      */
+    /* rotate around Y axis: x' = x*c + z*s ; z' = -x*s + z*c           */
+    i32 xr = (px * c + pz * s) >> 8;
+    i32 zr = (-px * s + pz * c) >> 8;
+    /* pinhole: x'' = x' * f / (f + z) ; f chosen so depth ~ 0.85       */
+    i32 f = 800;
+    i32 d = f + zr;
+    if (d < 50) d = 50;
+    *outx = ox + (xr * f) / d;
+    *outy = oy + (py * f) / d;
+}
+
+static void draw_3d_wordmark(i32 cx, i32 cy, u8 alpha, i32 tick)
+{
+    /* Two-line layout:
+     *      FalconOS 1
+     *      Born To Fly
+     * Render each character as a 5x7 grid of dots, projected through p3d().
+     * The "depth" is achieved by drawing the same character at z = +18 (back)
+     * with a dim colour, then at z = -18 (front) with a bright colour, plus
+     * 1 px struts between the two layers at glyph corners.                */
+    const char *L1 = "FalconOS 1";
+    const char *L2 = "Born To Fly";
+
+    /* gentle ±15-unit Y-axis sweep over ~150-tick splash               */
+    i32 ang = ((tick % 150) - 75) / 5;   /* range -15..+15              */
+    if (ang < -15) ang = -15;
+    if (ang >  15) ang =  15;
+
+    const i32 cell = 12;       /* dot pitch in source units            */
+    const i32 row_h = 9 * cell;
+    const i32 z_back  = +24;
+    const i32 z_front = -24;
+
+    u32 col_front = 0x9FCBFF;
+    u32 col_back  = 0x2A66F5;
+    u32 col_strut = 0x4A88FF;
+
+    const char *lines[2] = { L1, L2 };
+    i32 line_y_off[2] = { -row_h / 2 - 18, +row_h / 2 + 18 };
+
+    for (i32 li = 0; li < 2; li++) {
+        const char *s = lines[li];
+        i32 n = 0; while (s[n]) n++;
+        i32 width = n * 6 * cell;
+        i32 x0 = -width / 2;
+        i32 y0 = line_y_off[li];
+        for (i32 ci = 0; ci < n; ci++) {
+            const char *gb = glyph_bits(s[ci]);
+            i32 gx0 = x0 + ci * 6 * cell;
+            for (i32 r = 0; r < 7; r++) {
+                for (i32 c = 0; c < 5; c++) {
+                    if (gb[r * 5 + c] != '1') continue;
+                    i32 px = gx0 + c * cell;
+                    i32 py = y0 + r * cell;
+                    /* back face dot                                  */
+                    i32 ax, ay; p3d(px, py, z_back, ang, cx, cy, &ax, &ay);
+                    gfx_circle_a(ax, ay, 3, col_back, alpha);
+                    /* front face dot                                 */
+                    i32 bx, by; p3d(px, py, z_front, ang, cx, cy, &bx, &by);
+                    gfx_circle_a(bx, by, 4, col_front, alpha);
+                    /* strut connecting the two faces                 */
+                    gfx_line(ax, ay, bx, by, col_strut);
+                }
+            }
+        }
+    }
+}
+
 
 /* --------------------------------------------------------------------------- */
 static void boot_splash(void)
 {
-    /* run for ~150 ticks (1500 ms at 100 Hz) — clean simple boot */
+    /* run for ~150 ticks (1500 ms at 100 Hz) — clean simple boot.
+     * The previous splash centred a hand-pixelled blue-dragon mascot
+     * inside concentric rings, but the user asked for a 3D 'FalconOS 1'
+     * wordmark with 'Born To Fly' tagline instead.  The dragon function
+     * is preserved one screen below (as dead code) for the desktop
+     * pin until a vector replacement is generated, but it no longer
+     * runs at boot.                                                      */
     u32 start = g_ticks;
     while (g_ticks - start < 150) {
         u32 dt = g_ticks - start;
 
-        /* Clean gradient background */
-        gfx_gradient_v(0x1a1a2e, 0x16213e);
+        /* Deep-night gradient: top is near-black, bottom is rich royal blue
+         * so the 3D mark sits on a calm, theatrical stage.                  */
+        gfx_gradient_v(0x05080F, 0x0F1A33);
 
         i32 cx = (i32)FB.width  / 2;
         i32 cy = (i32)FB.height / 2;
 
         u8  alpha = dt < 20 ? (u8)(dt * 12) : 240;
 
-        /* Animated ring radius. 70 -> ~145 over 150 ticks.                  */
-        i32 r = 70 + (i32)(dt / 2);
+        /* Three concentric faint horizon arcs behind the mark to keep
+         * the screen from looking empty without any focal mascot.          */
+        gfx_circle_a(cx, cy + 8, 240, 0x152A55, (u8)(alpha / 3));
+        gfx_circle_a(cx, cy + 8, 180, 0x1F3A75, (u8)(alpha / 4));
+        gfx_circle_a(cx, cy + 8, 120, 0x2A66F5, (u8)(alpha / 6));
 
-        /* Three concentric outer halos (large -> small) give the splash a
-         * soft "breathing" quality without animating per-pixel.             */
-        gfx_circle_a(cx, cy, r + 20, 0x1A3A6A, (u8)(alpha / 3));
-        gfx_circle_a(cx, cy, r + 10, 0x2A5A8A, (u8)(alpha / 2));
+        /* 3-D extruded 'FalconOS 1' / 'Born To Fly' wordmark.              */
+        draw_3d_wordmark(cx, cy, alpha, (i32)dt);
 
-        /* Main concentric rings: solid -> dark -> solid -> dark.            */
-        gfx_circle_a(cx, cy, r,      0x2A66F5, alpha);
-        gfx_circle_a(cx, cy, r - 16, 0x0A1628, alpha);
-        gfx_circle_a(cx, cy, r - 32, 0x2A66F5, (u8)(alpha * 3 / 4));
-        gfx_circle_a(cx, cy, r - 48, 0x0A1628, alpha);
-
-        /* Mascot inside the ring. Same dragon as before; kept because the
-         * user has shipped artwork referencing it.                          */
-        draw_blue_dragon(cx, cy, alpha);
-
-        /* Single, dominant wordmark BELOW the ring. The previous splash
-         * drew "FalconOS 1" twice (once above and once below the ring) and
-         * also stacked subtitle / architecture / starting / progress lines
-         * on top of each other.  User feedback: "sistemin acilisinda
-         * FalconOS 1 yazsin" -> make the title unambiguous and remove the
-         * duplicate copies.                                                  */
-        gfx_text_lg_centered(cx, cy + r + 36, "FalconOS 1", 0xFFFFFF);
-
-        /* Subtitle: short, dim, one line.                                  */
-        gfx_text_centered(cx, cy + r + 74,
+        /* Subtitle: short, dim, one line — directly under the mark.        */
+        gfx_text_centered(cx, cy + 160,
             T("Starting...", "Baslatiliyor..."), 0x88AACC);
 
-        /* Architecture badge — kept because it tells the user this is a
-         * 64-bit kernel, but moved below the subtitle and tinted dimmer.    */
-        gfx_text_centered(cx, cy + r + 94, "x86_64", 0x446688);
+        /* Architecture badge.                                              */
+        gfx_text_centered(cx, cy + 184, "x86_64", 0x446688);
 
-        /* Progress bar — same as before, but anchored below the badge so
-         * the layout never collides with the wordmark.                      */
-        i32 bar_w = 200;
+        /* Progress bar pinned to the bottom edge so the layout no longer
+         * collides with the wordmark when the user runs at HD.             */
+        i32 bar_w = 320;
         i32 bar_h = 4;
         i32 bar_x = cx - bar_w / 2;
-        i32 bar_y = cy + r + 116;
-        i32 progress = (i32)(dt * bar_w / 200);
+        i32 bar_y = cy + 212;
+        i32 progress = (i32)(dt * bar_w / 150);
         gfx_rect(bar_x, bar_y, bar_w, bar_h, 0x1A3A6A);
         gfx_rect(bar_x, bar_y, progress, bar_h, 0x2A66F5);
 

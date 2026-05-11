@@ -530,7 +530,7 @@ static bool ih_version(const char *p)
 {
     if (!match_any(p, "version", "surum", "versiyon", "kac"))
         return false;
-    j_say("FalconOS 1.1.0 Blue Dragon Edition");
+    j_say("FalconOS 1.3 - Born To Fly");
     j_push("  Kernel: falcon-kernel 1.0.0");
     j_push("  Shell:  falcon-shell 1.0.0");
     j_push("  Arch:   x86_64 long-mode");

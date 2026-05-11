@@ -195,14 +195,21 @@ static void icon_browser(i32 cx, i32 cy)
 }
 static void icon_falco(i32 cx, i32 cy)
 {
-    /* Falco mark: blue dragon head in a rounded badge. */
+    /* Falco mark: stylised falcon silhouette in a rounded badge.
+     * (Replaces the old blue-dragon emblem per user request — the OS
+     *  identity is now the falcon "Born To Fly" wordmark.)             */
     gfx_round_rect(cx - 16, cy - 16, 32, 32, 8, 0x163C8C);
     gfx_round_outline(cx - 16, cy - 16, 32, 32, 8, PAL_HAIRLINE);
-    gfx_circle(cx - 3, cy + 2, 11, 0x2A66F5);
-    gfx_circle(cx + 7, cy - 5, 7, 0x2A66F5);
-    gfx_circle(cx + 11, cy - 12, 3, 0xBDE2FF);
-    gfx_line(cx - 10, cy + 10, cx - 15, cy + 15, 0x123A9C);
-    gfx_line(cx - 7,  cy + 5,  cx - 15, cy + 8, 0x123A9C);
+    /* head + beak */
+    gfx_circle(cx + 4, cy - 4, 5, 0xBDE2FF);
+    gfx_line(cx + 8, cy - 4, cx + 14, cy - 6, 0xFFFFFF);
+    gfx_line(cx + 9, cy - 2, cx + 13, cy - 3, 0xFFFFFF);
+    /* swept wing — three angled strokes pointing left+down            */
+    gfx_line(cx + 2, cy - 2, cx - 12, cy +  6, 0x4A88FF);
+    gfx_line(cx + 1, cy + 1, cx - 10, cy + 10, 0x4A88FF);
+    gfx_line(cx + 0, cy + 4, cx -  6, cy + 12, 0x9FCBFF);
+    /* body / tail tuft */
+    gfx_line(cx + 4, cy + 1, cx + 10, cy + 10, 0x2A66F5);
 }
 static void icon_store(i32 cx, i32 cy)
 {
