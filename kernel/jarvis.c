@@ -706,6 +706,20 @@ static bool ih_hostname(const char *p)
     return true;
 }
 
+/* Report which TLS engine is linked into the kernel.  Hitting this
+ * intent proves end-to-end that vendor/bearssl/ compiled, archived
+ * into libbearssl.a, and got pulled into falcon.elf at link time. */
+static bool ih_tls(const char *p)
+{
+    if (!match_any(p, "tls", "https", "ssl", "sertifika"))
+        return false;
+    char buf[J_COLS];
+    k_strcpy(buf, SET.lang == LANG_TR ? "TLS motoru: " : "TLS engine: ");
+    k_strcat(buf, tls_version());
+    j_say(buf);
+    return true;
+}
+
 static bool ih_kbd(const char *p)
 {
     if (!match_any(p, "klavye", "keyboard", "layout", "duzen"))
@@ -1053,6 +1067,7 @@ static const intent_t INTENTS[] = {
     { "ip adres","my ip","ipv4","address",          ih_ip              },
     { "mac adres","mac address","donanim adres","hw addr", ih_mac      },
     { "hostname","makine ad","bilgisayar ad","host name",  ih_hostname },
+    { "tls","https","ssl","sertifika",              ih_tls             },
     { "klavye","keyboard","layout","duzen",         ih_kbd             },
     { "masaustu","calisma alan","workspace","desktop ", ih_workspace   },
     { "masaustu sayi","workspace count","kac masaustu","how many workspace", ih_workspace_count },

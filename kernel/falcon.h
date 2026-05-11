@@ -616,6 +616,39 @@ const char *net_summary(void);
 /* ---- network tools (kernel/net_tools.c) ------------------------------------- */
 void   net_tools_dispatch(const char *cmd, char *out);
 
+/* ---- TLS / HTTPS client (kernel/tls_client.c, BearSSL-backed) ------------- */
+typedef enum {
+    TLS_OK = 0,
+    TLS_ERR_NO_NETWORK,    /* virtio-net adapter absent or link DOWN          */
+    TLS_ERR_NO_DHCP,       /* could not obtain IPv4 address                   */
+    TLS_ERR_DNS,           /* hostname did not resolve                        */
+    TLS_ERR_TCP_CONNECT,   /* tcp 3-way handshake failed                      */
+    TLS_ERR_TLS_HANDSHAKE, /* BearSSL handshake failed (cert/alert/protocol)  */
+    TLS_ERR_HTTP,          /* server returned non-2xx or malformed response   */
+    TLS_ERR_TIMEOUT,
+    TLS_ERR_BUFFER_FULL,
+    TLS_ERR_UNCONFIGURED   /* tls_client not yet linked end-to-end            */
+} tls_result_t;
+
+/* Initialise the TLS subsystem: seeds HMAC_DRBG from PIT + RTC + RDRAND,
+ * binds BearSSL's client engine to the kernel transport layer, and
+ * embeds the Mozilla root-CA bundle.  Returns the BearSSL version
+ * string so callers can prove the library actually linked. */
+const char  *tls_version(void);
+tls_result_t tls_init(void);
+
+/* High-level "give me a URL" entry point.
+ * Performs:  DNS  ->  TCP connect  ->  TLS handshake (server-auth via
+ * X.509 chain + Mozilla roots)  ->  HTTP GET  ->  read response.
+ * out / out_cap is filled with the response body (UTF-8, truncated).
+ * Returns TLS_OK on success, otherwise one of TLS_ERR_*.
+ *
+ * Until the lwIP-light/bareTCP stack lands (see network roadmap),
+ * this is wired but returns TLS_ERR_UNCONFIGURED — kernel/tls_client.c
+ * carries the call sequence and the BearSSL state object so we can
+ * land the network plumbing incrementally without churning callers. */
+tls_result_t tls_https_get(const char *url, char *out, u32 out_cap);
+
 /* tiny global tick (incremented by main loop, NOT real time — see g_ticks) */
 extern volatile u32 g_tick;
 

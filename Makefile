@@ -76,25 +76,14 @@ BEARSSL_DIR    := vendor/bearssl
 # transitively wants <stdlib.h>.  The kernel is built with -mno-sse, so
 # we keep the constant-time portable variants instead.
 BEARSSL_SRCS_ALL := $(shell find $(BEARSSL_DIR)/src -name '*.c')
+# Only excludes things that physically can't compile under -nostdinc /
+# -mno-sse: rand/sysrng.c (/dev/urandom + windows wincrypt) is the only
+# source that includes platform headers unconditionally.  The other
+# SIMD implementations are gated by BR_AES_X86NI / BR_GHASH_PCLMUL /
+# etc. (defined to 0 in BEARSSL_CFLAGS below), so the SIMD files
+# compile to empty translation units.
 BEARSSL_EXCLUDE  := \
-    $(BEARSSL_DIR)/src/rand/sysrng.c \
-    $(BEARSSL_DIR)/src/symcipher/aes_x86ni.c \
-    $(BEARSSL_DIR)/src/symcipher/aes_x86ni_ctr.c \
-    $(BEARSSL_DIR)/src/symcipher/aes_x86ni_ctrcbc.c \
-    $(BEARSSL_DIR)/src/symcipher/aes_x86ni_cbcenc.c \
-    $(BEARSSL_DIR)/src/symcipher/aes_x86ni_cbcdec.c \
-    $(BEARSSL_DIR)/src/symcipher/aes_pwr8.c \
-    $(BEARSSL_DIR)/src/symcipher/aes_pwr8_ctr.c \
-    $(BEARSSL_DIR)/src/symcipher/aes_pwr8_ctrcbc.c \
-    $(BEARSSL_DIR)/src/symcipher/aes_pwr8_cbcenc.c \
-    $(BEARSSL_DIR)/src/symcipher/aes_pwr8_cbcdec.c \
-    $(BEARSSL_DIR)/src/symcipher/chacha20_sse2.c \
-    $(BEARSSL_DIR)/src/symcipher/poly1305_ctmulq.c \
-    $(BEARSSL_DIR)/src/hash/ghash_pclmul.c \
-    $(BEARSSL_DIR)/src/hash/ghash_pwr8.c \
-    $(BEARSSL_DIR)/src/ec/ec_c25519_m15.c \
-    $(BEARSSL_DIR)/src/ec/ec_c25519_m31.c \
-    $(BEARSSL_DIR)/src/int/i62_modpow2.c
+    $(BEARSSL_DIR)/src/rand/sysrng.c
 BEARSSL_SRCS   := $(filter-out $(BEARSSL_EXCLUDE),$(BEARSSL_SRCS_ALL))
 BEARSSL_OBJS   := $(BEARSSL_SRCS:%.c=$(BUILD)/%.o)
 BEARSSL_CFLAGS := $(CFLAGS_ARCH) -ffreestanding -fno-pic -fno-stack-protector \
@@ -104,7 +93,9 @@ BEARSSL_CFLAGS := $(CFLAGS_ARCH) -ffreestanding -fno-pic -fno-stack-protector \
                   -I $(BEARSSL_DIR)/inc -I $(BEARSSL_DIR)/src \
                   -Wno-unused-parameter -Wno-unused-but-set-variable \
                   -DBR_LOMUL=1 -DBR_USE_UNIX_TIME=0 -DBR_USE_WIN32_TIME=0 \
-                  -DBR_USE_URANDOM=0 -DBR_USE_WIN32_RAND=0
+                  -DBR_USE_URANDOM=0 -DBR_USE_WIN32_RAND=0 \
+                  -DBR_AES_X86NI=0 -DBR_GHASH_PCLMUL=0 \
+                  -DBR_POWER8=0 -DBR_INT128=0 -DBR_UMUL128=0
 SHIM_OBJ       := $(BUILD)/vendor/bearssl-shim/strops.o
 
 KERNEL      := $(BUILD)/falcon.elf
@@ -156,6 +147,17 @@ $(BUILD)/vendor/bearssl/src/%.o: $(BEARSSL_DIR)/src/%.c
 $(BUILD)/vendor/bearssl-shim/%.o: vendor/bearssl-shim/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(BEARSSL_CFLAGS) -c $< -o $@
+
+# kernel/tls_client.c and kernel/tls_roots.c include bearssl.h, which
+# wants <stddef.h>/<stdint.h>; reuse the BearSSL flag set so they pick
+# up GCC's freestanding headers and our shim.  Falcon's own types come
+# in through -Ikernel which BEARSSL_CFLAGS doesn't have, so re-add it.
+$(BUILD)/kernel/tls_client.o: kernel/tls_client.c kernel/falcon.h | $(BUILD)/kernel
+	$(CC) $(BEARSSL_CFLAGS) -Ikernel -DFB_W=$(FB_W) -DFB_H=$(FB_H) \
+	      -DARCH_$(ARCH)=1 -c $< -o $@
+
+$(BUILD)/kernel/tls_roots.o: kernel/tls_roots.c | $(BUILD)/kernel
+	$(CC) $(BEARSSL_CFLAGS) -Ikernel -c $< -o $@
 
 # Static library so the kernel ELF doesn't bloat its symbol table.
 $(BUILD)/libbearssl.a: $(BEARSSL_OBJS) $(SHIM_OBJ)

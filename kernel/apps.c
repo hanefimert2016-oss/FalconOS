@@ -2281,12 +2281,30 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             k_strcpy(out, cmd); k_strcat(out, ": missing URL");
             return 1;
         }
-        if (!net_connected()) {
-            k_strcpy(out, cmd); k_strcat(out, ": no network — Settings > Network or 'ip dhcp'");
-            return 1;
+        /* Route every HTTPS request through tls_https_get(), which is
+         * backed by the vendored BearSSL static archive (libbearssl.a).
+         * The TLS engine, RNG seeder and X.509 validator are linked in
+         * and exercised; the underlying TCP/IP transport still lives
+         * on the v1.3-tls branch, so callers get a clean structured
+         * tls_result_t back instead of a synthesised response.       */
+        char body[1024];
+        tls_result_t r = tls_https_get(argv[1], body, sizeof body);
+        k_strcpy(out, cmd); k_strcat(out, " ");
+        k_strcat(out, argv[1]); k_strcat(out, "\n");
+        k_strcat(out, "  TLS engine : "); k_strcat(out, tls_version()); k_strcat(out, "\n");
+        switch (r) {
+            case TLS_OK:               k_strcat(out, "  status     : 200 OK\n  "); k_strcat(out, body); break;
+            case TLS_ERR_NO_NETWORK:   k_strcat(out, "  error      : no virtio-net adapter present"); break;
+            case TLS_ERR_NO_DHCP:      k_strcat(out, "  error      : DHCP lease not obtained"); break;
+            case TLS_ERR_DNS:          k_strcat(out, "  error      : DNS resolution failed"); break;
+            case TLS_ERR_TCP_CONNECT:  k_strcat(out, "  error      : TCP connect failed"); break;
+            case TLS_ERR_TLS_HANDSHAKE:k_strcat(out, "  error      : TLS handshake failed"); break;
+            case TLS_ERR_HTTP:         k_strcat(out, "  error      : malformed URL or HTTP error"); break;
+            case TLS_ERR_TIMEOUT:      k_strcat(out, "  error      : I/O timeout"); break;
+            case TLS_ERR_BUFFER_FULL:  k_strcat(out, "  error      : output buffer too small"); break;
+            case TLS_ERR_UNCONFIGURED: k_strcat(out, "  status     : TLS linked, bareTCP transport pending"); break;
         }
-        k_strcpy(out, cmd); k_strcat(out, ": HTTPS pending TLS port (FalconOS 1.2 in progress)");
-        return 1;
+        return (r == TLS_OK) ? 0 : 1;
     }
     /* nl — number lines (mimics POSIX nl with default style)         */
     if (k_strcmp(cmd, "nl") == 0) {
