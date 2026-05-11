@@ -137,22 +137,50 @@ void installer_render(u32 frame)
 
     switch (g_step) {
         case INST_LANG: {
-            headline = "Dilinizi seçin  —  Choose language";
+            headline = "Dilinizi seçin  —  Choose language  —  Sprache wählen  —  Choisir";
             helptext   = "<-/-> değiştir / switch    Enter ile devam / continue";
-            const char *items[2] = { "Turkçe", "English" };
-            const u32 lang_dot[2] = {
-                0xE30A17,   /* TR  red                                  */
-                0x012169,   /* EN  navy                                 */
+            /* 11 languages — one row of tiles, each with a coloured flag
+             * pip drawn over the active highlight so the eye matches
+             * country quickly even when the label is transliterated.   */
+            const char *items[LANG_COUNT] = {
+                "Türkçe", "English", "Deutsch", "Français", "Español",
+                "Italiano", "Português", "Русский", "العربية",
+                "中文", "日本語"
             };
-            gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
-            draw_choice_row(cy - 40, items, 2, g_choice);
-            /* paint a 6 px coloured pip on top of every tile          */
-            i32 W = (i32)FB.width, pad = 14, pw = 180, n = 2;
+            const u32 lang_dot[LANG_COUNT] = {
+                0xE30A17,  /* TR  red                       */
+                0x012169,  /* EN  British navy              */
+                0x000000,  /* DE  black                     */
+                0x0055A4,  /* FR  blue                      */
+                0xAA151B,  /* ES  red                       */
+                0x009246,  /* IT  green                     */
+                0xFF0000,  /* PT  red                       */
+                0xFFFFFF,  /* RU  white (top stripe)        */
+                0x006C35,  /* AR  green (Saudi-style ref.)  */
+                0xDE2910,  /* ZH  red                       */
+                0xBC002D,  /* JA  hi-no-maru                */
+            };
+            gfx_text_centered(cx, cy - 110, headline, PAL_TEXT);
+            /* Hand-tiled because draw_choice_row only fits 5; we lay
+             * out a single row of 11 narrow tiles (120 px each).      */
+            i32 W = (i32)FB.width, pad = 6, pw = 120, n = LANG_COUNT;
             i32 row_w = n * pw + (n - 1) * pad;
             i32 x0 = (W - row_w) / 2;
+            i32 y0 = cy - 40;
             for (i32 i = 0; i < n; i++) {
                 i32 px = x0 + i * (pw + pad);
-                gfx_round_rect(px + 12, cy - 40 + 8, 8, 8, 4, lang_dot[i]);
+                bool active = (i == g_choice);
+                if (active) {
+                    gfx_round_rect_a(px - 3, y0 - 3, pw + 6, 60 + 6, 14, PAL_ACCENT, 60);
+                    gfx_round_rect(px, y0, pw, 60, 12, PAL_ACCENT);
+                    gfx_text_centered(px + pw / 2, y0 + 22, items[i], 0xFFFFFF);
+                } else {
+                    gfx_round_rect_a(px, y0, pw, 60, 12, PAL_PANEL_DEEP, 240);
+                    gfx_round_outline(px, y0, pw, 60, 12, PAL_HAIRLINE);
+                    gfx_text_centered(px + pw / 2, y0 + 22, items[i], PAL_TEXT_DIM);
+                }
+                /* coloured 8x8 flag pip in the top-left corner       */
+                gfx_round_rect(px + 8, y0 + 8, 8, 8, 4, lang_dot[i]);
             }
             gfx_text_centered(cx, cy + 76, helptext, PAL_TEXT_DIM);
             break;
@@ -486,7 +514,7 @@ void installer_input(i32 key)
         g_step == INST_DISK  || g_step == INST_USER_MORE) {
         i32 max;
         switch (g_step) {
-            case INST_LANG:     max = 2; break;  /* TR + EN only */
+            case INST_LANG:     max = LANG_COUNT; break;
             case INST_THEME:    max = THEME_COUNT; break;
             case INST_ACCENT:   max = 5; break;
             case INST_KBD:      max = 3; break;

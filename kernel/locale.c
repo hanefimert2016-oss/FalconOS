@@ -37,6 +37,12 @@ const char *lang_name(lang_t l)
         case LANG_DE: return "Deutsch";
         case LANG_FR: return "Francais";
         case LANG_ES: return "Espanol";
+        case LANG_IT: return "Italiano";
+        case LANG_PT: return "Portugues";
+        case LANG_RU: return "Russkij";
+        case LANG_AR: return "Arabi";
+        case LANG_ZH: return "Zhongwen";
+        case LANG_JA: return "Nihongo";
         default: return "?";
     }
 }

@@ -67,11 +67,17 @@ typedef enum {
     ACC_COUNT
 } accent_t;
 typedef enum {
-    LANG_TR = 0,    /* Turkce       */
+    LANG_TR = 0,    /* Türkçe       */
     LANG_EN = 1,    /* English      */
     LANG_DE = 2,    /* Deutsch      */
-    LANG_FR = 3,    /* Francais     */
-    LANG_ES = 4,    /* Espanol      */
+    LANG_FR = 3,    /* Français     */
+    LANG_ES = 4,    /* Español      */
+    LANG_IT = 5,    /* Italiano     */
+    LANG_PT = 6,    /* Português    */
+    LANG_RU = 7,    /* Русский (rendered as transliteration: Russkij) */
+    LANG_AR = 8,    /* العربية (rendered as transliteration: Arabi)  */
+    LANG_ZH = 9,    /* 中文     (rendered as: Zhongwen)               */
+    LANG_JA = 10,   /* 日本語   (rendered as: Nihongo)                */
     LANG_COUNT,
 } lang_t;
 typedef enum {
