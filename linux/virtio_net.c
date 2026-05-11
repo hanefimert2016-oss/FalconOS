@@ -232,6 +232,12 @@ bool net_init(void)
     k_strcpy(NET_DEV.netmask, "255.255.255.0");
     k_strcpy(NET_DEV.gateway, "0.0.0.0");
 
+    /* Walk the PCI bus once and flip NET_DEV.present if a virtio-net
+     * device is found.  This is the real probe — earlier builds left
+     * virtio_net_probe() defined but never called, so the adapter
+     * never reported present even though QEMU was emulating one. */
+    (void)virtio_net_probe();
+
     g_inited = true;
     return NET_DEV.present;
 }

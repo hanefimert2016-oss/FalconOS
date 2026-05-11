@@ -65,6 +65,48 @@ C_SRCS      := $(wildcard kernel/*.c) $(wildcard linux/*.c)
 C_OBJS      := $(C_SRCS:%.c=$(BUILD)/%.o)
 ASM_OBJS    := $(BUILD)/boot/multiboot2.o $(BUILD)/boot/isr.o
 
+# ---- BearSSL (vendored) ------------------------------------------------------
+# BearSSL is built with the same freestanding toolchain.  We point its
+# <string.h> at our shim and let GCC's builtin freestanding headers
+# satisfy <stddef.h> and <stdint.h>.
+GCC_INC        := $(shell $(CC) -print-file-name=include)
+BEARSSL_DIR    := vendor/bearssl
+# Filter out the optional hardware-accelerated implementations: those
+# need -msse2/-maes/-mpclmul/-mavx and pull in <x86intrin.h>, which
+# transitively wants <stdlib.h>.  The kernel is built with -mno-sse, so
+# we keep the constant-time portable variants instead.
+BEARSSL_SRCS_ALL := $(shell find $(BEARSSL_DIR)/src -name '*.c')
+BEARSSL_EXCLUDE  := \
+    $(BEARSSL_DIR)/src/rand/sysrng.c \
+    $(BEARSSL_DIR)/src/symcipher/aes_x86ni.c \
+    $(BEARSSL_DIR)/src/symcipher/aes_x86ni_ctr.c \
+    $(BEARSSL_DIR)/src/symcipher/aes_x86ni_ctrcbc.c \
+    $(BEARSSL_DIR)/src/symcipher/aes_x86ni_cbcenc.c \
+    $(BEARSSL_DIR)/src/symcipher/aes_x86ni_cbcdec.c \
+    $(BEARSSL_DIR)/src/symcipher/aes_pwr8.c \
+    $(BEARSSL_DIR)/src/symcipher/aes_pwr8_ctr.c \
+    $(BEARSSL_DIR)/src/symcipher/aes_pwr8_ctrcbc.c \
+    $(BEARSSL_DIR)/src/symcipher/aes_pwr8_cbcenc.c \
+    $(BEARSSL_DIR)/src/symcipher/aes_pwr8_cbcdec.c \
+    $(BEARSSL_DIR)/src/symcipher/chacha20_sse2.c \
+    $(BEARSSL_DIR)/src/symcipher/poly1305_ctmulq.c \
+    $(BEARSSL_DIR)/src/hash/ghash_pclmul.c \
+    $(BEARSSL_DIR)/src/hash/ghash_pwr8.c \
+    $(BEARSSL_DIR)/src/ec/ec_c25519_m15.c \
+    $(BEARSSL_DIR)/src/ec/ec_c25519_m31.c \
+    $(BEARSSL_DIR)/src/int/i62_modpow2.c
+BEARSSL_SRCS   := $(filter-out $(BEARSSL_EXCLUDE),$(BEARSSL_SRCS_ALL))
+BEARSSL_OBJS   := $(BEARSSL_SRCS:%.c=$(BUILD)/%.o)
+BEARSSL_CFLAGS := $(CFLAGS_ARCH) -ffreestanding -fno-pic -fno-stack-protector \
+                  -fno-builtin -nostdlib -nostdinc -O2 \
+                  -isystem $(GCC_INC) \
+                  -I vendor/bearssl-shim \
+                  -I $(BEARSSL_DIR)/inc -I $(BEARSSL_DIR)/src \
+                  -Wno-unused-parameter -Wno-unused-but-set-variable \
+                  -DBR_LOMUL=1 -DBR_USE_UNIX_TIME=0 -DBR_USE_WIN32_TIME=0 \
+                  -DBR_USE_URANDOM=0 -DBR_USE_WIN32_RAND=0
+SHIM_OBJ       := $(BUILD)/vendor/bearssl-shim/strops.o
+
 KERNEL      := $(BUILD)/falcon.elf
 ISO         := $(BUILD)/FalconOS.iso
 
@@ -104,9 +146,26 @@ $(BUILD)/linux/%.o: linux/%.c kernel/falcon.h | $(BUILD)/linux
 $(BUILD)/boot/%.o: boot/%.asm | $(BUILD)/boot
 	$(NASM) $(NASMFLAGS) $< -o $@
 
+# ---- compile BearSSL ---------------------------------------------------------
+# A single pattern rule covers all 277 .c files under vendor/bearssl/src/.
+# The recipe lives in its own block (no kernel/falcon.h dependency).
+$(BUILD)/vendor/bearssl/src/%.o: $(BEARSSL_DIR)/src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BEARSSL_CFLAGS) -c $< -o $@
+
+$(BUILD)/vendor/bearssl-shim/%.o: vendor/bearssl-shim/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BEARSSL_CFLAGS) -c $< -o $@
+
+# Static library so the kernel ELF doesn't bloat its symbol table.
+$(BUILD)/libbearssl.a: $(BEARSSL_OBJS) $(SHIM_OBJ)
+	@rm -f $@
+	ar rcs $@ $(BEARSSL_OBJS) $(SHIM_OBJ)
+	@echo "[OK] $@  ($$(wc -c < $@) bytes, $(words $(BEARSSL_OBJS)) BearSSL objs + shim)"
+
 # ---- link kernel --------------------------------------------------------------
-$(KERNEL): $(ASM_OBJS) $(C_OBJS) linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(ASM_OBJS) $(C_OBJS)
+$(KERNEL): $(ASM_OBJS) $(C_OBJS) $(BUILD)/libbearssl.a linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(ASM_OBJS) $(C_OBJS) $(BUILD)/libbearssl.a
 	@echo "[OK] linked $@  ($$(wc -c < $@) bytes, ARCH=$(ARCH), back-buffer $(FB_W)×$(FB_H))"
 
 # ---- ISO ----------------------------------------------------------------------
