@@ -640,6 +640,379 @@ static bool ih_goodbye(const char *p)
     return true;
 }
 
+/* ==================== FalconOS 1.2.1 extended intents ==================== */
+
+static bool ih_network(const char *p)
+{
+    if (!match_any(p, "ag durum", "network", "internet", "baglanti"))
+        return false;
+    char buf[J_COLS];
+    if (!net_present()) {
+        j_say(SET.lang == LANG_TR ? "Ag karti bulunamadi (virtio-net yok)."
+                                  : "No network adapter found (virtio-net absent).");
+        return true;
+    }
+    if (!net_connected()) {
+        j_say(SET.lang == LANG_TR ? "Ag karti var ama baglanti yok."
+                                  : "Adapter present, link down.");
+        return true;
+    }
+    k_strcpy(buf, SET.lang == LANG_TR ? "Baglandi.  IP: " : "Connected.  IP: ");
+    k_strcat(buf, net_ip_addr());
+    k_strcat(buf, "  GW: ");
+    k_strcat(buf, net_gateway());
+    j_say(buf);
+    return true;
+}
+
+static bool ih_ip(const char *p)
+{
+    if (!match_any(p, "ip adres", "my ip", "ipv4", "address"))
+        return false;
+    if (!net_connected()) {
+        j_say(SET.lang == LANG_TR ? "Henuz IP aldim degil; once 'ag durum' kontrol et."
+                                  : "No IP yet; check 'network status' first.");
+        return true;
+    }
+    char buf[J_COLS];
+    k_strcpy(buf, "IP: ");
+    k_strcat(buf, net_ip_addr());
+    j_say(buf);
+    return true;
+}
+
+static bool ih_mac(const char *p)
+{
+    if (!match_any(p, "mac adres", "mac address", "donanim adres", "hw addr"))
+        return false;
+    if (!net_present()) {
+        j_say(SET.lang == LANG_TR ? "Ag karti yok." : "No adapter.");
+        return true;
+    }
+    char mac[32];
+    net_mac_string(mac);
+    char buf[J_COLS];
+    k_strcpy(buf, "MAC: ");
+    k_strcat(buf, mac);
+    j_say(buf);
+    return true;
+}
+
+static bool ih_hostname(const char *p)
+{
+    if (!match_any(p, "hostname", "makine ad", "bilgisayar ad", "host name"))
+        return false;
+    j_say(SET.lang == LANG_TR ? "Makine adi: falcon" : "Hostname: falcon");
+    return true;
+}
+
+static bool ih_kbd(const char *p)
+{
+    if (!match_any(p, "klavye", "keyboard", "layout", "duzen"))
+        return false;
+    if (contains_ci(p, "turkce f") || contains_ci(p, "tr-f") || contains_ci(p, "tr f")) {
+        SET.kbd_layout = KBD_TR_F; diskdb_save();
+        j_say(SET.lang == LANG_TR ? "Klavye TR-F oldu." : "Keyboard set to TR-F.");
+        return true;
+    }
+    if (contains_ci(p, "turkce") || contains_ci(p, "tr-q") || contains_ci(p, "turkish")) {
+        SET.kbd_layout = KBD_TR_Q; diskdb_save();
+        j_say(SET.lang == LANG_TR ? "Klavye TR-Q oldu." : "Keyboard set to TR-Q.");
+        return true;
+    }
+    if (contains_ci(p, "ingilizce") || contains_ci(p, "us") || contains_ci(p, "english")) {
+        SET.kbd_layout = KBD_US; diskdb_save();
+        j_say(SET.lang == LANG_TR ? "Klavye US oldu." : "Keyboard set to US.");
+        return true;
+    }
+    char buf[J_COLS];
+    k_strcpy(buf, SET.lang == LANG_TR ? "Klavye duzeni: " : "Keyboard layout: ");
+    k_strcat(buf, kbd_layout_name(SET.kbd_layout));
+    j_say(buf);
+    return true;
+}
+
+static bool ih_workspace(const char *p)
+{
+    if (!match_any(p, "masaustu", "calisma alan", "workspace", "desktop "))
+        return false;
+    /* dial-in a specific number 1..4 */
+    for (i32 i = 0; p[i]; i++) {
+        if (p[i] >= '1' && p[i] <= '4') {
+            SET.active_workspace = p[i] - '1';
+            char buf[J_COLS];
+            k_strcpy(buf, SET.lang == LANG_TR ? "Masaustu " : "Workspace ");
+            char num[2]; num[0] = p[i]; num[1] = 0;
+            k_strcat(buf, num);
+            k_strcat(buf, SET.lang == LANG_TR ? "'e gectim." : " active.");
+            j_say(buf);
+            return true;
+        }
+    }
+    if (contains_ci(p, "sonraki") || contains_ci(p, "next")) {
+        SET.active_workspace = (SET.active_workspace + 1) % 4;
+    } else if (contains_ci(p, "onceki") || contains_ci(p, "prev")) {
+        SET.active_workspace = (SET.active_workspace + 3) % 4;
+    }
+    char buf[J_COLS];
+    char num[4]; k_itoa((u32)(SET.active_workspace + 1), num, 10);
+    k_strcpy(buf, SET.lang == LANG_TR ? "Masaustu " : "Workspace ");
+    k_strcat(buf, num);
+    k_strcat(buf, " / 4");
+    j_say(buf);
+    return true;
+}
+
+static bool ih_packages(const char *p)
+{
+    if (!match_any(p, "kurulu paket", "installed pkg", "installed package",
+                   "paket liste"))
+        return false;
+    i32 total = prg_count(), inst = 0;
+    for (i32 i = 0; i < total; i++) if (prg_is_installed(i)) inst++;
+    char buf[J_COLS];
+    char num[12];
+    k_itoa((u32)inst, num, 10); k_strcpy(buf, num);
+    k_strcat(buf, " / ");
+    k_itoa((u32)total, num, 10); k_strcat(buf, num);
+    k_strcat(buf, SET.lang == LANG_TR ? " paket kurulu." : " packages installed.");
+    j_say(buf);
+    return true;
+}
+
+static bool ih_apps(const char *p)
+{
+    if (!match_any(p, "kac uygulama", "how many apps", "app count", "uygulama say"))
+        return false;
+    char buf[J_COLS]; char num[12];
+    k_itoa((u32)apps_count(), num, 10);
+    k_strcpy(buf, SET.lang == LANG_TR ? "Toplam " : "Total ");
+    k_strcat(buf, num);
+    k_strcat(buf, SET.lang == LANG_TR ? " uygulama var." : " apps available.");
+    j_say(buf);
+    return true;
+}
+
+static bool ih_reboot(const char *p)
+{
+    if (!match_any(p, "yeniden basla", "reboot", "tekrar baslat", "restart now"))
+        return false;
+    j_say(SET.lang == LANG_TR ? "Guc menusu aciliyor (F12)..." : "Opening power menu (F12)...");
+    power_menu_open();
+    return true;
+}
+
+static bool ih_shutdown_now(const char *p)
+{
+    if (!match_any(p, "simdi kapat", "shutdown now", "kapan", "power off"))
+        return false;
+    j_say(SET.lang == LANG_TR ? "Guc menusu aciliyor (F12)..." : "Opening power menu (F12)...");
+    power_menu_open();
+    return true;
+}
+
+static bool ih_random(const char *p)
+{
+    if (!match_any(p, "rastgele", "random", "sayi sec", "pick number"))
+        return false;
+    /* tick-based PRNG, fine for trivia */
+    u32 seed = g_ticks ^ 0xCAFEBABEu;
+    seed = seed * 1103515245u + 12345u;
+    i32 v = (i32)((seed >> 16) % 100);
+    char buf[J_COLS]; char num[12];
+    k_itoa((u32)v, num, 10);
+    k_strcpy(buf, SET.lang == LANG_TR ? "Rastgele sayi: " : "Random number: ");
+    k_strcat(buf, num);
+    j_say(buf);
+    return true;
+}
+
+static bool ih_coinflip(const char *p)
+{
+    if (!match_any(p, "yazi tura", "coin flip", "para at", "heads tails"))
+        return false;
+    bool heads = ((g_ticks ^ 0xDEADBEEFu) & 1u) == 0;
+    if (SET.lang == LANG_TR) j_say(heads ? "Yazi geldi." : "Tura geldi.");
+    else                     j_say(heads ? "Heads."      : "Tails.");
+    return true;
+}
+
+static bool ih_brightness(const char *p)
+{
+    if (!match_any(p, "parlak", "brightness", "ekran isik", "screen light"))
+        return false;
+    j_say(SET.lang == LANG_TR
+          ? "Bu donanimda yazilim parlaklik kontrolu yok; QEMU host'undan ayarla."
+          : "Software brightness is not exposed on this hardware; adjust on the QEMU host.");
+    return true;
+}
+
+static bool ih_volume(const char *p)
+{
+    if (!match_any(p, "ses", "volume", "sessize", "mute"))
+        return false;
+    j_say(SET.lang == LANG_TR
+          ? "Ses surucusu henuz yok (AC'97 portu 1.3 listesinde)."
+          : "Audio driver not yet shipped (AC'97 port on the 1.3 roadmap).");
+    return true;
+}
+
+static bool ih_cpuinfo(const char *p)
+{
+    if (!match_any(p, "cpu", "islemci", "processor", "core"))
+        return false;
+    j_say(SET.lang == LANG_TR
+          ? "x86_64 long mode, tek cekirdek aktif, PIT 100 Hz scheduler."
+          : "x86_64 long mode, one core active, PIT 100 Hz scheduler.");
+    return true;
+}
+
+static bool ih_note(const char *p)
+{
+    if (!match_any(p, "not al", "make note", "note ", "kaydet"))
+        return false;
+    j_say(SET.lang == LANG_TR
+          ? "Notlar uygulamasini aciyorum."
+          : "Opening Notes.");
+    i32 idx = j_find_app("Notes");
+    if (idx >= 0) apps_open(idx);
+    return true;
+}
+
+static bool ih_files_open(const char *p)
+{
+    if (!match_any(p, "dosya yon", "file manager", "dosyalari ac", "open files"))
+        return false;
+    i32 idx = j_find_app("Files");
+    if (idx >= 0) {
+        apps_open(idx);
+        j_say(SET.lang == LANG_TR ? "Dosyalar acildi." : "Files opened.");
+    } else {
+        j_say("Files app not found.");
+    }
+    return true;
+}
+
+static bool ih_store(const char *p)
+{
+    if (!match_any(p, "magaza ac", "open store", "store ac", "yazilim merkezi"))
+        return false;
+    i32 idx = j_find_app("Store");
+    if (idx >= 0) {
+        apps_open(idx);
+        j_say(SET.lang == LANG_TR ? "Magaza acildi." : "Store opened.");
+    }
+    return true;
+}
+
+static bool ih_settings_open(const char *p)
+{
+    if (!match_any(p, "ayarlar", "settings", "preference", "tercih"))
+        return false;
+    i32 idx = j_find_app("Settings");
+    if (idx >= 0) {
+        apps_open(idx);
+        j_say(SET.lang == LANG_TR ? "Ayarlar acildi." : "Settings opened.");
+    }
+    return true;
+}
+
+static bool ih_help_drawer(const char *p)
+{
+    if (!match_any(p, "yardim panel", "help drawer", "yardim ekran", "show help"))
+        return false;
+    helppanel_open();
+    j_say(SET.lang == LANG_TR ? "Yardim paneli acildi (F1)." : "Help drawer opened (F1).");
+    return true;
+}
+
+static bool ih_workspace_count(const char *p)
+{
+    if (!match_any(p, "masaustu sayi", "workspace count", "kac masaustu", "how many workspace"))
+        return false;
+    char buf[J_COLS]; char num[12];
+    k_itoa((u32)SET.workspace_count, num, 10);
+    k_strcpy(buf, num);
+    k_strcat(buf, SET.lang == LANG_TR ? " masaustu var, aktif: " : " workspaces, active: ");
+    k_itoa((u32)(SET.active_workspace + 1), num, 10);
+    k_strcat(buf, num);
+    j_say(buf);
+    return true;
+}
+
+static bool ih_aero_toggle(const char *p)
+{
+    if (!match_any(p, "aero ac", "aero kapat", "aero on", "aero off"))
+        return false;
+    bool enable = !(contains_ci(p, "kapat") || contains_ci(p, "off") || contains_ci(p, "disable"));
+    SET.aero_enabled = enable;
+    diskdb_save();
+    j_say(SET.lang == LANG_TR
+          ? (enable ? "Aero saydamlik acildi." : "Aero saydamlik kapatildi.")
+          : (enable ? "Aero transparency on."  : "Aero transparency off."));
+    return true;
+}
+
+static bool ih_uname(const char *p)
+{
+    if (!match_any(p, "uname", "sistem bilgi", "system info", "kernel info"))
+        return false;
+    j_say("FalconOS 1 x86_64 long-mode bare-metal kernel, PIT 100Hz");
+    return true;
+}
+
+static bool ih_ping(const char *p)
+{
+    if (!match_any(p, "ping", "gateway test", "ag testi", "echo test"))
+        return false;
+    if (!net_connected()) {
+        j_say(SET.lang == LANG_TR ? "Once ag baglantisi gerek." : "Need a live link first.");
+        return true;
+    }
+    char buf[J_COLS];
+    k_strcpy(buf, "ping ");
+    k_strcat(buf, net_gateway());
+    k_strcat(buf, SET.lang == LANG_TR ? "  (yakinda gercek ICMP)" : "  (real ICMP soon)");
+    j_say(buf);
+    return true;
+}
+
+static bool ih_color_accent(const char *p)
+{
+    if (!match_any(p, "vurgu", "accent", "renk degisti", "ana renk"))
+        return false;
+    /* cycle through 4 presets stored in SET.accent_idx via SET.theme */
+    SET.theme = (theme_t)((SET.theme + 1) % 5);
+    diskdb_save();
+    j_say(SET.lang == LANG_TR ? "Sonraki temaya gectim." : "Cycled to next theme.");
+    return true;
+}
+
+static bool ih_apps_running(const char *p)
+{
+    if (!match_any(p, "acik uygulama", "running apps", "kac uygulama acik", "open apps"))
+        return false;
+    i32 cur = apps_active();
+    if (cur < 0) {
+        j_say(SET.lang == LANG_TR ? "Acik pencere yok." : "No window open.");
+        return true;
+    }
+    char buf[J_COLS];
+    k_strcpy(buf, SET.lang == LANG_TR ? "Acik uygulama: " : "Active window: ");
+    k_strcat(buf, apps_name(cur));
+    j_say(buf);
+    return true;
+}
+
+static bool ih_close_all(const char *p)
+{
+    if (!match_any(p, "hepsini kapat", "close all", "tumunu kapat", "pencereler kapat"))
+        return false;
+    apps_close();
+    j_say(SET.lang == LANG_TR ? "Pencere kapatildi." : "Closed the active window.");
+    return true;
+}
+
 /* ---- intent table -------------------------------------------------------- */
 static const intent_t INTENTS[] = {
     /* greeting & meta first */
@@ -675,6 +1048,34 @@ static const intent_t INTENTS[] = {
     /* social pleasantries */
     { "tesekkur","thanks","sagol",   NULL,      ih_thanks  },
     { "temizle", "clear", "reset",   NULL,      ih_clear   },
+    /* ----- FalconOS 1.2.1 — extended deterministic intents ----- */
+    { "ag durum","network","internet","baglanti",  ih_network         },
+    { "ip adres","my ip","ipv4","address",          ih_ip              },
+    { "mac adres","mac address","donanim adres","hw addr", ih_mac      },
+    { "hostname","makine ad","bilgisayar ad","host name",  ih_hostname },
+    { "klavye","keyboard","layout","duzen",         ih_kbd             },
+    { "masaustu","calisma alan","workspace","desktop ", ih_workspace   },
+    { "masaustu sayi","workspace count","kac masaustu","how many workspace", ih_workspace_count },
+    { "kurulu paket","installed pkg","installed package","paket liste", ih_packages },
+    { "kac uygulama","how many apps","app count","uygulama say", ih_apps },
+    { "yeniden basla","reboot","tekrar baslat","restart now", ih_reboot },
+    { "simdi kapat","shutdown now","kapan","power off", ih_shutdown_now },
+    { "rastgele","random","sayi sec","pick number", ih_random          },
+    { "yazi tura","coin flip","para at","heads tails", ih_coinflip     },
+    { "parlak","brightness","ekran isik","screen light", ih_brightness },
+    { "ses ","volume","sessize","mute",             ih_volume          },
+    { "cpu","islemci","processor","core",           ih_cpuinfo         },
+    { "not al","make note","note ","kaydet",        ih_note            },
+    { "dosya yon","file manager","dosyalari ac","open files", ih_files_open },
+    { "magaza ac","open store","store ac","yazilim merkezi", ih_store  },
+    { "ayarlar","settings","preference","tercih",   ih_settings_open   },
+    { "yardim panel","help drawer","yardim ekran","show help", ih_help_drawer },
+    { "aero ac","aero kapat","aero on","aero off",  ih_aero_toggle     },
+    { "uname","sistem bilgi","system info","kernel info", ih_uname     },
+    { "ping","gateway test","ag testi","echo test", ih_ping            },
+    { "vurgu","accent","renk degisti","ana renk",   ih_color_accent    },
+    { "acik uygulama","running apps","kac uygulama acik","open apps", ih_apps_running },
+    { "hepsini kapat","close all","tumunu kapat","pencereler kapat", ih_close_all },
 };
 static const i32 N_INTENTS = (i32)(sizeof INTENTS / sizeof INTENTS[0]);
 
