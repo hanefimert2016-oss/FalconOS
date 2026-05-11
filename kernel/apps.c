@@ -289,27 +289,8 @@ static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     }
 }
 
-/* --- Files --------------------------------------------------------------- */
-static const char *FAKE_FILES[] = {
-    "README.md",       "boot/multiboot2.asm",  "kernel/main.c",
-    "kernel/gfx.c",    "kernel/personal.c",    "kernel/dev.c",
-    "kernel/idt.c",    "kernel/apps.c",        "kernel/launchpad.c",
-    "kernel/repl.c",   "Makefile",             "linker.ld",
-};
-static void render_files(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
-    (void)frame; (void)ww; (void)wh;
-    section(wx, wy, T("Files", "Dosyalar"),
-            T("/ (sample tree)", "/ (örnek ağaç)"));
-    i32 n = (i32)(sizeof FAKE_FILES / sizeof *FAKE_FILES);
-    for (i32 i = 0; i < n; i++) {
-        i32 y = wy + 60 + i * 22;
-        if (i % 2 == 0)
-            gfx_round_rect_a(wx + 22, y - 2, ww - 44, 20, 6, PAL_PANEL_DEEP, 255);
-        gfx_circle(wx + 36, y + 8, 5, PAL_ACCENT);
-        gfx_text(wx + 50, y + 2, FAKE_FILES[i], PAL_TEXT);
-    }
-}
+/* --- Files: real shfs browser (definition lives after shell helpers) ---- */
+static void render_files(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame);
 
 /* --- Clock: analog dial -------------------------------------------------- */
 static void render_clock(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
@@ -798,17 +779,27 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 #define TERM_LINES 12
 #define TERM_COLS  80
 #define SH_VARS    16
-#define SH_FILES   40
+#define SH_FILES   80          /* hierarchical entries (dirs + files)         */
 #define SH_FBYTES  512
+#define SH_PATHLEN 64          /* absolute path length per entry              */
 
-typedef struct { char name[16]; u32 len; char data[SH_FBYTES]; bool used; } shfile_t;
+/* shfs entry: every entry stores an ABSOLUTE path.  is_dir distinguishes
+ * directories (no payload) from files.  ls/cd walk this flat array but
+ * filter by parent path, giving a real hierarchy without a tree.        */
+typedef struct {
+    char name[SH_PATHLEN];     /* full absolute path, e.g. /home/falcon/x.txt */
+    u32  len;                  /* file payload length                          */
+    char data[SH_FBYTES];      /* file payload (ignored for dirs)              */
+    bool is_dir;               /* true = directory, false = regular file       */
+    bool used;                 /* slot occupancy                               */
+} shfile_t;
 typedef struct { char name[16]; char value[64]; bool used; } shvar_t;
 
 static char term_buf[TERM_LINES][TERM_COLS];
 static i32  term_init_done = 0;
 static i32  term_input_len = 0;
 static char term_input[TERM_COLS];
-static char sh_cwd[32]   = "/home/falcon";
+static char sh_cwd[SH_PATHLEN] = "/home/falcon";
 static shfile_t sh_files[SH_FILES];
 static shvar_t  sh_vars [SH_VARS];
 
@@ -822,6 +813,31 @@ static void term_push(const char *s)
     d[n] = 0;
 }
 
+static void shfs_seed_dir(i32 *slot, const char *path)
+{
+    if (*slot >= SH_FILES) return;
+    shfile_t *f = &sh_files[*slot];
+    k_strcpy(f->name, path);
+    f->len    = 0;
+    f->data[0] = 0;
+    f->is_dir = true;
+    f->used   = true;
+    (*slot)++;
+}
+static void shfs_seed_file(i32 *slot, const char *path, const char *body)
+{
+    if (*slot >= SH_FILES) return;
+    shfile_t *f = &sh_files[*slot];
+    k_strcpy(f->name, path);
+    i32 i = 0;
+    while (body[i] && i < SH_FBYTES - 1) { f->data[i] = body[i]; i++; }
+    f->data[i] = 0;
+    f->len    = (u32)i;
+    f->is_dir = false;
+    f->used   = true;
+    (*slot)++;
+}
+
 static void term_init(void)
 {
     if (term_init_done) return;
@@ -832,20 +848,30 @@ static void term_init(void)
     term_push(T("Type 'help', 'hwinfo', or open Mağaza for prg.",
                 "'help', 'hwinfo' yazın; paketler için Mağaza."));
     term_push("");
-    /* seed a couple of files so 'ls' / 'cat' have content out of the box */
-    k_strcpy(sh_files[0].name, "readme.txt");
-    k_strcpy(sh_files[0].data,
+    /* Seed a hierarchical filesystem.  Entries are flat-stored but every
+     * path is absolute, so ls/cd can scope listings to a parent.        */
+    i32 slot = 0;
+    shfs_seed_dir (&slot, "/");
+    shfs_seed_dir (&slot, "/home");
+    shfs_seed_dir (&slot, "/home/falcon");
+    shfs_seed_dir (&slot, "/home/falcon/Documents");
+    shfs_seed_dir (&slot, "/home/falcon/Downloads");
+    shfs_seed_dir (&slot, "/home/falcon/Pictures");
+    shfs_seed_dir (&slot, "/tmp");
+    shfs_seed_dir (&slot, "/etc");
+    shfs_seed_dir (&slot, "/usr");
+    shfs_seed_dir (&slot, "/var");
+    shfs_seed_dir (&slot, "/var/prg");
+    shfs_seed_file(&slot, "/home/falcon/readme.txt",
         "FalconOS 1 — hoş geldiniz / welcome.\n\n"
         "Bu kabuk POSIX komutlarının bir alt kümesini anlar; "
-        "The shell understands a POSIX subset: "
-        "pwd, cd, ls, cat, echo, pipe, redirects, df, free, hwinfo, prg, update.\n\n"
-        "- ");
-    sh_files[0].len = k_strlen(sh_files[0].data);
-    sh_files[0].used = true;
-    k_strcpy(sh_files[1].name, "hello.sh");
-    k_strcpy(sh_files[1].data, "echo Merhaba FalconOS — hello FalconOS\n");
-    sh_files[1].len  = k_strlen(sh_files[1].data);
-    sh_files[1].used = true;
+        "The shell understands a POSIX subset: pwd cd ls cat mkdir rmdir "
+        "touch rm cp mv echo printf head tail wc grep sort.\n\n"
+        "Try: cd Documents; touch notes.md; echo hi > notes.md; cat notes.md\n");
+    shfs_seed_file(&slot, "/home/falcon/hello.sh",
+        "echo Merhaba FalconOS — hello FalconOS\n");
+    shfs_seed_file(&slot, "/etc/hostname", "falcon\n");
+    shfs_seed_file(&slot, "/etc/issue",    "FalconOS 1 (bare-metal x86_64)\n");
 }
 
 static shvar_t *sh_var_find(const char *n)
@@ -886,6 +912,7 @@ static shfile_t *sh_file_open_w(const char *n, bool append)
         k_strcpy(f->name, n);
         f->len = 0;
         f->data[0] = 0;
+        f->is_dir = false;
     } else if (!append) {
         f->len = 0;
         f->data[0] = 0;
@@ -893,20 +920,98 @@ static shfile_t *sh_file_open_w(const char *n, bool append)
     return f;
 }
 
-/* --- prg install receipts appear in Terminal `ls ~/shfs`-style helpers --- */
-static void pkg_receipt_fname(i32 idx, char name[16])
+/* ----- path helpers ---------------------------------------------------- *
+ *  sh_path_join: produce an absolute, normalised path from a possibly
+ *  relative arg.  Handles "/abs", "rel", "..", ".".  Always writes a
+ *  null-terminated result of at most SH_PATHLEN-1 characters.
+ *  sh_path_parent: parent directory of an absolute path ("/a/b" -> "/a",
+ *  "/" -> "/").
+ *  sh_path_basename: tail component ("/a/b" -> "b", "/" -> "/").     */
+static void sh_path_join(const char *arg, char *out)
 {
-    name[0] = 'r';
+    char tmp[SH_PATHLEN * 2];
+    /* 1. seed tmp with cwd or "/" if arg is absolute */
+    if (arg[0] == '/') {
+        i32 i = 0;
+        while (arg[i] && i < (i32)sizeof tmp - 1) { tmp[i] = arg[i]; i++; }
+        tmp[i] = 0;
+    } else {
+        i32 i = 0;
+        while (sh_cwd[i] && i < (i32)sizeof tmp - 1) { tmp[i] = sh_cwd[i]; i++; }
+        if (i > 0 && tmp[i - 1] != '/' && i < (i32)sizeof tmp - 1) tmp[i++] = '/';
+        i32 j = 0;
+        while (arg[j] && i < (i32)sizeof tmp - 1) { tmp[i++] = arg[j++]; }
+        tmp[i] = 0;
+    }
+    /* 2. normalise by walking components, handling . and .. */
+    char comp[SH_PATHLEN];
+    i32  ci = 0;
+    char stack[SH_PATHLEN];
+    i32  si = 0;
+    stack[0] = 0;
+    for (i32 i = 0; ; i++) {
+        char c = tmp[i];
+        if (c == '/' || c == 0) {
+            comp[ci] = 0;
+            if (ci == 0 || (ci == 1 && comp[0] == '.')) {
+                /* skip empty / . */
+            } else if (ci == 2 && comp[0] == '.' && comp[1] == '.') {
+                while (si > 0 && stack[si - 1] != '/') si--;
+                if (si > 0) si--;
+            } else {
+                if (si + 1 + ci >= (i32)sizeof stack) break;
+                stack[si++] = '/';
+                for (i32 k = 0; k < ci; k++) stack[si++] = comp[k];
+            }
+            ci = 0;
+            if (c == 0) break;
+        } else if (ci < (i32)sizeof comp - 1) {
+            comp[ci++] = c;
+        }
+    }
+    if (si == 0) { out[0] = '/'; out[1] = 0; return; }
+    stack[si] = 0;
+    i32 k = 0;
+    while (stack[k] && k < SH_PATHLEN - 1) { out[k] = stack[k]; k++; }
+    out[k] = 0;
+}
+static void sh_path_parent(const char *p, char *out)
+{
+    i32 n = k_strlen(p);
+    while (n > 1 && p[n - 1] != '/') n--;
+    if (n > 1) n--; /* drop trailing slash unless it's the root */
+    if (n == 0) { out[0] = '/'; out[1] = 0; return; }
+    for (i32 i = 0; i < n; i++) out[i] = p[i];
+    out[n] = 0;
+}
+static const char *sh_path_basename(const char *p)
+{
+    const char *b = p;
+    for (i32 i = 0; p[i]; i++) if (p[i] == '/') b = &p[i + 1];
+    if (*b == 0) return "/";
+    return b;
+}
+static shfile_t *sh_resolve(const char *arg)
+{
+    char abs[SH_PATHLEN];
+    sh_path_join(arg, abs);
+    return sh_file_find(abs);
+}
+
+/* --- prg install receipts live under /var/prg/r<idx> ----------------- */
+static void pkg_receipt_fname(i32 idx, char name[SH_PATHLEN])
+{
     char num[12];
     k_itoa((u32)idx, num, 10);
-    k_strcpy(name + 1, num);
+    k_strcpy(name, "/var/prg/r");
+    k_strcat(name, num);
 }
 
 void apps_pkg_on_install(i32 idx)
 {
     const prg_pkg_t *p = prg_at(idx);
     if (!p || p->builtin) return;
-    char fn[16];
+    char fn[SH_PATHLEN];
     pkg_receipt_fname(idx, fn);
     shfile_t *f = sh_file_open_w(fn, false);
     if (!f) return;
@@ -925,7 +1030,7 @@ void apps_pkg_on_install(i32 idx)
 
 void apps_pkg_on_remove(i32 idx)
 {
-    char fn[16];
+    char fn[SH_PATHLEN];
     pkg_receipt_fname(idx, fn);
     shfile_t *f = sh_file_find(fn);
     if (f) {
@@ -1401,36 +1506,56 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 0;
     }
     if (k_strcmp(cmd, "cd") == 0) {
+        char target[SH_PATHLEN];
         if (argc < 2) { k_strcpy(sh_cwd, "/home/falcon"); return 0; }
-        /* very simple: absolute path overrides, else append */
-        if (argv[1][0] == '/') k_strcpy(sh_cwd, argv[1]);
-        else if (k_strcmp(argv[1], "..") == 0) {
-            i32 n = k_strlen(sh_cwd);
-            while (n > 1 && sh_cwd[n - 1] != '/') n--;
-            if (n > 1) n--;
-            sh_cwd[n] = 0;
-        } else {
-            i32 n = k_strlen(sh_cwd);
-            if (n + 1 + (i32)k_strlen(argv[1]) < (i32)sizeof sh_cwd) {
-                if (sh_cwd[n - 1] != '/') sh_cwd[n++] = '/';
-                k_strcpy(sh_cwd + n, argv[1]);
-            }
+        sh_path_join(argv[1], target);
+        shfile_t *d = sh_file_find(target);
+        if (!d || !d->is_dir) {
+            k_strcpy(out, "cd: not a directory: ");
+            k_strcat(out, argv[1]);
+            return 1;
         }
+        k_strcpy(sh_cwd, target);
         return 0;
     }
     if (k_strcmp(cmd, "ls") == 0) {
+        /* ls [path] — show immediate children of cwd, or of argv[1] if
+         * supplied.  Directories are appended with '/' so they stand
+         * out in plain text output. */
+        char dirp[SH_PATHLEN];
+        if (argc < 2) k_strcpy(dirp, sh_cwd);
+        else          sh_path_join(argv[1], dirp);
+        shfile_t *dd = sh_file_find(dirp);
+        if (!dd) { k_strcpy(out, "ls: no such directory: "); k_strcat(out, dirp); return 1; }
+        if (!dd->is_dir) { k_strcat(out, sh_path_basename(dirp)); return 0; }
         out[0] = 0; i32 first = 1;
-        for (i32 i = 0; i < SH_FILES; i++) if (sh_files[i].used) {
+        i32 plen = k_strlen(dirp);
+        bool root = (plen == 1 && dirp[0] == '/');
+        for (i32 i = 0; i < SH_FILES; i++) {
+            if (!sh_files[i].used) continue;
+            const char *p = sh_files[i].name;
+            /* must start with dirp + '/' and have one more component */
+            i32 j = 0;
+            while (j < plen && p[j] == dirp[j]) j++;
+            if (j != plen) continue;
+            if (!root && p[j] != '/') continue;
+            const char *child = root ? &p[1] : &p[j + 1];
+            if (!*child) continue;
+            for (const char *q = child; *q; q++) if (*q == '/') { child = 0; break; }
+            if (!child) continue;
             if (!first) k_strcat(out, "  ");
-            k_strcat(out, sh_files[i].name);
+            k_strcat(out, child);
+            if (sh_files[i].is_dir) k_strcat(out, "/");
             first = 0;
         }
+        if (first) k_strcpy(out, "");
         return 0;
     }
     if (k_strcmp(cmd, "cat") == 0) {
         if (argc < 2) return 1;
-        shfile_t *f = sh_file_find(argv[1]);
+        shfile_t *f = sh_resolve(argv[1]);
         if (!f) { k_strcpy(out, "cat: not found: "); k_strcat(out, argv[1]); return 1; }
+        if (f->is_dir) { k_strcpy(out, "cat: is a directory: "); k_strcat(out, argv[1]); return 1; }
         i32 k = 0;
         while (f->data[k] && k < cap - 1) { out[k] = f->data[k]; k++; }
         out[k] = 0;
@@ -1461,21 +1586,72 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 0;
     }
     if (k_strcmp(cmd, "rm") == 0) {
-        if (argc < 2) return 1;
-        shfile_t *f = sh_file_find(argv[1]);
-        if (f) f->used = false;
+        if (argc < 2) { k_strcpy(out, "rm: missing operand"); return 1; }
+        /* support -r/-rf: when set, also recursively unlink directory contents */
+        bool recursive = false;
+        i32 start = 1;
+        if (argv[1][0] == '-') {
+            for (i32 c = 1; argv[1][c]; c++) if (argv[1][c] == 'r' || argv[1][c] == 'R' || argv[1][c] == 'f') recursive = true;
+            start = 2;
+            if (argc < 3) { k_strcpy(out, "rm: missing operand"); return 1; }
+        }
+        for (i32 a = start; a < argc; a++) {
+            char abs[SH_PATHLEN];
+            sh_path_join(argv[a], abs);
+            shfile_t *f = sh_file_find(abs);
+            if (!f) continue;
+            if (f->is_dir) {
+                if (!recursive) { k_strcpy(out, "rm: is a directory: "); k_strcat(out, argv[a]); return 1; }
+                /* unlink anything starting with abs + '/' */
+                i32 alen = k_strlen(abs);
+                for (i32 i = 0; i < SH_FILES; i++) {
+                    if (!sh_files[i].used) continue;
+                    const char *p = sh_files[i].name;
+                    bool under = (k_strncmp(p, abs, alen) == 0 &&
+                                  (p[alen] == '/' || (alen == 1 && p[0] == '/')));
+                    if (under) sh_files[i].used = false;
+                }
+            }
+            f->used = false;
+        }
         return 0;
     }
     if (k_strcmp(cmd, "touch") == 0) {
         if (argc < 2) return 1;
-        sh_file_open_w(argv[1], true);
+        char abs[SH_PATHLEN];
+        sh_path_join(argv[1], abs);
+        /* parent must exist and be a dir */
+        char parent[SH_PATHLEN];
+        sh_path_parent(abs, parent);
+        shfile_t *pd = sh_file_find(parent);
+        if (!pd || !pd->is_dir) { k_strcpy(out, "touch: no such directory: "); k_strcat(out, parent); return 1; }
+        sh_file_open_w(abs, true);
         return 0;
     }
     if (k_strcmp(cmd, "cp") == 0 || k_strcmp(cmd, "mv") == 0) {
         if (argc < 3) return 1;
-        shfile_t *src = sh_file_find(argv[1]);
-        if (!src) { k_strcpy(out, "no such file"); return 1; }
-        shfile_t *dst = sh_file_open_w(argv[2], false);
+        char asrc[SH_PATHLEN], adst[SH_PATHLEN];
+        sh_path_join(argv[1], asrc);
+        sh_path_join(argv[2], adst);
+        shfile_t *src = sh_file_find(asrc);
+        if (!src) { k_strcpy(out, cmd); k_strcat(out, ": no such file: "); k_strcat(out, argv[1]); return 1; }
+        if (src->is_dir) { k_strcpy(out, cmd); k_strcat(out, ": is a directory: "); k_strcat(out, argv[1]); return 1; }
+        /* If dst is an existing directory, copy into it preserving basename */
+        shfile_t *dstd = sh_file_find(adst);
+        if (dstd && dstd->is_dir) {
+            i32 n = k_strlen(adst);
+            if (n > 1) adst[n++] = '/';
+            else            n = 1; /* root already ends in / */
+            const char *b = sh_path_basename(asrc);
+            i32 k = 0;
+            while (b[k] && n < SH_PATHLEN - 1) adst[n++] = b[k++];
+            adst[n] = 0;
+        }
+        char parent[SH_PATHLEN];
+        sh_path_parent(adst, parent);
+        shfile_t *pd = sh_file_find(parent);
+        if (!pd || !pd->is_dir) { k_strcpy(out, cmd); k_strcat(out, ": no such directory: "); k_strcat(out, parent); return 1; }
+        shfile_t *dst = sh_file_open_w(adst, false);
         if (!dst) return 1;
         for (u32 i = 0; i < src->len && i < SH_FBYTES - 1; i++) dst->data[i] = src->data[i];
         dst->len = src->len;
@@ -1483,11 +1659,78 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         if (k_strcmp(cmd, "mv") == 0) src->used = false;
         return 0;
     }
-    /* mkdir / rmdir — the flat shfs has no real directory hierarchy yet,
-     * so these accept any argument and silently succeed.  Many shell
-     * scripts call mkdir -p liberally and would otherwise fail.        */
-    if (k_strcmp(cmd, "mkdir") == 0 || k_strcmp(cmd, "rmdir") == 0) {
-        if (argc < 2) { k_strcpy(out, cmd); k_strcat(out, ": missing operand"); return 1; }
+    if (k_strcmp(cmd, "mkdir") == 0) {
+        if (argc < 2) { k_strcpy(out, "mkdir: missing operand"); return 1; }
+        bool parents = false;
+        i32 start = 1;
+        if (argv[1][0] == '-' && argv[1][1] == 'p') { parents = true; start = 2; }
+        if (start >= argc) { k_strcpy(out, "mkdir: missing operand"); return 1; }
+        for (i32 a = start; a < argc; a++) {
+            char abs[SH_PATHLEN];
+            sh_path_join(argv[a], abs);
+            if (sh_file_find(abs)) {
+                if (parents) continue;
+                k_strcpy(out, "mkdir: exists: "); k_strcat(out, argv[a]); return 1;
+            }
+            char parent[SH_PATHLEN];
+            sh_path_parent(abs, parent);
+            shfile_t *pd = sh_file_find(parent);
+            if (!pd || !pd->is_dir) {
+                if (!parents) { k_strcpy(out, "mkdir: no parent: "); k_strcat(out, parent); return 1; }
+                /* -p: walk components and create each missing dir */
+                char cur[SH_PATHLEN]; cur[0] = 0;
+                i32 ci = 0;
+                for (i32 i = 0; abs[i]; i++) {
+                    cur[ci++] = abs[i];
+                    if (abs[i] == '/' || abs[i + 1] == 0) {
+                        cur[ci] = 0;
+                        i32 cl = k_strlen(cur);
+                        char trimmed[SH_PATHLEN];
+                        k_strcpy(trimmed, cur);
+                        if (cl > 1 && trimmed[cl - 1] == '/') trimmed[cl - 1] = 0;
+                        if (trimmed[0] && !sh_file_find(trimmed)) {
+                            i32 slot = -1;
+                            for (i32 k = 0; k < SH_FILES; k++) if (!sh_files[k].used) { slot = k; break; }
+                            if (slot < 0) { k_strcpy(out, "mkdir: shfs full"); return 1; }
+                            sh_files[slot].used   = true;
+                            sh_files[slot].is_dir = true;
+                            sh_files[slot].len    = 0;
+                            sh_files[slot].data[0] = 0;
+                            k_strcpy(sh_files[slot].name, trimmed);
+                        }
+                    }
+                }
+                continue;
+            }
+            i32 slot = -1;
+            for (i32 i = 0; i < SH_FILES; i++) if (!sh_files[i].used) { slot = i; break; }
+            if (slot < 0) { k_strcpy(out, "mkdir: shfs full"); return 1; }
+            sh_files[slot].used   = true;
+            sh_files[slot].is_dir = true;
+            sh_files[slot].len    = 0;
+            sh_files[slot].data[0] = 0;
+            k_strcpy(sh_files[slot].name, abs);
+        }
+        return 0;
+    }
+    if (k_strcmp(cmd, "rmdir") == 0) {
+        if (argc < 2) { k_strcpy(out, "rmdir: missing operand"); return 1; }
+        for (i32 a = 1; a < argc; a++) {
+            char abs[SH_PATHLEN];
+            sh_path_join(argv[a], abs);
+            shfile_t *d = sh_file_find(abs);
+            if (!d || !d->is_dir) { k_strcpy(out, "rmdir: not a directory: "); k_strcat(out, argv[a]); return 1; }
+            /* must be empty */
+            i32 alen = k_strlen(abs);
+            for (i32 i = 0; i < SH_FILES; i++) {
+                if (!sh_files[i].used || &sh_files[i] == d) continue;
+                const char *p = sh_files[i].name;
+                bool under = (k_strncmp(p, abs, alen) == 0 &&
+                              (p[alen] == '/' || (alen == 1 && p[0] == '/')));
+                if (under) { k_strcpy(out, "rmdir: not empty: "); k_strcat(out, argv[a]); return 1; }
+            }
+            d->used = false;
+        }
         return 0;
     }
     /* head / tail [-n N] file --------------------------------------- */
@@ -1503,7 +1746,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             farg = 3;
         }
         if (argc <= farg) return 1;
-        shfile_t *f = sh_file_find(argv[farg]);
+        shfile_t *f = sh_resolve(argv[farg]);
         if (!f) { k_strcpy(out, cmd); k_strcat(out, ": no such file"); return 1; }
         /* count newlines */
         i32 total = 1;
@@ -1525,7 +1768,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         char mode = 0; i32 farg = 1;
         if (argc >= 3 && argv[1][0] == '-') { mode = argv[1][1]; farg = 2; }
         if (argc <= farg) return 1;
-        shfile_t *f = sh_file_find(argv[farg]);
+        shfile_t *f = sh_resolve(argv[farg]);
         if (!f) { k_strcpy(out, "wc: no such file"); return 1; }
         u32 lines = 0, words = 0, chars = f->len; bool inw = false;
         for (u32 i = 0; i < f->len; i++) {
@@ -1546,7 +1789,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     /* sort / uniq — operate on file content line-by-line ------------ */
     if (k_strcmp(cmd, "sort") == 0 || k_strcmp(cmd, "uniq") == 0) {
         if (argc < 2) return 1;
-        shfile_t *f = sh_file_find(argv[1]);
+        shfile_t *f = sh_resolve(argv[1]);
         if (!f) { k_strcpy(out, cmd); k_strcat(out, ": no such file"); return 1; }
         /* split into up to 32 lines (max 96 chars each)               */
         char lines[32][96]; i32 nl = 0;
@@ -1592,7 +1835,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     /* grep PATTERN file --------------------------------------------- */
     if (k_strcmp(cmd, "grep") == 0) {
         if (argc < 3) { k_strcpy(out, "grep: usage: grep PATTERN FILE"); return 1; }
-        shfile_t *f = sh_file_find(argv[2]);
+        shfile_t *f = sh_resolve(argv[2]);
         if (!f) { k_strcpy(out, "grep: no such file"); return 1; }
         const char *pat = argv[1]; i32 pl = k_strlen(pat);
         out[0] = 0; i32 oc = 0;
@@ -1628,7 +1871,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         /* tr operates on the file we were given, defaulting to a piped
          * stdin (we don't implement pipes here, so callers redirect).  */
         const char *src = (argc >= 4) ? argv[3] : "";
-        shfile_t *f = sh_file_find(src);
+        shfile_t *f = (argc >= 4) ? sh_resolve(src) : 0;
         const char *data = f ? f->data : src;
         u32 dlen = f ? f->len : (u32)k_strlen(src);
         for (u32 i = 0; i < dlen && oc < cap - 1; i++) {
@@ -1657,7 +1900,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
                 while (*p >= '0' && *p <= '9') { b = b * 10 + (*p - '0'); p++; }
             } else b = a;
         }
-        shfile_t *f = sh_file_find(argv[3]);
+        shfile_t *f = sh_resolve(argv[3]);
         if (!f) return 1;
         out[0] = 0; i32 oc = 0; i32 col = 1;
         for (u32 i = 0; i < f->len && oc < cap - 1; i++) {
@@ -1673,7 +1916,9 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     /* tee file — overwrite a file with the joined remaining args ---- */
     if (k_strcmp(cmd, "tee") == 0) {
         if (argc < 2) return 1;
-        shfile_t *f = sh_file_open_w(argv[1], false);
+        char abs[SH_PATHLEN];
+        sh_path_join(argv[1], abs);
+        shfile_t *f = sh_file_open_w(abs, false);
         if (!f) return 1;
         out[0] = 0;
         for (i32 i = 2; i < argc; i++) {
@@ -1718,7 +1963,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     /* more / less — single-page cat ------------------------------- */
     if (k_strcmp(cmd, "more") == 0 || k_strcmp(cmd, "less") == 0) {
         if (argc < 2) return 1;
-        shfile_t *f = sh_file_find(argv[1]);
+        shfile_t *f = sh_resolve(argv[1]);
         if (!f) return 1;
         i32 k = 0;
         while (f->data[k] && k < cap - 1) { out[k] = f->data[k]; k++; }
@@ -1728,7 +1973,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     /* xxd / hexdump first 64 bytes -------------------------------- */
     if (k_strcmp(cmd, "xxd") == 0 || k_strcmp(cmd, "hexdump") == 0) {
         if (argc < 2) return 1;
-        shfile_t *f = sh_file_find(argv[1]);
+        shfile_t *f = sh_resolve(argv[1]);
         if (!f) return 1;
         out[0] = 0; char num[8]; i32 oc = 0;
         for (u32 i = 0; i < f->len && i < 64 && oc < cap - 8; i++) {
@@ -1742,7 +1987,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     /* file — guess content type ------------------------------------ */
     if (k_strcmp(cmd, "file") == 0) {
         if (argc < 2) return 1;
-        shfile_t *f = sh_file_find(argv[1]);
+        shfile_t *f = sh_resolve(argv[1]);
         if (!f) { k_strcpy(out, "file: no such file"); return 1; }
         bool ascii = true;
         for (u32 i = 0; i < f->len; i++) {
@@ -1830,7 +2075,11 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             if (k_strcmp(argv[1], "-z") == 0) return argv[2][0] == 0 ? 0 : 1;
             if (k_strcmp(argv[1], "-n") == 0) return argv[2][0] != 0 ? 0 : 1;
             if (k_strcmp(argv[1], "-e") == 0 || k_strcmp(argv[1], "-f") == 0)
-                return sh_file_find(argv[2]) ? 0 : 1;
+                return sh_resolve(argv[2]) ? 0 : 1;
+            if (k_strcmp(argv[1], "-d") == 0) {
+                shfile_t *fd = sh_resolve(argv[2]);
+                return (fd && fd->is_dir) ? 0 : 1;
+            }
         }
         return 1;
     }
@@ -2042,7 +2291,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     /* nl — number lines (mimics POSIX nl with default style)         */
     if (k_strcmp(cmd, "nl") == 0) {
         if (argc < 2) { k_strcpy(out, "nl: missing operand"); return 1; }
-        shfile_t *n = sh_file_find(argv[1]);
+        shfile_t *n = sh_resolve(argv[1]);
         if (!n) { k_strcpy(out, "nl: "); k_strcat(out, argv[1]); k_strcat(out, ": no such file"); return 1; }
         i32 ln = 1;
         i32 oi = 0; out[0] = 0;
@@ -2064,7 +2313,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         shfile_t *files[8] = {0};
         i32 fc = 0;
         for (i32 i = 1; i < argc && fc < 8; i++) {
-            files[fc] = sh_file_find(argv[i]);
+            files[fc] = sh_resolve(argv[i]);
             if (!files[fc]) { k_strcpy(out, "paste: "); k_strcat(out, argv[i]); k_strcat(out, ": no such file"); return 1; }
             fc++;
         }
@@ -2106,7 +2355,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             }
         }
         ai++;
-        shfile_t *n = sh_file_find(argv[ai]);
+        shfile_t *n = sh_resolve(argv[ai]);
         if (!n) { k_strcpy(out, "awk: "); k_strcat(out, argv[ai]); k_strcat(out, ": no such file"); return 1; }
         i32 oi = 0; out[0] = 0;
         u32 i = 0;
@@ -2137,7 +2386,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         if (argv[1][sai] == '/') sai++;
         i32 ti = 0;
         while (argv[1][sai] && argv[1][sai] != '/' && ti < 63) to[ti++] = argv[1][sai++];
-        shfile_t *n = sh_file_find(argv[2]);
+        shfile_t *n = sh_resolve(argv[2]);
         if (!n) { k_strcpy(out, "sed: "); k_strcat(out, argv[2]); k_strcat(out, ": no such file"); return 1; }
         i32 fl = k_strlen(from);
         i32 tl = k_strlen(to);
@@ -2246,7 +2495,7 @@ static void sh_run_stmt(const char *line, char *out, i32 cap)
     }
 
     /* output redirect on left side */
-    char redir_name[16] = {0};
+    char redir_name[SH_PATHLEN] = {0};
     bool append = false;
     {
         i32 gg = sh_find(left, ">>");
@@ -2257,7 +2506,7 @@ static void sh_run_stmt(const char *line, char *out, i32 cap)
             fn[k] = 0;
             /* strip trailing spaces in name */
             while (k > 0 && sh_isspace(fn[k - 1])) fn[--k] = 0;
-            k_strcpy(redir_name, fn);
+            sh_path_join(fn, redir_name);
             left[gg] = 0;
         } else {
             i32 g = sh_find(left, ">");
@@ -2266,7 +2515,7 @@ static void sh_run_stmt(const char *line, char *out, i32 cap)
                 for (i32 i = g + 1; left[i] && k < 63; i++) if (!sh_isspace(left[i]) || k) fn[k++] = left[i];
                 fn[k] = 0;
                 while (k > 0 && sh_isspace(fn[k - 1])) fn[--k] = 0;
-                k_strcpy(redir_name, fn);
+                sh_path_join(fn, redir_name);
                 left[g] = 0;
             }
         }
@@ -2443,6 +2692,292 @@ static void term_input_key(i32 key)
         return;
     }
     (void)sh_buf_append_key(term_input, &term_input_len, TERM_COLS, key);
+}
+
+/* --- Files: real shfs browser ------------------------------------------- *
+ *  Files is a UI on top of the same sh_files[] array Terminal exposes —
+ *  whatever you mkdir / touch from Terminal shows up here, and any folder
+ *  / file you create via F2/F3 in the Files window is immediately listed
+ *  in `ls` and openable with `cat`.  No second backing store.            */
+#define FILES_MAX_ENTRIES 96
+static char files_cwd[SH_PATHLEN] = "/home/falcon";
+static i32  files_sel             = 0;
+static i32  files_mode            = 0;   /* 0 browse, 1 new-dir, 2 new-file, 3 view */
+static char files_input[64]       = "";
+static i32  files_input_len       = 0;
+static char files_status[128]     = "";
+static i32  files_view_slot       = -1;  /* file index for view mode      */
+
+static i32 files_collect(i32 out_slots[FILES_MAX_ENTRIES])
+{
+    i32 plen = k_strlen(files_cwd);
+    bool root = (plen == 1 && files_cwd[0] == '/');
+    i32 n = 0;
+    for (i32 i = 0; i < SH_FILES && n < FILES_MAX_ENTRIES; i++) {
+        if (!sh_files[i].used) continue;
+        const char *p = sh_files[i].name;
+        i32 j = 0;
+        while (j < plen && p[j] == files_cwd[j]) j++;
+        if (j != plen) continue;
+        if (!root && p[j] != '/') continue;
+        const char *child = root ? &p[1] : &p[j + 1];
+        if (!*child) continue;
+        bool nested = false;
+        for (const char *q = child; *q; q++) if (*q == '/') { nested = true; break; }
+        if (nested) continue;
+        out_slots[n++] = i;
+    }
+    /* sort: dirs first, then by name */
+    for (i32 a = 0; a < n - 1; a++) {
+        for (i32 b = a + 1; b < n; b++) {
+            shfile_t *fa = &sh_files[out_slots[a]];
+            shfile_t *fb = &sh_files[out_slots[b]];
+            bool swap = false;
+            if (fa->is_dir != fb->is_dir) swap = (!fa->is_dir && fb->is_dir);
+            else swap = (k_strcmp(fa->name, fb->name) > 0);
+            if (swap) { i32 t = out_slots[a]; out_slots[a] = out_slots[b]; out_slots[b] = t; }
+        }
+    }
+    return n;
+}
+
+static void render_files(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+{
+    (void)frame;
+    section(wx, wy, T("Files", "Dosyalar"),
+            T("F2 new folder, F3 new file, Del delete, Enter open",
+              "F2 yeni klasör, F3 yeni dosya, Del sil, Enter aç"));
+
+    /* current path bar */
+    i32 px = wx + 22, py = wy + 56, pw = ww - 44, ph = 28;
+    gfx_round_rect_a(px, py, pw, ph, 8, PAL_PANEL_DEEP, 255);
+    gfx_round_outline(px, py, pw, ph, 8, PAL_HAIRLINE);
+    char pathline[SH_PATHLEN + 4];
+    k_strcpy(pathline, " ");
+    k_strcat(pathline, files_cwd);
+    gfx_text(px + 8, py + 6, pathline, PAL_TEXT);
+
+    /* directory listing */
+    i32 lx = wx + 22, ly = wy + 96, lw = ww - 44, lh = wh - 180;
+    gfx_round_rect_a(lx, ly, lw, lh, 8, PAL_PANEL_DEEP, 255);
+    gfx_round_outline(lx, ly, lw, lh, 8, PAL_HAIRLINE);
+
+    if (files_mode == 3 && files_view_slot >= 0 &&
+        files_view_slot < SH_FILES && sh_files[files_view_slot].used) {
+        /* file viewer */
+        shfile_t *f = &sh_files[files_view_slot];
+        gfx_text(lx + 12, ly + 10, sh_path_basename(f->name), PAL_ACCENT);
+        gfx_text(lx + 12, ly + 30,
+                 T("Esc to return", "Esc geri dön"), PAL_TEXT_DIM);
+        i32 row = 0;
+        i32 max_rows = (lh - 60) / 16;
+        i32 i = 0;
+        while ((u32)i < f->len && row < max_rows) {
+            char line[80]; i32 lk = 0;
+            while ((u32)i < f->len && f->data[i] != '\n' && lk < 78) {
+                line[lk++] = f->data[i++];
+            }
+            line[lk] = 0;
+            if ((u32)i < f->len && f->data[i] == '\n') i++;
+            gfx_text(lx + 12, ly + 54 + row * 16, line, PAL_TEXT);
+            row++;
+        }
+    } else {
+        i32 slots[FILES_MAX_ENTRIES];
+        i32 n = files_collect(slots);
+        if (files_sel >= n) files_sel = n > 0 ? n - 1 : 0;
+        if (files_sel < 0)  files_sel = 0;
+        i32 max_rows = (lh - 16) / 22;
+        i32 first = 0;
+        if (files_sel >= max_rows) first = files_sel - max_rows + 1;
+        if (n == 0) {
+            gfx_text(lx + 12, ly + 14,
+                     T("(empty folder — press F2 / F3 to create)",
+                       "(boş klasör — F2 / F3 ile oluştur)"),
+                     PAL_TEXT_DIM);
+        }
+        for (i32 i = 0; i < n && i - first < max_rows; i++) {
+            if (i < first) continue;
+            i32 y = ly + 8 + (i - first) * 22;
+            shfile_t *f = &sh_files[slots[i]];
+            if (i == files_sel) {
+                gfx_round_rect_a(lx + 4, y - 2, lw - 8, 20, 6, PAL_ACCENT, 60);
+            }
+            u32 icon_col = f->is_dir ? 0xF6B144 : 0x6AAFFF;
+            if (f->is_dir) {
+                gfx_rect(lx + 16, y + 4, 16, 11, icon_col);
+                gfx_rect(lx + 16, y + 1, 7,  4,  icon_col);
+            } else {
+                gfx_rect(lx + 18, y + 1, 12, 14, icon_col);
+            }
+            gfx_text(lx + 40, y + 1, sh_path_basename(f->name), PAL_TEXT);
+            if (!f->is_dir) {
+                char sz[16]; k_itoa(f->len, sz, 10);
+                k_strcat(sz, "B");
+                gfx_text(lx + lw - 80, y + 1, sz, PAL_TEXT_DIM);
+            } else {
+                gfx_text(lx + lw - 80, y + 1, "DIR", PAL_TEXT_DIM);
+            }
+        }
+    }
+
+    /* input prompt when creating */
+    if (files_mode == 1 || files_mode == 2) {
+        i32 ix = wx + 22, iy = wy + wh - 70, iw = ww - 44, ih = 36;
+        gfx_round_rect_a(ix, iy, iw, ih, 10, PAL_PANEL, 220);
+        gfx_round_outline(ix, iy, iw, ih, 10, PAL_ACCENT);
+        gfx_text(ix + 10, iy + 8,
+                 files_mode == 1
+                    ? T("New folder: ", "Yeni klasör: ")
+                    : T("New file: ",   "Yeni dosya: "),
+                 PAL_TEXT_DIM);
+        char buf[80];
+        k_strcpy(buf, files_input);
+        if ((g_ticks / 50) & 1) k_strcat(buf, "_");
+        gfx_text(ix + 130, iy + 8, buf, PAL_TEXT);
+    }
+    /* status bar */
+    gfx_text(wx + 22, wy + wh - 28, files_status, PAL_TEXT_DIM);
+}
+
+static void files_set_status(const char *s)
+{
+    i32 i = 0;
+    while (s[i] && i < (i32)sizeof files_status - 1) {
+        files_status[i] = s[i]; i++;
+    }
+    files_status[i] = 0;
+}
+
+static void files_input_key(i32 key)
+{
+    if (files_mode == 3) {
+        if (key == KEY_ESC || key == KEY_BACKSPACE) {
+            files_mode = 0; files_view_slot = -1;
+        }
+        return;
+    }
+    if (files_mode == 1 || files_mode == 2) {
+        if (key == KEY_ESC) { files_mode = 0; files_input_len = 0; files_input[0] = 0; return; }
+        if (key == KEY_BACKSPACE) {
+            if (files_input_len > 0) {
+                files_input_len--;
+                files_input[files_input_len] = 0;
+            }
+            return;
+        }
+        if (key == KEY_ENTER) {
+            if (files_input_len > 0) {
+                char abs[SH_PATHLEN];
+                /* join cwd + input */
+                i32 ci = 0;
+                while (files_cwd[ci] && ci < SH_PATHLEN - 1) { abs[ci] = files_cwd[ci]; ci++; }
+                if (ci > 0 && abs[ci - 1] != '/' && ci < SH_PATHLEN - 1) abs[ci++] = '/';
+                i32 j = 0;
+                while (files_input[j] && ci < SH_PATHLEN - 1) abs[ci++] = files_input[j++];
+                abs[ci] = 0;
+                if (sh_file_find(abs)) {
+                    files_set_status(T("error: name already exists",
+                                       "hata: bu isim zaten var"));
+                } else {
+                    i32 slot = -1;
+                    for (i32 i = 0; i < SH_FILES; i++) if (!sh_files[i].used) { slot = i; break; }
+                    if (slot < 0) {
+                        files_set_status(T("error: shfs full",
+                                           "hata: dosya sistemi dolu"));
+                    } else {
+                        sh_files[slot].used   = true;
+                        sh_files[slot].is_dir = (files_mode == 1);
+                        sh_files[slot].len    = 0;
+                        sh_files[slot].data[0] = 0;
+                        k_strcpy(sh_files[slot].name, abs);
+                        files_set_status(files_mode == 1
+                            ? T("created folder",  "klasör oluşturuldu")
+                            : T("created file",    "dosya oluşturuldu"));
+                    }
+                }
+            }
+            files_mode = 0; files_input_len = 0; files_input[0] = 0;
+            return;
+        }
+        if (key >= ' ' && key < 0x7F && files_input_len < (i32)sizeof files_input - 1) {
+            char c = (char)key;
+            /* forbid slashes inside names */
+            if (c != '/') {
+                files_input[files_input_len++] = c;
+                files_input[files_input_len]   = 0;
+            }
+        }
+        return;
+    }
+    /* browse mode */
+    if (key == KEY_F2 || key == 'N' || key == 'n') {
+        files_mode = 1; files_input_len = 0; files_input[0] = 0;
+        files_set_status("");
+        return;
+    }
+    if (key == KEY_F3 || key == 'F' || key == 'f') {
+        files_mode = 2; files_input_len = 0; files_input[0] = 0;
+        files_set_status("");
+        return;
+    }
+    if (key == KEY_UP)   { files_sel--;  return; }
+    if (key == KEY_DOWN) { files_sel++;  return; }
+    if (key == KEY_BACKSPACE) {
+        if (k_strcmp(files_cwd, "/") != 0) {
+            char p[SH_PATHLEN];
+            sh_path_parent(files_cwd, p);
+            k_strcpy(files_cwd, p);
+            files_sel = 0;
+        }
+        return;
+    }
+    if (key == KEY_DEL) {
+        i32 slots[FILES_MAX_ENTRIES];
+        i32 n = files_collect(slots);
+        if (files_sel >= 0 && files_sel < n) {
+            shfile_t *f = &sh_files[slots[files_sel]];
+            if (f->is_dir) {
+                /* must be empty */
+                i32 alen = k_strlen(f->name);
+                bool empty = true;
+                for (i32 i = 0; i < SH_FILES; i++) {
+                    if (!sh_files[i].used || &sh_files[i] == f) continue;
+                    const char *p = sh_files[i].name;
+                    if (k_strncmp(p, f->name, alen) == 0 &&
+                        (p[alen] == '/' || (alen == 1 && p[0] == '/'))) {
+                        empty = false; break;
+                    }
+                }
+                if (!empty) {
+                    files_set_status(T("folder not empty",
+                                       "klasör boş değil"));
+                    return;
+                }
+            }
+            f->used = false;
+            files_set_status(T("deleted",
+                               "silindi"));
+            if (files_sel >= n - 1 && files_sel > 0) files_sel--;
+        }
+        return;
+    }
+    if (key == KEY_ENTER) {
+        i32 slots[FILES_MAX_ENTRIES];
+        i32 n = files_collect(slots);
+        if (files_sel >= 0 && files_sel < n) {
+            shfile_t *f = &sh_files[slots[files_sel]];
+            if (f->is_dir) {
+                k_strcpy(files_cwd, f->name);
+                files_sel = 0;
+                files_set_status("");
+            } else {
+                files_mode = 3;
+                files_view_slot = slots[files_sel];
+            }
+        }
+        return;
+    }
 }
 
 /* --- Calculator ---------------------------------------------------------- */
@@ -3443,7 +3978,7 @@ typedef struct {
 
 static app_def_t APPS[] = {
     { "Home",       "quick links",         0x3070FF, render_home,     NULL,             icon_home     },
-    { "Files",      "in-memory tree",      0xF59F1A, render_files,    NULL,             icon_files    },
+    { "Files",      "real shfs browser",   0xF59F1A, render_files,    files_input_key,  icon_files    },
     { "Store",      "prg packages",        0x2BB673, render_store,    store_input_key,  icon_store    },
     { "Settings",   "system + theme",      0x6E7884, render_settings, set_input_key,    icon_settings },
     { "Sistem Güncellemeleri", "prg + FalconFS özeti", 0x05B897, render_updates,
