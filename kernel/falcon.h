@@ -602,6 +602,37 @@ const char *net_summary(void);
 /* ---- network tools (kernel/net_tools.c) ------------------------------------- */
 void   net_tools_dispatch(const char *cmd, char *out);
 
+/* ---- performance optimizations (kernel/perf.c) - FalconOS 2.0 ------------- */
+void   perf_mem_pool_init(void);
+void  *perf_mem_alloc(void);
+void   perf_mem_free(void *ptr);
+void  *perf_memcpy(void *dst, const void *src, u32 n);
+void  *perf_memset(void *dst, u8 v, u32 n);
+void  *perf_memzero(void *dst, u32 n);
+u32    perf_strlen(const char *s);
+char  *perf_strcpy(char *dst, const char *src);
+i32    perf_strcmp(const char *a, const char *b);
+void   perf_stats(u32 *allocs, u32 *frees, u32 *memcpy_bytes, u32 *memset_bytes);
+void   perf_record_alloc(void);
+void   perf_record_free(void);
+void   perf_record_memcpy(u32 bytes);
+void   perf_record_memset(u32 bytes);
+const char *perf_get_version_string(void);
+int    perf_get_version_major(void);
+int    perf_get_version_minor(void);
+int    perf_get_version_patch(void);
+
+/* ---- virtual filesystem (kernel/vfs.c) - FalconOS 2.0 --------------------- */
+void   vfs_init(void);
+bool   vfs_mkdir(const char *path);
+bool   vfs_create(const char *path);
+i32    vfs_write(const char *path, const void *data, u32 size);
+i32    vfs_read(const char *path, void *buffer, u32 size);
+i32    vfs_readdir(const char *path, char names[][64], i32 max_entries);
+bool   vfs_stat(const char *path, void **out_node);
+bool   vfs_remove(const char *path);
+void   vfs_stats(u32 *total_nodes, u32 *open_files, u32 *mount_points);
+
 /* tiny global tick (incremented by main loop, NOT real time — see g_ticks) */
 extern volatile u32 g_tick;
 
