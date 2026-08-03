@@ -1,0 +1,30 @@
+# FalconOS Kernel - Core System
+# Written in pure Assembly (x86_64) and Rust
+# No Python allowed
+
+[package]
+name = "falconos_kernel"
+version = "2.0.0-alpha"
+edition = "2021"
+authors = ["FalconOS Team"]
+description = "High-performance kernel for FalconOS with HyperOS-inspired features"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+spin = "0.9"
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
+volatile = "0.4"
+x86_64 = { version = "0.14", default-features = false, features = ["instructions", "abi_x86_interrupt"] }
+bootloader = "0.9"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "z"
+codegen-units = 1

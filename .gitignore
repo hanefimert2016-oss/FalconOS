@@ -1,10 +1,54 @@
+```
+# Build artifacts
 build/
-*.o
-*.elf
-*.iso
-*.bin
+dist/
+target/
+
+# Dependencies
+node_modules/
+venv/
+.venv/
 __pycache__/
+*.egg-info/
+.Python/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+*.env.*
+
+# Rust/Cargo specific
+Cargo.lock
+**/target/
+
+# C/C++ build artifacts
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.exe
+
+# Python compiled files
 *.pyc
-test-plan*.md
-test-report*.md
-linux/*.gch
+**/__pycache__/
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# System files
+.DS_Store
+Thumbs.db
+```

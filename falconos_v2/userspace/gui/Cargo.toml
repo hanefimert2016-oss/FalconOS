@@ -1,0 +1,17 @@
+# FalconOS GUI Server
+# Pure Rust - No Python
+# HyperOS-inspired modern desktop environment
+
+[package]
+name = "falconos_gui"
+version = "2.0.0-alpha"
+edition = "2021"
+authors = ["FalconOS Team"]
+description = "Modern GUI server for FalconOS with HyperOS design"
+
+[dependencies]
+# In real implementation, would use:
+# - smithay (Wayland compositor)
+# - tiny-skia (2D rendering)
+# - fontdb (font management)
+# - png, jpeg-decoder (image formats)
