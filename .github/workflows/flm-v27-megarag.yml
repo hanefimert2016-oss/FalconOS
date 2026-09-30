@@ -1,0 +1,115 @@
+name: Build FLM v2.7 Turkish MegaRAG
+
+on:
+  push:
+    branches:
+      - flm-v2.7-megarag-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      FLM_TARGET_DOCS: "120000"
+      FLM_MAX_DB_MB: "280"
+
+    steps:
+      - name: Checkout build branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify v2.7 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd .flm-v27-build-src
+          base64 --decode FLM-v2.7-Turkish-MegaRAG-Source.tar.xz.b64 > FLM-v2.7-Turkish-MegaRAG-Source.tar.xz
+          sha256sum -c SHA256.txt
+          mkdir -p ../_flm_v27
+          tar -xJf FLM-v2.7-Turkish-MegaRAG-Source.tar.xz -C ../_flm_v27
+          test -f ../_flm_v27/flm_v27_work/app/build.gradle
+          test -f ../_flm_v27/flm_v27_work/tools/build_hf_pack.py
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android 36 SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.4.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Install Hugging Face data tooling
+        working-directory: _flm_v27/flm_v27_work
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "datasets>=4.0,<5" "huggingface_hub>=0.35" "pyarrow>=18"
+
+      - name: Build Turkish MegaRAG pack and train tokenizer
+        working-directory: _flm_v27/flm_v27_work
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/build_hf_pack.py             --core app/src/main/python/flm_data/core_semantics.jsonl             --out-db /tmp/flm_mega_v27.db             --out-tokenizer app/src/main/python/flm_data/tokenizer_tr_v27.json             --out-stats app/src/main/python/flm_data/pack_stats_v27.json             --target-docs "$FLM_TARGET_DOCS"             --max-db-mb "$FLM_MAX_DB_MB"
+          gzip -9 -c /tmp/flm_mega_v27.db > app/src/main/python/flm_data/flm_mega_v27.db.gz
+          cat app/src/main/python/flm_data/pack_stats_v27.json
+          ls -lh /tmp/flm_mega_v27.db app/src/main/python/flm_data/flm_mega_v27.db.gz app/src/main/python/flm_data/tokenizer_tr_v27.json
+
+      - name: Python regression smoke test
+        working-directory: _flm_v27/flm_v27_work
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=app/src/main/python python - <<'PY'
+          import json, tempfile
+          import flm_android
+          with tempfile.TemporaryDirectory() as d:
+              flm_android.configure(d)
+              warm=json.loads(flm_android.warmup())
+              print(json.dumps(warm,ensure_ascii=False))
+              assert warm['facts'] > 69724, warm
+              assert warm.get('corpus_chunks',0) > 1000, warm
+              assert warm.get('tokenizer_vocab',0) > 30000, warm
+              ans=json.loads(flm_android.chat("Türkiye'nin başkenti nedir?"))['answer']
+              assert 'Ankara' in ans, ans
+          PY
+
+      - name: Build APK
+        working-directory: _flm_v27/flm_v27_work
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="_flm_v27/flm_v27_work/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          cp "$APK" FLM-v2.7-Turkish-MegaRAG-debug.apk
+          sha256sum FLM-v2.7-Turkish-MegaRAG-debug.apk
+          unzip -l FLM-v2.7-Turkish-MegaRAG-debug.apk | grep -E 'flm_mega_v27|tokenizer_tr_v27|libpython3.13' | head -20
+
+      - name: Upload APK and stats
+        uses: actions/upload-artifact@v4
+        with:
+          name: FLM-v2.7-Turkish-MegaRAG
+          path: |
+            FLM-v2.7-Turkish-MegaRAG-debug.apk
+            _flm_v27/flm_v27_work/app/src/main/python/flm_data/pack_stats_v27.json
+          if-no-files-found: error
+          retention-days: 30
