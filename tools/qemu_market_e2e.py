@@ -112,20 +112,28 @@ def test_gui(args):
                 mon.connect(str(monitor))
                 # Same first-boot walkthrough used by the known-good UI smoke.
                 for _ in range(5):
-                    hmp(mon, "sendkey ret", 0.35)
+                    hmp(mon, "sendkey ret", 0.4)
                 for char in "falcon":
-                    hmp(mon, "sendkey " + char, 0.23)
+                    hmp(mon, "sendkey " + char, 0.3)
                 for _ in range(3):
-                    hmp(mon, "sendkey ret", 0.42)
-                hmp(mon, "sendkey right", 0.2)
-                hmp(mon, "sendkey ret", 0.8)
-                hmp(mon, "sendkey ret", 1.0)
-                hmp(mon, "sendkey esc", 0.5)
-                hmp(mon, "sendkey f2", 0.7)
-                hmp(mon, "sendkey right", 0.24)
-                hmp(mon, "sendkey right", 0.24)
-                hmp(mon, "sendkey ret", 0.7)
-                wait_for_marker(debug, b"M", timeout=12)
+                    hmp(mon, "sendkey ret", 0.45)
+                hmp(mon, "sendkey right", 0.3)
+                hmp(mon, "sendkey ret", 1.5)
+                hmp(mon, "sendkey ret", 1.5)
+                hmp(mon, "sendkey esc", 0.4)
+                hmp(mon, "sendkey f2", 0.8)
+                hmp(mon, "sendkey right", 0.3)
+                hmp(mon, "sendkey right", 0.3)
+                hmp(mon, "sendkey ret", 1.5)
+                try:
+                    wait_for_marker(debug, b"M", timeout=15)
+                except AssertionError:
+                    # Capture failing GUI state to distinguish lost keys from
+                    # serial/device setup regressions. The CI artifact remains.
+                    hmp(mon, "screendump " + str(screen), 0.6)
+                    if screen.exists():
+                        ppm_to_png(screen, args.output)
+                    raise
                 prior = len(debug.read_bytes())
                 hmp(mon, "sendkey r", 0.4)
                 wait_for_marker(debug, b"C", after=prior, timeout=20)
@@ -133,7 +141,7 @@ def test_gui(args):
                 hmp(mon, "sendkey ret", 0.5)
                 wait_for_marker(debug, b"I", after=prior, timeout=35)
                 prior = len(debug.read_bytes())
-                hmp(mon, "sendkey ret", 1.0)
+                hmp(mon, "sendkey ret", 1.5)
                 wait_for_marker(debug, b"R", after=prior, timeout=12)
                 hmp(mon, "screendump " + str(screen), 0.6)
                 deadline = time.monotonic() + 10
