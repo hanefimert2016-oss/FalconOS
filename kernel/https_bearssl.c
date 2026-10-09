@@ -232,6 +232,17 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
         }
     }
 end:
+#ifdef FALCON_QEMU_TLS_PUBLIC_TEST
+    /* Bounded, sanitized test-only HTTP response diagnostics. No secrets
+     * should ever be logged in production builds. */
+    outb(0xE9,'{');
+    for(u32 j=0;j<received && j<420u;j++){
+        u8 c=(u8)result[j];
+        outb(0xE9,c=='\r'||c=='\n'?'|':
+                     c>=32u&&c<=126u?c:'.');
+    }
+    outb(0xE9,'}');
+#endif
 #if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
     {
        unsigned e=(unsigned)br_ssl_engine_last_error(&CLIENT.eng);
