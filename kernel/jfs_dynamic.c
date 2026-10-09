@@ -43,7 +43,8 @@ static bool name_valid(const char *p){
         char c=p[i];
         if(!c){nul=true;break;}
         if((u8)c<0x20 || c=='\\')return false;
-        if(c=='.' && p[i+1]=='.' && (i==0||p[i-1]=='/'))return false;
+        if(c=='.' && i+1<JFS_PATH && p[i+1]=='.' &&
+           (i==0||p[i-1]=='/'))return false;
     }
     return nul;
 }
@@ -86,15 +87,13 @@ static void update_index(const char *name,u32 start,u32 n,u32 generation,bool de
     else entries[idx].path[0]=0;
 }
 static bool valid_transaction(u32 pos,u32 sectors,u32 n){
-    if(!io(pos+1u,payload,sectors,false))return false;
+    if(sectors&&!io(pos+1u,payload,sectors,false))return false;
     if(!io(pos+1u+sectors,footer,1,false))return false;
     if(get32(footer)!=JFS_COMMIT ||
        get32(footer+4)!=get32(header+4))return false;
-    u8 calculated[32],bad=0;
+    u8 calculated[32];
     digest(n,calculated);
-    for(u32 i=0;i<32;i++)
-        bad|=calculated[i]^header[96+i]^footer[8+i]^header[96+i];
-    if(bad)return false;
+
     for(u32 i=0;i<32;i++)if(calculated[i]!=header[96+i] ||
                              calculated[i]!=footer[8+i])return false;
     return true;
