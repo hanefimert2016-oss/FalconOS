@@ -40,6 +40,10 @@ jobs:
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/pfs_test.c kernel/shfs.c kernel/pfs.c -o build/test-pfs
           ./build/test-pfs
+      - name: Test independent FVM application scheduler
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/fvm_test.c kernel/fvm.c -o build/test-fvm
+          ./build/test-fvm
       - name: Compile ISO
         run: make iso
       - name: Validate Multiboot2 kernel
