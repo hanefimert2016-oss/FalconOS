@@ -129,26 +129,33 @@ def main():
                     raise AssertionError("No visual change after launching "+name)
                 ppm_to_png(ppm,root/("FalconOS-Aura-"+name+".png"))
                 print("PASS: QEMU rendered actual app window",name)
-            # Native Contour WM regression: keep Settings open, launch Files,
-            # then Browser. Both older windows must remain visibly present.
-            # This tests genuine guest framebuffer composition, not web CSS.
-            command(sock,"sendkey f2",.45)
-            for _ in range(5):command(sock,"sendkey left",.045)
-            command(sock,"sendkey ret",.6)  # Files while Settings remains
+            # Native framebuffer compositor verification, synchronized to
+            # kernel debugcon events (z<app-id> n<visible-window-count>).
+            # A screenshot with just Launchpad open must never count as pass.
+            command(sock,"sendkey f2",.95)
+            for _ in range(5):command(sock,"sendkey left",.22)
+            off=len(debug.read_bytes())
+            command(sock,"sendkey ret",1.6)  # Files while Settings remains
+            wait_for_marker(debug,b"zBn2",after=off,timeout=35)
+            command(sock,"info status",1.2)
             multi2=root/"FalconOS-Aura-MultiWindow-2.ppm"
             shot2=screenshot(sock,multi2)
             if picture_difference(shot,shot2)<40:
-                raise AssertionError("Native WM did not composite second window")
+                raise AssertionError("Native WM did not repaint two windows")
             ppm_to_png(multi2,root/"FalconOS-Aura-MultiWindow-2.png")
-            command(sock,"sendkey f2",.45)
-            command(sock,"sendkey right",.09)
-            command(sock,"sendkey ret",.65) # Browser, 3 visible windows
+
+            command(sock,"sendkey f2",.95)
+            command(sock,"sendkey right",.35)
+            off=len(debug.read_bytes())
+            command(sock,"sendkey ret",1.6)  # Browser; 3 windows must remain
+            wait_for_marker(debug,b"zOn3",after=off,timeout=35)
+            command(sock,"info status",1.2)
             multi3=root/"FalconOS-Aura-MultiWindow-3.ppm"
             shot3=screenshot(sock,multi3)
             if picture_difference(shot2,shot3)<40:
-                raise AssertionError("Native WM did not composite third window")
+                raise AssertionError("Native WM did not repaint three windows")
             ppm_to_png(multi3,root/"FalconOS-Aura-MultiWindow-3.png")
-            print("PASS: native QEMU multiwindow 2 and 3 different apps")
+            print("PASS: guest compositor emitted Files count=2, Browser count=3 and redrew both screenshot states")
         score = picture_difference(before, after)
         ppm_to_png(last, args.output)
         events = debug.read_bytes() if debug.exists() else b""
