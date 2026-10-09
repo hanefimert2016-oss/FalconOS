@@ -67,7 +67,7 @@ static int tcp_read_cb(void *ctx,unsigned char *dest,size_t len){
     if(!len)return -1;
     u32 n=(u32)(len>4096?4096:len);
     int got=native_tcp_read(dest,n,1000u);
-#ifdef FALCON_QEMU_TLS_TEST
+#if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
     outb(0xE9,got>0?'r':got==0?'0':'!');
 #endif
     return got;
@@ -77,7 +77,7 @@ static int tcp_write_cb(void *ctx,const unsigned char *data,size_t len){
     if(!len)return -1;
     u32 n=(u32)(len>4096?4096:len);
     int written=native_tcp_write(data,n);
-#ifdef FALCON_QEMU_TLS_TEST
+#if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
     outb(0xE9,written>0?'w':'?');
 #endif
     return written;
@@ -140,18 +140,38 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
                           const u8 *override_addr,u16 dest_port){
     if(result && cap)result[0]=0;
     if(!result||cap<128||cap>4096||!valid_host(host)||!valid_path(path) ||
-       falcon_tls_anchor_count==0)return false;
+       falcon_tls_anchor_count==0){
+#ifdef FALCON_QEMU_TLS_PUBLIC_TEST
+        outb(0xE9,'v');
+#endif
+        return false;
+    }
     unsigned char entropy[32];
     u32 days=0,seconds=0;
-    if(!cpu_random(entropy) || !cert_time(&days,&seconds))return false;
-#ifdef FALCON_QEMU_TLS_TEST
+    if(!cpu_random(entropy) || !cert_time(&days,&seconds)){
+#ifdef FALCON_QEMU_TLS_PUBLIC_TEST
+        outb(0xE9,'t');
+#endif
+        return false;
+    }
+#if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
     outb(0xE9,'R'); /* RNG + RTC */
 #endif
     u8 addr[4];
     if(override_addr)k_memcpy(addr,override_addr,4);
-    else if(!native_net_dns_query(host,addr))return false;
-    if(!native_tcp_connect(addr,dest_port))return false;
-#ifdef FALCON_QEMU_TLS_TEST
+    else if(!native_net_dns_query(host,addr)){
+#ifdef FALCON_QEMU_TLS_PUBLIC_TEST
+        outb(0xE9,'d');
+#endif
+        return false;
+    }
+    if(!native_tcp_connect(addr,dest_port)){
+#ifdef FALCON_QEMU_TLS_PUBLIC_TEST
+        outb(0xE9,'c');
+#endif
+        return false;
+    }
+#if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
     outb(0xE9,'C'); /* native TCP connected */
 #endif
     bool result_ok=false;
@@ -174,7 +194,7 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
     k_memset(entropy,0,sizeof entropy);
     br_ssl_engine_set_buffer(&CLIENT.eng,IO_BUFFER,sizeof IO_BUFFER,1);
     if(!br_ssl_client_reset(&CLIENT,host,0))goto end;
-#ifdef FALCON_QEMU_TLS_TEST
+#if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
     outb(0xE9,'S'); /* TLS context ready */
 #endif
     br_sslio_init(&SSLIO,&CLIENT.eng,tcp_read_cb,NULL,tcp_write_cb,NULL);
@@ -193,12 +213,12 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
     }
     p="\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
     for(u32 i=0;p[i];i++)request[at++]=p[i];
-#ifdef FALCON_QEMU_TLS_TEST
+#if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
     outb(0xE9,'W'); /* initiating HTTPS request / TLS handshake */
 #endif
     if(br_sslio_write_all(&SSLIO,request,at)<0 ||
        br_sslio_flush(&SSLIO)<0)goto end;
-#ifdef FALCON_QEMU_TLS_TEST
+#if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
     outb(0xE9,'X'); /* TLS write+flush succeeded */
 #endif
     u32 received=0;
@@ -212,7 +232,7 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
         }
     }
 end:
-#ifdef FALCON_QEMU_TLS_TEST
+#if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
     {
        unsigned e=(unsigned)br_ssl_engine_last_error(&CLIENT.eng);
        outb(0xE9,'e');outb(0xE9,(u8)('A'+(e&15u)));
@@ -220,6 +240,9 @@ end:
     }
 #endif
     /* All TLS records are verified by BearSSL prior to becoming plaintext. */
+#ifdef FALCON_QEMU_TLS_PUBLIC_TEST
+    outb(0xE9,result_ok?'Y':'F');
+#endif
     if(!result_ok)result[0]=0;
     native_tcp_close();
     return result_ok;
@@ -227,7 +250,7 @@ end:
 bool native_https_get(const char *host,const char *path,char *response,u32 capacity){
     return https_request(host,path,response,capacity,NULL,443);
 }
-#ifdef FALCON_QEMU_TLS_TEST
+#if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
 bool native_https_ci_smoke(void){
     /* Override ONLY transport destination in CI. TLS SNI + X.509 hostname
      * validation still requires the leaf certificate for falcon.test. */
