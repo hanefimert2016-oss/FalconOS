@@ -111,9 +111,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
       - name: Build network-instrumented kernel and ISO
-        run: make iso EXTRA_CFLAGS='-DFALCON_QEMU_NET_TEST -DFALCON_QEMU_TCP_TEST'
+        run: make iso EXTRA_CFLAGS='-DFALCON_QEMU_NET_TEST -DFALCON_QEMU_TCP_TEST -DFALCON_QEMU_DHCP_TEST'
       - name: Verify actual guest-to-gateway ICMP exchange
-        run: python3 tools/qemu_net_e2e.py --timeout 65 --require-dns
+        run: python3 tools/qemu_net_e2e.py --timeout 75 --require-dns --require-dhcp
       - name: Verify guest-native TCP and HTTP against live QEMU host
         run: python3 tools/qemu_tcp_e2e.py --timeout 70
       - name: Upload network diagnostics
