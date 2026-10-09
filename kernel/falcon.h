@@ -625,6 +625,15 @@ void   net_stats(u32 *tx_pkt, u32 *rx_pkt, u32 *tx_by, u32 *rx_by,
 bool   net_dhcp(void);
 const char *net_summary(void);
 
+/* Sandboxed FVM/1 application instances (not native ELF/ring3). */
+i32 fvm_spawn_source(const char *name,const char *data,u32 length);
+i32 fvm_spawn_file(const char *path);
+void fvm_tick(void);
+bool fvm_kill(i32 slot);
+i32 fvm_state(i32 slot);
+i32 fvm_last_print(i32 slot);
+void fvm_status(char *out,i32 capacity);
+
 /* Native IPv4/ICMP packet networking; not a TLS or full TCP stack. */
 void native_net_poll(void);
 bool native_net_ping(const u8 ip[4]);
