@@ -489,6 +489,8 @@ void long_start(u64 magic, u64 info_ptr)
         const u8 gateway[4] = {10,0,2,2};
         outb(0xE9, net_present() ? 'V' : 'v');
         outb(0xE9, native_net_ping(gateway) ? 'N' : 'n');
+        u8 remote[4];
+        outb(0xE9, native_net_dns_query("example.com", remote) ? 'D' : 'd');
     }
 #endif
 
