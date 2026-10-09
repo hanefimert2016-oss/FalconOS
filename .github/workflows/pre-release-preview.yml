@@ -41,7 +41,8 @@ jobs:
       - name: Build and exercise Ring3 ELF64 developer preview
         run: |
           make clean
-          make iso ENABLE_RING3_TEST=1 EXTRA_CFLAGS=-DFALCON_QEMU_ELF_TEST
+          make iso ENABLE_RING3_TEST=1 EXTRA_CFLAGS='-DFALCON_QEMU_ELF_TEST -DFALCON_QEMU_SCHED_TEST'
+          python3 tools/qemu_ring3_sched_e2e.py
           python3 tools/qemu_elf_ring3_e2e.py
           cp build/FalconOS.iso build/FalconOS-preview-Ring3-ELF64.iso
       - name: Upload experimental Ring3 preview (no Release)
