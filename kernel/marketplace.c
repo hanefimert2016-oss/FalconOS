@@ -140,6 +140,7 @@ static void on_line(char *line) {
                 copy_small(app->id, sizeof app->id, f[1]);
                 copy_small(app->version, sizeof app->version, f[2]);
                 copy_small(app->name, sizeof app->name, f[3]);
+                outb(0xE9, 'C'); /* QEMU integration event: catalog accepted */
             }
         }
         ack();
@@ -199,6 +200,7 @@ static void on_line(char *line) {
                 status_text = market_disk_save(rx_id, rx_data, rx_used)
                     ? "Verified app installed to safe disk"
                     : "Verified app installed to RAM (secure session)";
+                outb(0xE9, 'I'); /* QEMU integration event: payload validated and installed */
                 ack();
             } else {
                 status_text = "Not enough guest file storage";

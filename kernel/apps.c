@@ -3171,6 +3171,7 @@ static void market_launch(i32 i)
 {
     const char *script = market_script(i);
     if (!script) return;
+    outb(0xE9, 'R'); /* QEMU integration event: installed script launched */
     term_init();
     term_push("Marketplace: running verified FAPP/1 script");
     while (*script) {
