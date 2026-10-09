@@ -47,6 +47,10 @@ jobs:
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/xfs_large_test.c kernel/xfs_large.c -o build/test-xfs-large
           ./build/test-xfs-large
+      - name: Verify dynamic journal and replay after interrupted I/O
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/jfs_dynamic_test.c kernel/jfs_dynamic.c -o build/test-jfs-dynamic
+          ./build/test-jfs-dynamic
       - name: Test independent FVM application scheduler
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/fvm_test.c kernel/fvm.c -o build/test-fvm
