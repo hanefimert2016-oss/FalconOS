@@ -639,6 +639,8 @@ void native_net_poll(void);
 bool native_net_ping(const u8 ip[4]);
 bool native_net_parse_ipv4(const char *text, u8 out[4]);
 bool native_net_arp_known(void);
+bool native_net_dns_query(const char *hostname,u8 address[4]);
+bool native_net_dns_parse(const u8 *packet,u32 length,u16 expected_id,u8 answer[4]);
 void native_net_arp_mac(u8 out[6]);
 u32 native_net_rx_count(void);
 
