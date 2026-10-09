@@ -9,6 +9,7 @@ extern const u8 *rtl8139_mac(void);
 extern bool rtl8139_send(const u8 *,u32);
 extern void rtl8139_poll(void (*)(const u8 *,u32));
 extern void native_tcp_receive(const u8 *ip,u32 total);
+extern void native_dhcp_receive(const u8 *payload,u32 length);
 
 static u8 guest_ip[4]={10,0,2,15};
 static u8 guest_mask[4]={255,255,255,0};
@@ -23,7 +24,7 @@ static bool dns_waiting,dns_received;
 static u16 dns_id;
 static u8 dns_reply[512];
 static u32 dns_reply_length;
-static const u8 dns_ip[4]={10,0,2,3};
+static u8 dns_ip[4]={10,0,2,3};
 
 
 static u16 rd16(const u8 *p){return (u16)(((u16)p[0]<<8)|p[1]);}
@@ -88,9 +89,18 @@ static void native_receive(const u8 *frame,u32 n){
     if((ip[0]>>4)!=4 || ihl<20 || ihl>60 || n<14+ihl)return;
     u16 total=rd16(ip+2);
     if(total<ihl||total>n-14 || checksum(ip,ihl)!=0)return;
-    if(!equal(ip+16,guest_ip,4))return;
-    /* No fragmented IP reassembly in this first native-stack milestone. */
+    /* Drop fragment overlap and unsupported IPv4 options before DHCP too. */
     if(rd16(ip+6)&0x3FFFu)return;
+    if(ip[9]==17 && total>=ihl+8 &&
+       (equal(ip+16,guest_ip,4) ||
+        (ip[16]==255&&ip[17]==255&&ip[18]==255&&ip[19]==255))){
+        const u8 *udp=ip+ihl;
+        u16 len=rd16(udp+4);
+        if(rd16(udp)==67 && rd16(udp+2)==68 &&
+           len>=8+240 && len<=total-ihl)
+            native_dhcp_receive(udp+8,(u32)len-8u);
+    }
+    if(!equal(ip+16,guest_ip,4))return;
     if(ip[9]==6 && total>=ihl+20) {
         native_tcp_receive(ip,total);
         return;
@@ -117,6 +127,25 @@ static void native_receive(const u8 *frame,u32 n){
     }
 }
 bool native_net_init(void){return rtl8139_init();}
+void native_net_dns_server(const u8 addr[4]){
+    if(addr)k_memcpy(dns_ip,addr,4);
+}
+bool native_net_dhcp_broadcast(const u8 *payload,u16 length){
+    if(!payload || length<240 || length>500 || !rtl8139_ready())return false;
+    static u8 frame[14+20+8+500];
+    static const u8 broadcast[6]={255,255,255,255,255,255};
+    k_memset(frame,0,sizeof frame);
+    ethernet(frame,broadcast,0x0800);
+    u8 *ip=frame+14;
+    ip[0]=0x45;wr16(ip+2,(u16)(20u+8u+length));
+    ip[8]=64;ip[9]=17; /* src 0.0.0.0 for discovery */
+    for(i32 i=0;i<4;i++)ip[16+i]=255;
+    wr16(ip+10,checksum(ip,20));
+    u8 *udp=ip+20;wr16(udp,68);wr16(udp+2,67);
+    wr16(udp+4,(u16)(8u+length));
+    k_memcpy(udp+8,payload,length);
+    return rtl8139_send(frame,14u+20u+8u+length);
+}
 void native_net_poll(void){if(rtl8139_ready())rtl8139_poll(native_receive);}
 void native_net_config(u8 ip[4],u8 mask[4],u8 gw[4]){
     k_memcpy(guest_ip,ip,4);k_memcpy(guest_mask,mask,4);k_memcpy(gateway_ip,gw,4);
