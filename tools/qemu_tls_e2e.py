@@ -6,6 +6,7 @@ No host COM1/HTTPS bridge participates.
 from pathlib import Path
 import argparse
 import socket
+import re
 import ssl
 import struct
 import subprocess
@@ -63,6 +64,25 @@ def main():
     if debug.exists():debug.unlink()
     pcap=Path("build/tls-smoke.pcap")
     if pcap.exists():pcap.unlink()
+    monitor=Path("build/tls-monitor.sock")
+    if monitor.exists():monitor.unlink()
+    sampled=[]
+    def read_regs():
+        try:
+            with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as con:
+                con.settimeout(2)
+                con.connect(str(monitor))
+                con.recv(4096)
+                con.sendall(b"info registers\\n")
+                response=con.recv(20000).decode(errors="replace")
+            match=re.search(r"RIP=([0-9a-fA-F]+)",response)
+            if not match:return response[-700:]
+            ip="0x"+match.group(1)
+            decoded=subprocess.run(["addr2line","-fip","-e","build/falcon.elf",ip],
+                text=True,capture_output=True,timeout=4).stdout.strip()
+            return f"{ip} {decoded}"
+        except (OSError,subprocess.TimeoutExpired) as exc:
+            return f"probe unavailable: {exc}"
     def traffic():
         try:
             blob=pcap.read_bytes()
@@ -89,15 +109,19 @@ def main():
          "-display","none","-vga","std",
          "-netdev","user,id=net0","-device","rtl8139,netdev=net0",
          "-object",f"filter-dump,id=tlswatch,netdev=net0,file={pcap}",
-         "-serial","none","-monitor","none",
+         "-serial","none","-monitor",f"unix:{monitor},server=on,wait=off",
          "-debugcon",f"file:{debug}","-global","isa-debugcon.iobase=0xe9",
          "-no-reboot"]
     proc=subprocess.Popen(cmd,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
     try:
         deadline=time.monotonic()+args.timeout
+        last_probe=time.monotonic()
         while time.monotonic()<deadline:
             if proc.poll() is not None:raise RuntimeError("QEMU terminated")
             data=debug.read_bytes() if debug.exists() else b""
+            if data.count(b"w")>=2 and time.monotonic()-last_probe>5:
+                sampled.append(read_regs())
+                last_probe=time.monotonic()
             if b"Z" in data or b"z" in data:
                 if args.expect_failure:
                     if b"Z" in data:raise AssertionError("TLS accepted INVALID hostname!")
@@ -113,7 +137,8 @@ def main():
             time.sleep(.2)
         raise TimeoutError("Native TLS test timed out; debug="+repr(
             debug.read_bytes() if debug.exists() else b"")+
-            " server="+repr(server.error)+" traffic="+traffic())
+            " server="+repr(server.error)+" ip_probes="+repr(sampled)+
+            " traffic="+traffic())
     finally:
         proc.terminate()
         try:proc.communicate(timeout=4)
