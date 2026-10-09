@@ -92,6 +92,8 @@ void apps_open(i32 app) {
         if(wm_slots[j].app==app) {
             wm_raise(j);
             minimized_app=-1; open_at_ms=pit_ms();
+            outb(0xE9,'z');outb(0xE9,(u8)('A'+app));
+            outb(0xE9,'n');outb(0xE9,(u8)('0'+wm_slot_count));
             return;
         }
     }
@@ -105,6 +107,8 @@ void apps_open(i32 app) {
     wm_slots[wm_slot_count++]=item;
     wm_load_top();
     if(app==2)outb(0xE9,'S');
+    outb(0xE9,'z');outb(0xE9,(u8)('A'+app));
+    outb(0xE9,'n');outb(0xE9,(u8)('0'+wm_slot_count));
     minimized_app=-1; open_at_ms=pit_ms();
     wm_dragging=wm_resizing=false;
 }
@@ -3705,43 +3709,47 @@ static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         market_first_frame = false;
     }
     (void)frame;
-    section(wx, wy, "FalconOS Marketplace", "GitHub Releases  |  .app.pkg  |  SHA-256");
-    gfx_text(wx + 24, wy + 42, "R: refresh  U: update  D: remove  Enter: get/run  C: CodeDium", PAL_TEXT_DIM);
-    gfx_text(wx + 24, wy + 63, market_status(), PAL_ACCENT);
+    gfx_round_rect_a(wx+18,wy+8,ww-36,75,19,PAL_PANEL_DEEP,255);
+    gfx_round_rect(wx+30,wy+19,40,40,13,0x20AA83u);
+    gfx_text_lg_centered(wx+50,wy+26,"+",0xFFFFFFu);
+    gfx_text_lg(wx+83,wy+14,"Discover",PAL_TEXT);
+    gfx_text(wx+85,wy+49,"FalconOS-Marketplace / GitHub Releases / FAPP/1",PAL_TEXT_DIM);
+    gfx_text(wx+24,wy+91,"R refresh | U update | D remove | Enter install/run | C CodeDium",PAL_TEXT_DIM);
+    gfx_text(wx + 24, wy + 114, market_status(), PAL_ACCENT);
     i32 mx, my; bool held; mouse_get(&mx, &my, &held); (void)held;
     bool clicked = wm_click_enabled();
     if (clicked && mx >= wx + 24 && mx <= wx + ww - 24 &&
-        my >= wy + 36 && my <= wy + 56) {
+        my >= wy + 87 && my <= wy + 107) {
         market_refresh(); (void)mouse_consume_click(); clicked = false;
     }
     i32 n = market_count();
     if (n == 0) {
-        gfx_round_rect_a(wx + 24, wy + 103, ww - 48, 90, 14, PAL_PANEL_DEEP, 255);
-        gfx_text(wx + 42, wy + 133, "No releases loaded. Run make market-bridge, press R.", PAL_TEXT);
+        gfx_round_rect_a(wx + 24, wy + 149, ww - 48, 90, 14, PAL_PANEL_DEEP, 255);
+        gfx_text(wx + 42, wy + 179, "No releases yet. Start make market-bridge, then press R.", PAL_TEXT);
     }
-    i32 visible = (wh - 146) / 33;
+    i32 visible = (wh - 189) / 38;
     if (visible < 1) visible = 1;
     i32 first = market_cursor - visible / 2;
     if (first < 0) first = 0;
     if (first > n - visible) first = n - visible;
     if (first < 0) first = 0;
     for (i32 i = first; i < n && i < first + visible; i++) {
-        i32 y = wy + 102 + (i - first) * 33;
+        i32 y = wy + 150 + (i - first) * 38;
         bool selected = i == market_cursor;
-        gfx_round_rect_a(wx + 24, y, ww - 48, 29, 8,
+        gfx_round_rect_a(wx + 24, y, ww - 48, 34, 10,
                          selected ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
-        gfx_round_outline(wx + 24, y, ww - 48, 29, 8,
+        gfx_round_outline(wx + 24, y, ww - 48, 34, 10,
                           selected ? PAL_ACCENT : PAL_HAIRLINE);
-        gfx_circle(wx + 40, y + 14, 6, selected ? PAL_ACCENT : COL_OK);
-        gfx_text(wx + 57, y + 6, market_name(i), PAL_TEXT);
-        gfx_text(wx + ww / 2, y + 6, market_version(i), PAL_TEXT_FAINT);
+        gfx_circle(wx + 40, y + 17, 6, selected ? PAL_ACCENT : COL_OK);
+        gfx_text(wx + 57, y + 9, market_name(i), PAL_TEXT);
+        gfx_text(wx + ww / 2, y + 9, market_version(i), PAL_TEXT_FAINT);
         bool installed = market_installed(i);
         bool outdated = installed && market_has_update(i);
-        gfx_text(wx + ww - 140, y + 6,
+        gfx_text(wx + ww - 140, y + 9,
                  outdated ? "UPDATE" : (installed ? "RUN" : "GET"),
                  outdated ? COL_WARN : (installed ? COL_OK : PAL_ACCENT));
         if (clicked && mx >= wx + 24 && mx < wx + ww - 24 &&
-            my >= y && my <= y + 29) {
+            my >= y && my <= y + 34) {
             market_cursor = i;
             if (market_has_update(i)) market_download(i);
             else if (market_installed(i)) market_launch(i);
@@ -3750,7 +3758,7 @@ static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         }
     }
     gfx_text(wx + 24, wy + wh - 27,
-             "FAPP/1 script packages | Host-assisted HTTPS | Guest files in RAM", PAL_TEXT_FAINT);
+             "Reviewed .app.pkg | SHA-256 checked | GitHub Releases + local guest storage", PAL_TEXT_FAINT);
 }
 
 /* ---- CodeDium: native editable FAPP/1 source, file save and script preview --- */
