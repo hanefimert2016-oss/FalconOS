@@ -1,0 +1,41 @@
+name: Build and validate FalconOS ISO
+on:
+  push:
+    branches: [FalconOS-1-release]
+  pull_request:
+    branches: [FalconOS-1-release]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-iso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install boot and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc binutils nasm grub-pc-bin grub-common xorriso mtools qemu-utils
+      - name: Build 64-bit kernel and ISO
+        run: |
+          make clean
+          make iso ARCH=x86_64
+          test -s build/falcon.elf
+          test -s build/FalconOS.iso
+          file build/falcon.elf build/FalconOS.iso
+          ls -lh build/falcon.elf build/FalconOS.iso
+      - name: Inspect boot files inside ISO
+        run: |
+          xorriso -indev build/FalconOS.iso -find /boot -type f -print | tee build/iso-contents.txt
+          grep -F '/boot/falcon.elf' build/iso-contents.txt
+          grep -F '/boot/grub/grub.cfg' build/iso-contents.txt
+      - name: Export bootable ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-x86_64-ISO
+          path: |
+            build/FalconOS.iso
+            build/falcon.elf
+            build/iso-contents.txt
+          retention-days: 30
