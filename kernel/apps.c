@@ -29,42 +29,89 @@ static void falco_set_query(const char *q);
 static void market_launch(i32 i);
 static i32 builtin_app_count(void);
 
-/* ----- window manager state (FalconOS 1) ---------------------------------
- * The dispatcher used to centre every app window on every frame. With
- * a mouse-driven WM users expect:
- *   - drag the title bar to relocate the window
- *   - resize from the bottom-right corner
- *   - traffic lights (red close / yellow minimise / green maximise)
- * We keep a single window slot since we still only have one active app
- * at a time; minimise just collapses to "no active app" but remembers
- * the offset/size so re-opening the same app feels persistent.        */
-static i32  wm_dx = 0, wm_dy = 0;     /* persistent offset from centre  */
-static i32  wm_dw = 0, wm_dh = 0;     /* size delta (added to default)  */
-static bool wm_max = false;            /* maximised? overrides above    */
-static bool wm_dragging = false;
-static i32  wm_drag_grab_x = 0, wm_drag_grab_y = 0;
-static bool wm_resizing = false;
-static i32  wm_resize_grab_x = 0, wm_resize_grab_y = 0;
-static i32  wm_resize_start_w = 0, wm_resize_start_h = 0;
+/* ---- Contour native window stack (up to 4 simultaneous application windows).
+ * No heap / GPU dependency. Each built-in app remains a singleton, but
+ * different applications can be shown, positioned and focused concurrently.
+ * Geometry lives per window; the selected window alone receives keyboard
+ * and mouse events. This is OS framebuffer code, not the web preview. */
+#define WM_MAX_WINDOWS 4
+typedef struct { i32 app, dx, dy, dw, dh; bool maximized; } wm_slot_t;
+static wm_slot_t wm_slots[WM_MAX_WINDOWS];
+static i32 wm_slot_count;
+static i32 wm_dx, wm_dy, wm_dw, wm_dh;
+static bool wm_max, wm_dragging, wm_resizing, wm_passive_paint;
+static i32 wm_drag_grab_x, wm_drag_grab_y;
+static i32 wm_resize_grab_x, wm_resize_grab_y;
+static i32 wm_resize_start_w, wm_resize_start_h;
 
-void apps_open(i32 i)
-{
-    if (i < 0 || i >= apps_count()) return;
-    if (i >= builtin_app_count()) {
-        i32 index = i - builtin_app_count();
-        if (market_installed(index)) market_launch(index);
-        else { active_app = 2; market_download(index); }
+static bool wm_click_enabled(void) {
+    return !wm_passive_paint && mouse_peek_click();
+}
+static void wm_store_top(void) {
+    if (wm_slot_count <= 0) return;
+    wm_slot_t *w=&wm_slots[wm_slot_count-1];
+    w->dx=wm_dx; w->dy=wm_dy; w->dw=wm_dw; w->dh=wm_dh;
+    w->maximized=wm_max;
+}
+static void wm_load_top(void) {
+    if (wm_slot_count <= 0) {
+        active_app=-1; wm_dx=wm_dy=wm_dw=wm_dh=0; wm_max=false;
         return;
     }
-    active_app = i;
-    if (i == 2) outb(0xE9, 'S');  /* QEMU trace: Store actually opened */
-    minimized_app = -1;
-    open_at_ms = pit_ms();
+    const wm_slot_t *w=&wm_slots[wm_slot_count-1];
+    active_app=w->app; wm_dx=w->dx; wm_dy=w->dy;
+    wm_dw=w->dw; wm_dh=w->dh; wm_max=w->maximized;
 }
-void apps_close(void)  { active_app = -1; wm_max = false;
-                          wm_dragging = false; wm_resizing = false; }
-i32  apps_active(void) { return active_app; }
-i32  apps_minimized(void) { return minimized_app; }
+static void wm_raise(i32 index) {
+    if (index<0||index>=wm_slot_count||index==wm_slot_count-1)return;
+    wm_store_top();
+    wm_slot_t raised=wm_slots[index];
+    for(i32 j=index;j<wm_slot_count-1;j++) wm_slots[j]=wm_slots[j+1];
+    wm_slots[wm_slot_count-1]=raised;
+    wm_load_top();
+    wm_dragging=wm_resizing=false;
+    open_at_ms=pit_ms();
+}
+bool apps_is_open(i32 app) {
+    for(i32 j=0;j<wm_slot_count;j++)if(wm_slots[j].app==app)return true;
+    return false;
+}
+void apps_open(i32 app) {
+    if(app<0||app>=apps_count())return;
+    if(app>=builtin_app_count()) {
+        i32 idx=app-builtin_app_count();
+        if(market_installed(idx))market_launch(idx);
+        else { apps_open(2); market_download(idx); }
+        return;
+    }
+    wm_store_top();
+    for(i32 j=0;j<wm_slot_count;j++) {
+        if(wm_slots[j].app==app) {
+            wm_raise(j);
+            minimized_app=-1; open_at_ms=pit_ms();
+            return;
+        }
+    }
+    if(wm_slot_count==WM_MAX_WINDOWS) {
+        for(i32 j=1;j<wm_slot_count;j++)wm_slots[j-1]=wm_slots[j];
+        wm_slot_count--;
+    }
+    i32 cascade=wm_slot_count*27;
+    wm_slot_t item={.app=app,.dx=cascade-35,.dy=cascade-35,
+                    .dw=0,.dh=0,.maximized=false};
+    wm_slots[wm_slot_count++]=item;
+    wm_load_top();
+    if(app==2)outb(0xE9,'S');
+    minimized_app=-1; open_at_ms=pit_ms();
+    wm_dragging=wm_resizing=false;
+}
+void apps_close(void) {
+    if(wm_slot_count>0)wm_slot_count--;
+    wm_load_top();
+    wm_dragging=wm_resizing=false;
+}
+i32 apps_active(void) {return active_app;}
+i32 apps_minimized(void) {return minimized_app;}
 
 /* ===== icon glyphs ======================================================== */
 static void icon_home(i32 cx, i32 cy)
@@ -660,7 +707,7 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     i32 mx, my; bool ml;
     mouse_get(&mx, &my, &ml);
     (void)ml;
-    bool edge = mouse_peek_click();
+    bool edge = wm_click_enabled();
     bool click_used = false;
 
     if (edge && mx >= all_x && mx <= all_x + all_w && my >= chip_y && my <= chip_y + 20) {
@@ -2660,7 +2707,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     if(set_row<settings_scroll)settings_scroll=set_row;
     gfx_text(wx+ww-192,wy+112,
       "Up/Down   Left/Right",PAL_TEXT_DIM);
-    if(mouse_peek_click()){
+    if(wm_click_enabled()){
         i32 mx,my;bool pressed;mouse_get(&mx,&my,&pressed);(void)pressed;
         if(mx>=sx&&mx<sx+sw&&my>=settings_view_min &&
            my<settings_view_max){
@@ -3508,7 +3555,7 @@ static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     gfx_text(wx + 24, wy + 42, "R: refresh  U: update  D: remove  Enter: get/run  C: CodeDium", PAL_TEXT_DIM);
     gfx_text(wx + 24, wy + 63, market_status(), PAL_ACCENT);
     i32 mx, my; bool held; mouse_get(&mx, &my, &held); (void)held;
-    bool clicked = mouse_peek_click();
+    bool clicked = wm_click_enabled();
     if (clicked && mx >= wx + 24 && mx <= wx + ww - 24 &&
         my >= wy + 36 && my <= wy + 56) {
         market_refresh(); (void)mouse_consume_click(); clicked = false;
@@ -4000,6 +4047,29 @@ static bool wm_window_rect(i32 *out_x, i32 *out_y, i32 *out_w, i32 *out_h)
  * after mouse_get(). Handles title-bar drag, corner resize and traffic
  * lights. Returns true when it consumed the click (so the underlying
  * app shouldn't see it).                                              */
+/* Focus lower windows only when the pointer is not occluded by a
+ * window above them; clicks on background chrome go to the WM. */
+static bool wm_focus_click(i32 mx,i32 my) {
+    if(wm_slot_count<2)return false;
+    wm_store_top();
+    i32 selected=-1;
+    for(i32 j=wm_slot_count-1;j>=0;j--) {
+        const wm_slot_t *w=&wm_slots[j];
+        active_app=w->app;wm_dx=w->dx;wm_dy=w->dy;
+        wm_dw=w->dw;wm_dh=w->dh;wm_max=w->maximized;
+        i32 x,y,wid,hei;
+        if(wm_window_rect(&x,&y,&wid,&hei) &&
+           mx>=x&&mx<x+wid&&my>=y&&my<y+hei) {
+            selected=j;break;
+        }
+    }
+    wm_load_top();
+    if(selected>=0&&selected<wm_slot_count-1) {
+        wm_raise(selected);return true;
+    }
+    return false;
+}
+
 bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
 {
     if (active_app < 0) return false;
@@ -4023,6 +4093,7 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
     }
 
     if (!click_edge) return false;
+    if (wm_focus_click(mx,my)) return true;
 
     /* traffic lights live at title-bar y ± 10px, x within radius 9.
      *   red    → close (×)
@@ -4033,8 +4104,7 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
         if(mx>=wx+ww-44&&mx<wx+ww-9){apps_close();return true;}
         if(mx>=wx+ww-84&&mx<wx+ww-46){wm_max=!wm_max;return true;}
         if(mx>=wx+ww-124&&mx<wx+ww-86){
-            minimized_app=active_app;active_app=-1;
-            wm_dragging=false;wm_resizing=false;return true;
+            minimized_app=active_app;apps_close();return true;
         }
     }
 
@@ -4060,41 +4130,23 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
     return false;
 }
 
-/* renders the active app's window with a slide-in animation */
-void apps_render_active(u32 frame)
-{
-    if (active_app < 0) return;
-    const app_def_t *a = &APPS[active_app];
-
-    i32 wx, wy, ww, wh;
-    wm_window_rect(&wx, &wy, &ww, &wh);
-    /* Full-screen blur was expensive on QEMU/TCG; keep depth by dimming the
-     * whole desktop and blurring only a small halo around the active window. */
-    if (SET.aero_enabled) {
-        i32 hx = wx - 24, hy = wy - 24, hw = ww + 48, hh = wh + 48;
-        if (SET.theme == THEME_LIQUID) gfx_blur_rect(hx, hy, hw, hh, 4);
-        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 24);
-    } else {
-        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 22);
+/* Draw all native windows bottom-to-top. Hidden windows are not interactive:
+ * wm_passive_paint suppresses app mouse click inspection until the topmost
+ * focused window is rendered. */
+static void wm_paint_window(u32 frame,bool focused) {
+    if(active_app<0)return;
+    const app_def_t *a=&APPS[active_app];
+    i32 wx,wy,ww,wh;
+    if(!wm_window_rect(&wx,&wy,&ww,&wh))return;
+    if(focused && !wm_dragging && !wm_resizing) {
+        u32 dt=pit_ms()-open_at_ms;
+        if(dt>200)dt=200;
+        wy+=(i32)((200-dt)*60/200);
     }
-
-    /* slide-in: 200 ms — only on first open, not while dragging */
-    if (!wm_dragging && !wm_resizing) {
-        u32 dt = pit_ms() - open_at_ms;
-        if (dt > 200) dt = 200;
-        i32 off = (i32)((200 - dt) * 60 / 200);
-        wy += off;
-    }
-
-    /* card — Aero dims the desktop / dock / widgets behind the window  
-     * so the chrome feels lifted. Window body remains solid because most
-     * apps render their own opaque content into it.                      */
-    gfx_round_rect_a(wx + 4, wy + 12, ww, wh, 24, COL_SHADOW, 60);   /* shadow */
-    gfx_round_rect_a(wx, wy, ww, wh, 24, PAL_PANEL, SET.aero_enabled ? 246 : 255);
-    gfx_round_outline(wx, wy, ww, wh, 24, PAL_HAIRLINE);
-
-    /* Unified Aura title strip: app symbol left, ChromeOS window actions
-     * on the right; no macOS traffic-light clone. */
+    gfx_round_rect_a(wx+4,wy+12,ww,wh,24,COL_SHADOW,70);
+    gfx_round_rect_a(wx,wy,ww,wh,24,PAL_PANEL,SET.aero_enabled?246:255);
+    gfx_round_outline(wx,wy,ww,wh,24,
+                      focused?PAL_ACCENT:PAL_HAIRLINE);
     gfx_round_rect(wx+14,wy+8,28,28,10,a->tint);
     apps_draw_icon(active_app,wx+28,wy+22);
     gfx_text(wx+54,wy+13,apps_display_name(active_app),PAL_TEXT);
@@ -4103,21 +4155,30 @@ void apps_render_active(u32 frame)
     gfx_round_rect(wx+ww-40,wy+7,31,30,11,0xFBE6E8u);
     gfx_text_centered(wx+ww-24,wy+14,"x",0xAE3E4Bu);
     gfx_rect_a(wx+13,wy+42,ww-26,1,PAL_HAIRLINE,255);
-
-    /* body offset by 44 px for title strip */
-    a->render(wx, wy + 44, ww, wh - 44, frame);
-
-    /* resize handle (bottom-right) — three little diagonal pips */
-    if (!wm_max) {
-        i32 hx = wx + ww - 14, hy = wy + wh - 14;
-        for (i32 i = 0; i < 3; i++) {
-            gfx_rect(hx - i*4, hy + i*4, 3, 3, PAL_TEXT_FAINT);
-        }
+    a->render(wx,wy+44,ww,wh-44,frame);
+    if(!wm_max){
+        i32 hx=wx+ww-14,hy=wy+wh-14;
+        for(i32 j=0;j<3;j++)gfx_rect(hx-j*4,hy+j*4,3,3,PAL_TEXT_FAINT);
     }
-
-    /* hint */
-    gfx_text_centered(wx + ww / 2, wy + wh - 24,
-        T("Move window by title | resize corner | Esc to close",
-          "Basliktan tasi | koseden boyutlandir | Esc kapat"),
+    if(focused)gfx_text_centered(wx+ww/2,wy+wh-24,
+        T("Drag title | resize corner | Esc closes focused window",
+          "Basliktan tasi | koseden boyutlandir | Esc etkin pencereyi kapat"),
         PAL_TEXT_FAINT);
+}
+void apps_render_active(u32 frame) {
+    if(wm_slot_count<=0)return;
+    wm_store_top();
+    if(SET.aero_enabled && SET.theme==THEME_LIQUID)
+        gfx_blur_rect(20,40,(i32)FB.width-40,(i32)FB.height-140,2);
+    gfx_rect_a(0,0,FB.width,FB.height,COL_SHADOW,23);
+    const i32 count=wm_slot_count;
+    for(i32 j=0;j<count;j++) {
+        const wm_slot_t *w=&wm_slots[j];
+        active_app=w->app;wm_dx=w->dx;wm_dy=w->dy;
+        wm_dw=w->dw;wm_dh=w->dh;wm_max=w->maximized;
+        wm_passive_paint=(j!=count-1);
+        wm_paint_window(frame,!wm_passive_paint);
+    }
+    wm_passive_paint=false;
+    wm_load_top();
 }
