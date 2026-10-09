@@ -53,4 +53,14 @@ shfs_ent_t *shfs_open_w_rel(const char *cwd, const char *rel, bool append);
 void shfs_paths_dump(char *out, i32 cap);
 void shfs_du_dump(char *out, i32 cap);
 
+/* Mount-only replay and per-entry dirty revisions used by FalconFS durable files. */
+shfs_ent_t *shfs_slot(i32 i);
+u32 shfs_slot_revision(i32 i);
+bool shfs_replay_slot(i32 i, const char *path, bool is_dir, const char *data, u32 len);
+void shfs_replay_deleted(i32 i);
+void pfs_mount(void);
+void pfs_sync_step(void);
+bool pfs_flush_all(void);
+bool pfs_mounted(void);
+
 #endif
