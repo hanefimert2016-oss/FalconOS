@@ -1,0 +1,93 @@
+name: FalconOS Aura upgrade - QEMU PNG gallery
+on:
+  push:
+    branches: [feature/aura-upgrade-37986574981]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: aura-gallery-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-test-and-capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native OS and screenshot tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-pip ca-certificates
+          python3 -m pip install --user --break-system-packages 'numpy<3' trimesh opencv-python-headless pillow
+      - name: Run existing unit tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Bake original dragon GLB and compile Aura ISO with native TLS
+        run: |
+          python3 tools/bake_boot_intro.py --frames 48
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Verify graphical FalconOS boot in QEMU
+        run: python3 tools/qemu_smoke.py --iso build/FalconOS.iso --boot-seconds 16
+      - name: Capture desktop, launchpad, apps, CodeDium and native multiwindows
+        id: ui
+        run: timeout 170s python3 tools/qemu_ui_smoke.py --iso build/FalconOS.iso
+      - name: Open falconos.tech inside real Falco and capture PNG
+        id: falco
+        continue-on-error: true
+        run: |
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_BROWSER_TEST
+          timeout 170s python3 tools/qemu_falco_website.py --iso build/FalconOS.iso
+      - name: Upload actual guest screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Aura-real-QEMU-PNGs
+          path: |
+            build/FalconOS-Aura-*.png
+            build/FalconOS-Falco-*.png
+            build/FalconOS-Store-screen.png
+            build/falcon-boot-smoke.png
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload bootable tested ISO
+        if: steps.ui.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Aura-upgrade-ISO
+          path: build/FalconOS.iso
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish direct PNG paths on independent branch
+        if: steps.ui.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          short="$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
+          pubbranch="aura-png-$short"
+          mkdir -p /tmp/aura-gallery/screens
+          cp build/FalconOS-Aura-*.png /tmp/aura-gallery/screens/
+          test -s /tmp/aura-gallery/screens/FalconOS-Aura-Desktop.png
+          test -s /tmp/aura-gallery/screens/FalconOS-Aura-Launcher.png
+          if [ -f build/FalconOS-Falco-Search.png ]; then
+            cp build/FalconOS-Falco-*.png /tmp/aura-gallery/screens/
+          fi
+          cat > /tmp/aura-gallery/README.md <<EOF
+          # FalconOS Aura QEMU captures
+          Source commit: $GITHUB_SHA
+          Captures: real QEMU framebuffer, not generated interface concepts.
+          Falco live HTTPS result: ${{ steps.falco.outcome }}.
+          A PNG showing a TLS error is not evidence that the target site loaded.
+          EOF
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch --orphan "$pubbranch"
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          cp -r /tmp/aura-gallery/screens .
+          cp /tmp/aura-gallery/README.md README.md
+          git add screens README.md
+          git commit -m "gallery: verified QEMU captures for $short"
+          git push origin "HEAD:refs/heads/$pubbranch"
+          echo "Direct PNG URLs:" >> "$GITHUB_STEP_SUMMARY"
+          for file in screens/*.png; do
+            echo "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$pubbranch/$file" >> "$GITHUB_STEP_SUMMARY"
+          done
