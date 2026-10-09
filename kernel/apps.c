@@ -89,6 +89,7 @@ void apps_open(i32 app) {
         if(wm_slots[j].app==app) {
             wm_raise(j);
             minimized_app=-1; open_at_ms=pit_ms();
+            outb(0xE9,'z');outb(0xE9,(u8)('A'+app)); /* QEMU WM trace */
             return;
         }
     }
@@ -102,6 +103,7 @@ void apps_open(i32 app) {
     wm_slots[wm_slot_count++]=item;
     wm_load_top();
     if(app==2)outb(0xE9,'S');
+    outb(0xE9,'z');outb(0xE9,(u8)('A'+app)); /* QEMU WM trace */
     minimized_app=-1; open_at_ms=pit_ms();
     wm_dragging=wm_resizing=false;
 }
