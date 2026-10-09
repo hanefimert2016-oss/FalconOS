@@ -625,6 +625,14 @@ void   net_stats(u32 *tx_pkt, u32 *rx_pkt, u32 *tx_by, u32 *rx_by,
 bool   net_dhcp(void);
 const char *net_summary(void);
 
+/* Native IPv4/ICMP packet networking; not a TLS or full TCP stack. */
+void native_net_poll(void);
+bool native_net_ping(const u8 ip[4]);
+bool native_net_parse_ipv4(const char *text, u8 out[4]);
+bool native_net_arp_known(void);
+void native_net_arp_mac(u8 out[6]);
+u32 native_net_rx_count(void);
+
 /* ---- network tools (kernel/net_tools.c) ------------------------------------- */
 void   net_tools_dispatch(const char *cmd, char *out);
 
