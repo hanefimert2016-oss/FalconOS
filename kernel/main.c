@@ -347,6 +347,11 @@ static void draw_blue_dragon(i32 cx, i32 cy, u8 alpha)
 /* --------------------------------------------------------------------------- */
 static void boot_splash(void)
 {
+#ifdef FALCON_BOOT_GLB
+    extern void boot_glb_splash(void);
+    boot_glb_splash();
+    return;
+#else
     /* run for ~150 ticks (1500 ms at 100 Hz) — clean simple boot */
     u32 start = g_ticks;
     while (g_ticks - start < 150) {
@@ -408,6 +413,7 @@ static void boot_splash(void)
         gfx_present();
         __asm__ volatile ("hlt");
     }
+#endif
 }
 
 /* --------------------------------------------------------------------------- */
