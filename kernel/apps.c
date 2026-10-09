@@ -1049,7 +1049,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
             "touch cp mv mkdir rmdir basename dirname more less xxd file "
             "echo printf yes seq expr test [ env set unset alias export "
-            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id "
+            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm "
             "groups who w users hostname uptime cal date reboot shutdown "
             "which type prg pkg open chrome falco heroic video search "
             "update man | > >>");
@@ -1277,6 +1277,24 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         }
         k_strcpy(out, "prg: unknown subcommand");
         return 1;
+    }
+    if (k_strcmp(cmd,"vm")==0) {
+        if (argc<2 || k_strcmp(argv[1],"list")==0) {
+            fvm_status(out,cap);return 0;
+        }
+        if(k_strcmp(argv[1],"start")==0 && argc>=3) {
+            i32 slot=fvm_spawn_file(argv[2]);
+            if(slot<0){k_strcpy(out,"vm: missing or invalid FVM/1 file");return 1;}
+            k_strcpy(out,"vm: started slot ");
+            char num[16];k_itoa((u32)slot,num,10);k_strcat(out,num);
+            return 0;
+        }
+        if(k_strcmp(argv[1],"kill")==0 && argc>=3 &&
+           argv[2][0]>='0' && argv[2][0]<='3' && !argv[2][1]) {
+            bool ok=fvm_kill(argv[2][0]-'0');
+            k_strcpy(out,ok?"vm: stopped":"vm: invalid slot");return ok?0:1;
+        }
+        k_strcpy(out,"vm: list | start <path.fvm> | kill <0..3>");return 1;
     }
     if (k_strcmp(cmd, "pwd") == 0)    { k_strcpy(out, shfs_cwd); return 0; }
     if (k_strcmp(cmd, "uname") == 0)  {
