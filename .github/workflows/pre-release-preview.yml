@@ -35,6 +35,18 @@ jobs:
           cp build/FalconOS.iso build/FalconOS-preview-QEMU.iso
       - name: Verify bootable safe preview
         run: python3 tools/qemu_smoke.py --iso build/FalconOS.iso --boot-seconds 16
+      - name: Verify real setup, Aura Launcher and Store UI in QEMU
+        run: python3 tools/qemu_ui_smoke.py --iso build/FalconOS.iso --boot-seconds 7
+      - name: Upload actual Aura framebuffer screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Aura-UI-Screenshots
+          path: |
+            build/FalconOS-Aura-Launcher.png
+            build/FalconOS-Store-screen.png
+            build/falcon-boot-smoke.png
+          if-no-files-found: ignore
       - name: Upload unlisted preview ISO (no GitHub Release)
         uses: actions/upload-artifact@v4
         with:
