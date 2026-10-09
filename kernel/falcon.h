@@ -635,6 +635,10 @@ i32 fvm_last_print(i32 slot);
 void fvm_status(char *out,i32 capacity);
 
 /* W^X ELF validation and nonexecuting staging; no Ring3 yet. */
+/* Experimental only; available when ENABLE_RING3_TEST=1. */
+#ifdef FALCON_RING3_TEST
+bool ring3_run_elf(const u8 *image,u32 length);
+#endif
 bool elf64_inspect(const u8 *image,u32 length,u64 *entry,u32 *segments);
 bool elf64_stage(const u8 *image,u32 length,u8 *arena,u32 arena_len,u64 *entry);
 
