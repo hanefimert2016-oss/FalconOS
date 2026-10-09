@@ -11,6 +11,8 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.request
+import urllib.error
 
 from qemu_smoke import ppm_to_png
 from qemu_ui_smoke import command, screenshot, wait_for_marker
@@ -61,6 +63,21 @@ def main():
                     time.sleep(.15)
             else:
                 raise TimeoutError("Verified HTTPS gateway not listening")
+            # Separate host TLS failures from QEMU VM-to-host TCP failures.
+            # Request the exact same path outside the VM first.
+            try:
+                with urllib.request.urlopen(
+                    "http://127.0.0.1:18444/fetch/falconos.tech/", timeout=18
+                ) as verify:
+                    passed = (verify.status == 200 and
+                              verify.headers.get("X-Falcon-Host-HTTPS-Verified") == "yes")
+                    excerpt = verify.read(280).decode("utf-8", errors="replace")
+                    print("HOST_PREFLIGHT", verify.status, passed, repr(excerpt), flush=True)
+                    if not passed:
+                        raise RuntimeError("Host fetch was not verified")
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+                print("HOST_PREFLIGHT_FAIL", repr(exc), flush=True)
+                raise
         guest = subprocess.Popen(
             qemu_command, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
@@ -147,7 +164,15 @@ def main():
                 gateway.kill()
                 gateway.wait()
         if gateway_log is not None:
+            gateway_log.flush()
             gateway_log.close()
+            try:
+                print("GATEWAY_DIAGNOSTICS",
+                      (root / "falco-gateway.log").read_text(
+                          encoding="utf-8", errors="replace"
+                      )[-3500:], flush=True)
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":
