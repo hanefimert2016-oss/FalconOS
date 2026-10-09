@@ -259,3 +259,14 @@ void market_download(i32 i) {
     uart_write("\n");
     status_text = "Fetching .app.pkg from GitHub Releases...";
 }
+
+void market_uninstall(i32 i) {
+    if (i < 0 || i >= N_APP) return;
+    char path[SHFS_PATH];
+    k_strcpy(path, "/home/falcon/apps/");
+    k_strcat(path, APP[i].id);
+    k_strcat(path, ".pkg");
+    bool ram = shfs_rm_abs(path);
+    bool disk = market_disk_delete(APP[i].id);
+    status_text = ram || disk ? "Application uninstalled" : "App not installed";
+}

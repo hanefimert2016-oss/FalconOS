@@ -28,7 +28,7 @@ Choose that FalconOS partition during setup for app persistence, and do
 not attach your actual Windows/Linux SSD to these experimental builds.
 In the guest open **Store** and press **R**. Choose a release with the
 arrow keys, press Enter to GET, then press Enter again to RUN.
-Press **U** to download a newer release. Press **C** for CodeDium.
+Press **U** to download a newer release; **D** removes an installed app. Press **C** for CodeDium.
 CodeDium: F5 save, F6 run, F7 create a local .app.pkg in guest RAM.
 
 ## Important limitations

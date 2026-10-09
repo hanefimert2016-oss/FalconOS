@@ -554,6 +554,8 @@ bool diskdb_store_io(u32 rel_sector, u8 *buffer, u32 sectors, bool write);
 /* App payload slots, reserved after the settings superblock. */
 void market_disk_restore(void);
 bool market_disk_save(const char *id, const char *pkg, u32 length);
+bool market_disk_delete(const char *id);
+void market_uninstall(i32 index);
 
 /* ---- ATA PIO (linux/ata_pio.c) ------------------------------------------- */
 void ata_init(void);

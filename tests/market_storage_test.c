@@ -42,11 +42,14 @@ int main(void) {
     shfs_ent_t *f = shfs_lookup("/home/falcon/apps/hello-world.pkg");
     if (!f || f->len != strlen(package) || strcmp(f->data, package)) return 3;
     if (!shfs_rm_abs("/home/falcon/apps/hello-world.pkg")) return 4;
+    if (!market_disk_delete("hello-world")) return 7;
+    if (disk[16 * 512u] != 0) return 8;
+    if (!market_disk_save("hello-world", package, (u32)strlen(package))) return 9;
     disk[16 * 512u + 80] ^= 1; /* tampered SHA-256 input */
     market_disk_restore();
     if (shfs_lookup("/home/falcon/apps/hello-world.pkg")) return 5;
     SET.install_disk = -1;
     if (market_disk_save("hello-world", package, (u32)strlen(package))) return 6;
-    puts("PASS market persistent store, roundtrip, tamper rejection, secure mode");
+    puts("PASS marketplace save, load, delete, tamper rejection, secure mode");
     return 0;
 }

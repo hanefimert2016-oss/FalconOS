@@ -135,3 +135,23 @@ bool market_disk_save(const char *id, const char *pkg, u32 length)
     return diskdb_store_io(SLOT_BASE + free_slot * SLOT_SECTORS,
                            REC, SLOT_SECTORS, true);
 }
+
+/* Remove only the named record in the validated dedicated 0xFA partition. */
+bool market_disk_delete(const char *id)
+{
+    if (!id || !id_ok(id) || SET.install_disk < 0) return false;
+    for (u32 slot = 0; slot < MARKET_SLOTS; slot++) {
+        if (!diskdb_store_io(SLOT_BASE + slot * SLOT_SECTORS,
+                             REC, SLOT_SECTORS, false)) return false;
+        if (REC[0] != 'F' || REC[1] != 'P' || REC[2] != 'K' ||
+            REC[3] != '1') continue;
+        char saved[33];
+        k_memcpy(saved, REC + 8, 32);
+        saved[32] = 0;
+        if (!id_ok(saved) || k_strcmp(saved, id) != 0) continue;
+        k_memset(REC, 0, sizeof REC);
+        return diskdb_store_io(SLOT_BASE + slot * SLOT_SECTORS,
+                               REC, SLOT_SECTORS, true);
+    }
+    return false;
+}

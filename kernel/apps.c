@@ -3187,6 +3187,9 @@ static void market_input_key(i32 key)
     if (key == 'c' || key == 'C') {
         apps_open(18); return; /* CodeDium Studio */
     }
+    if ((key == 'd' || key == 'D') && n > 0) {
+        market_uninstall(market_cursor); return;
+    }
     if ((key == 'u' || key == 'U') && n > 0) { market_download(market_cursor); return; }
     if (key == KEY_UP && market_cursor > 0) market_cursor--;
     if (key == KEY_DOWN && market_cursor < n-1) market_cursor++;
@@ -3199,7 +3202,7 @@ static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
     section(wx, wy, "FalconOS Marketplace", "GitHub Releases  |  .app.pkg  |  SHA-256");
-    gfx_text(wx + 24, wy + 42, "R: refresh  |  U: update  |  Enter: get/run  |  C: CodeDium", PAL_TEXT_DIM);
+    gfx_text(wx + 24, wy + 42, "R: refresh  U: update  D: remove  Enter: get/run  C: CodeDium", PAL_TEXT_DIM);
     gfx_text(wx + 24, wy + 63, market_status(), PAL_ACCENT);
     i32 mx, my; bool held; mouse_get(&mx, &my, &held); (void)held;
     bool clicked = mouse_peek_click();
