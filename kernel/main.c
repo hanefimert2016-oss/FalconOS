@@ -704,6 +704,15 @@ void long_start(u64 magic, u64 info_ptr)
         draw_cursor();
 
         gfx_present();
+#ifdef FALCON_QEMU_UI_GALLERY
+        /* Only emit a framebuffer-proof marker after the complete frame
+         * was painted with Launchpad closed. 'g'+appId verifies native app
+         * content, not a stale popup or an app-open event alone. */
+        if (g_mode == MODE_PERSONAL && !launchpad_is_open() && apps_active() >= 0) {
+            outb(0xE9,'g');
+            outb(0xE9,(u8)('A'+apps_active()));
+        }
+#endif
         g_tick++;
         native_net_poll(); /* native RTL8139 ARP/IPv4 receiver, bounded polling */
         fvm_tick();        /* cooperative, bounded application scheduling */
