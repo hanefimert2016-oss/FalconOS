@@ -117,6 +117,15 @@ void rtl8139_debug_dump(void) {
     debug_hex((u8)inw(io_base+0x38)); /* CAPR */
     debug_hex(rx_mem[0]);debug_hex(rx_mem[1]);
     debug_hex(rx_mem[2]);debug_hex(rx_mem[3]);
+    outb(0xE9,'|');
+    u32 addr=inl32(io_base+0x30);
+    for (i32 i=3;i>=0;i--)debug_hex((u8)(addr>>(8*i)));
+    outb(0xE9,'/');
+    addr=(u32)(uintptr_t)rx_mem;
+    for (i32 i=3;i>=0;i--)debug_hex((u8)(addr>>(8*i)));
+    outb(0xE9,'/');
+    addr=inl32(io_base+0x44);
+    for (i32 i=3;i>=0;i--)debug_hex((u8)(addr>>(8*i)));
     outb(0xE9,']');
 }
 #endif
