@@ -48,7 +48,7 @@ static void backdrop(void){
              net_connected()?0x0EA579u:muted());
 }
 static void quick_cards(void){
-    if(apps_active()>=0||launchpad_is_open())return;
+    if(!SET.widgets_shown||apps_active()>=0||launchpad_is_open())return;
     i32 W=(i32)FB.width,H=(i32)FB.height;
     i32 content=W-96;
     if(content>1060)content=1060;
