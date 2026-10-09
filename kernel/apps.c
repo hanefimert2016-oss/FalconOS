@@ -1049,7 +1049,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
             "touch cp mv mkdir rmdir basename dirname more less xxd file "
             "echo printf yes seq expr test [ env set unset alias export "
-            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm dns ping http https "
+            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm dns ping http https xfile hwcheck "
             "groups who w users hostname uptime cal date reboot shutdown "
             "which type prg pkg open chrome falco heroic video search "
             "update man | > >>");
@@ -1319,6 +1319,75 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
                  "http: failed, timed out or incomplete response");
             return 1;
         }
+        return 0;
+    }
+
+    if(k_strcmp(cmd,"xfile")==0) {
+        if(!xfs_ready()){
+            k_strcpy(out,"xfile: 32KiB volume unavailable (safe disk needed)");
+            return 1;
+        }
+        if(argc==1 || k_strcmp(argv[1],"stat")==0){
+            char digits[16];
+            k_strcpy(out,"XFS1 32KiB objects: ");
+            k_itoa(xfs_count(),digits,10);k_strcat(out,digits);
+            k_strcat(out," / 32, per object 32768 bytes");
+            return 0;
+        }
+        if(k_strcmp(argv[1],"fsck")==0){
+            u32 files=0,bad=0;
+            if(!xfs_fsck(&files,&bad)){
+                k_strcpy(out,"xfile: read-only consistency scan failed");return 1;
+            }
+            char digits[16];
+            k_strcpy(out,"XFS1 verified files: ");
+            k_itoa(files,digits,10);k_strcat(out,digits);
+            k_strcat(out,", corrupt bank copies: ");
+            k_itoa(bad,digits,10);k_strcat(out,digits);
+            return bad?1:0;
+        }
+        if(argc<3){k_strcpy(out,"xfile: stat | fsck | fill <name> | rm <name> | inspect <name>");return 1;}
+        if(k_strcmp(argv[1],"rm")==0){
+            bool success=xfs_remove(argv[2]);
+            k_strcpy(out,success?"xfile: removed":"xfile: removal failed");
+            return success?0:1;
+        }
+        static u8 object[32768];
+        if(k_strcmp(argv[1],"fill")==0){
+            for(u32 j=0;j<32768;j++)object[j]=(u8)((j*37u)&255u);
+            bool ok=xfs_write(argv[2],object,32768u);
+            k_strcpy(out,ok?"xfile: committed 32768 bytes to safe disk":"xfile: disk write/space failure");
+            return ok?0:1;
+        }
+        if(k_strcmp(argv[1],"inspect")==0){
+            i32 len=xfs_read(argv[2],object,sizeof object);
+            if(len<0){k_strcpy(out,"xfile: no valid checksum-verified object");return 1;}
+            char digits[16];
+            k_strcpy(out,"xfile: valid object, bytes=");
+            k_itoa((u32)len,digits,10);k_strcat(out,digits);
+            return 0;
+        }
+        if(k_strcmp(argv[1],"elfcheck")==0){
+            i32 len=xfs_read(argv[2],object,sizeof object);
+            u64 entry=0;u32 count=0;
+            bool valid=len>0 && elf64_inspect(object,(u32)len,&entry,&count);
+            if(!valid){k_strcpy(out,"elfcheck: rejected invalid/unsafe ELF64");return 1;}
+            k_strcpy(out,"elfcheck: valid W^X ELF64 (NOT executed), segments=");
+            char num[16];k_itoa(count,num,10);k_strcat(out,num);return 0;
+        }
+        k_strcpy(out,"xfile: stat | fsck | fill | rm | inspect | elfcheck");
+        return 1;
+    }
+    if(k_strcmp(cmd,"hwcheck")==0){
+        char digits[16];
+        k_strcpy(out,"PCI capability scan (NOT production drivers)\nNVMe: ");
+        k_itoa(pci_extended_count(1),digits,10);k_strcat(out,digits);
+        k_strcat(out,pci_extended_mmio(1)?" CAP readable":" CAP unavailable");
+        k_strcat(out,"\nxHCI: ");
+        k_itoa(pci_extended_count(2),digits,10);k_strcat(out,digits);
+        k_strcat(out,pci_extended_mmio(2)?" CAP readable":" CAP unavailable");
+        k_strcat(out,"\nGPU/VGA: ");
+        k_itoa(pci_extended_count(3),digits,10);k_strcat(out,digits);
         return 0;
     }
     if (k_strcmp(cmd,"vm")==0) {
