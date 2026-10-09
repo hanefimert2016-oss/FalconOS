@@ -156,6 +156,19 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
 #endif
     bool result_ok=false;
     br_ssl_client_init_full(&CLIENT,&X509,falcon_tls_anchors,falcon_tls_anchor_count);
+    /* FalconOS has no saved/restored SSE/AVX state or full FPU initialization.
+     * BearSSL's init_full() may auto-detect host AES-NI / PCLMUL / SSE2 and
+     * then raise #UD when the TLS Finished record activates encryption.
+     * Pin every hardware-selected record cipher to an audited constant-time
+     * portable implementation until the kernel has correct FPU context and
+     * interrupt-safe SIMD handling. NEVER weaken certificate verification.
+     */
+    br_ssl_engine_set_aes_cbc(&CLIENT.eng,
+        &br_aes_ct64_cbcenc_vtable,&br_aes_ct64_cbcdec_vtable);
+    br_ssl_engine_set_aes_ctr(&CLIENT.eng,&br_aes_ct64_ctr_vtable);
+    br_ssl_engine_set_ghash(&CLIENT.eng,br_ghash_ctmul64);
+    br_ssl_engine_set_chacha20(&CLIENT.eng,br_chacha20_ct_run);
+    br_ssl_engine_set_poly1305(&CLIENT.eng,br_poly1305_ctmul_run);
     br_x509_minimal_set_time(&X509,days,seconds);
     br_ssl_engine_inject_entropy(&CLIENT.eng,entropy,sizeof entropy);
     k_memset(entropy,0,sizeof entropy);
