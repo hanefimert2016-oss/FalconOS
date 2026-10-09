@@ -43,6 +43,16 @@ jobs:
           name: FalconOS-boot-screenshot
           path: build/falcon-boot-smoke.png
           if-no-files-found: ignore
+      - name: QEMU scripted installer and Store navigation (experimental)
+        continue-on-error: true
+        run: timeout 90s python3 tools/qemu_ui_smoke.py
+      - name: Upload Store UI screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Store-UI
+          path: build/FalconOS-Store-screen.png
+          if-no-files-found: ignore
       - name: Upload FalconOS ISO
         uses: actions/upload-artifact@v4
         with:
