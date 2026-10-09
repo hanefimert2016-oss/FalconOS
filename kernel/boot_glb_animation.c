@@ -6,7 +6,7 @@
 #ifdef FALCON_BOOT_GLB
 #include "boot_model_frames.inc"
 void boot_glb_splash(void){
-    const u32 duration_ticks=600u; /* glTF track is exactly 6 seconds */
+    const u32 duration_ticks=300u; /* play source GLB 6-second track at 2x speed */
     u32 started=g_ticks;
     i32 frame_previous=-1;
     while(g_ticks-started<duration_ticks){
