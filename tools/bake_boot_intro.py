@@ -47,8 +47,9 @@ def bake(src,out,count):
         value=values[i]*(1-blend)+values[i+1]*blend
         if kind=="rotation":value/=np.linalg.norm(value)
         return value
-    camera=np.array([3.25,2.30,7.9])
-    forward=np.array([0.,-.02,0.])-camera
+    # Orthogonal-ish frontal camera: dragon must face the user, not profile.
+    camera=np.array([0.0,1.55,8.7])
+    forward=np.array([0.,0.18,0.])-camera
     forward/=np.linalg.norm(forward)
     right=np.cross(forward,[0,1,0]);right/=np.linalg.norm(right)
     up=np.cross(right,forward);up/=np.linalg.norm(up)
@@ -101,6 +102,12 @@ def bake(src,out,count):
             trans=sample(node_names[name],"translation",time,
                          node.get("translation",[0,0,0]))
             rot=sample(node_names[name],"rotation",time,[0,0,0,1])
+            if name=="Dragon_Head":
+                # Reduce original yaw to keep eye contact with the viewer
+                # while retaining the head nod and animated mouth opening.
+                rot=rot.copy()
+                rot[1]*=.12
+                rot/=max(np.linalg.norm(rot),1e-9)
             mat=trimesh.transformations.quaternion_matrix(
                 [rot[3],*rot[:3]])[:3,:3]
             verts=original@mat.T+trans+root
@@ -110,6 +117,8 @@ def bake(src,out,count):
                 pt=sample(node_names["Dragon_Head"],"translation",time,
                           parent.get("translation",[0,0,0]))
                 pr=sample(node_names["Dragon_Head"],"rotation",time,[0,0,0,1])
+                pr=pr.copy();pr[1]*=.12
+                pr/=max(np.linalg.norm(pr),1e-9)
                 pm=trimesh.transformations.quaternion_matrix(
                     [pr[3],*pr[:3]])[:3,:3]
                 verts=(original@mat.T+trans)@pm.T+pt+root
