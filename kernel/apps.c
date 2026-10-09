@@ -912,7 +912,7 @@ static i32 sh_find_app_idx(const char *name)
         sh_streq_ci(name, "sistem-güncellemeleri"))
         return sh_find_app_idx("Sistem Güncellemeleri");
     if (sh_streq_ci(name, "google-chrome") || sh_streq_ci(name, "googlechrome"))
-        return sh_find_app_idx("Chrome");
+        return sh_find_app_idx("Browser");
     if (sh_streq_ci(name, "heroic-launcher") || sh_streq_ci(name, "heroiclauncher"))
         return sh_find_app_idx("Heroic");
     if (sh_streq_ci(name, "media") || sh_streq_ci(name, "video-player"))
@@ -1110,14 +1110,10 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 0;
     }
     if (k_strcmp(cmd, "chrome") == 0) {
-        i32 pkg = sh_find_pkg_idx("app-google-chrome");
-        if (pkg >= 0 && !prg_is_installed(pkg)) {
-            k_strcpy(out, "chrome: package not installed (run: prg install app-google-chrome)");
-            return 1;
-        }
-        i32 ai = sh_find_app_idx("Chrome");
+        /* Legacy alias: this is Falcon Browser, not Linux/Google Chrome. */
+        i32 ai = sh_find_app_idx("Browser");
         if (ai >= 0) apps_open(ai);
-        k_strcpy(out, "opening Chrome");
+        k_strcpy(out, "opening Falcon Browser (native HTTPS text view)");
         return 0;
     }
     if (k_strcmp(cmd, "heroic") == 0) {
