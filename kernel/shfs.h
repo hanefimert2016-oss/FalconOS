@@ -4,7 +4,7 @@
 
 #include "falcon.h"
 
-#define SHFS_MAX_ENTRIES 64
+#define SHFS_MAX_ENTRIES 128
 #define SHFS_FBYTES      4097 /* 4096 data bytes + terminating NUL */
 #define SHFS_PATH       56
 
