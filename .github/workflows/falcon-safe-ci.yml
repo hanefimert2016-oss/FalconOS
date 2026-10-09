@@ -102,7 +102,7 @@ jobs:
       - name: Build network-instrumented kernel and ISO
         run: make iso EXTRA_CFLAGS=-DFALCON_QEMU_NET_TEST
       - name: Verify actual guest-to-gateway ICMP exchange
-        run: python3 tools/qemu_net_e2e.py --timeout 45
+        run: python3 tools/qemu_net_e2e.py --timeout 65 --require-dns
       - name: Upload network diagnostics
         if: always()
         uses: actions/upload-artifact@v4
