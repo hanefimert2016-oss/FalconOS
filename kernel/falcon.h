@@ -673,6 +673,10 @@ bool native_https_get(const char *hostname,const char *path,char *result,u32 cap
 
 bool native_net_ping(const u8 ip[4]);
 bool native_net_parse_ipv4(const char *text, u8 out[4]);
+bool native_dhcp_acquire(u8 ip[4],u8 mask[4],u8 router[4],u8 dns[4]);
+void native_dhcp_receive(const u8 *payload,u32 length);
+bool native_net_dhcp_broadcast(const u8 *payload,u16 length);
+void native_net_dns_server(const u8 ip[4]);
 bool native_net_arp_known(void);
 bool native_net_dns_query(const char *hostname,u8 address[4]);
 bool native_net_dns_parse(const u8 *packet,u32 length,u16 expected_id,u8 answer[4]);
