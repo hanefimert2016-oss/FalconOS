@@ -517,6 +517,7 @@ void long_start(u64 magic, u64 info_ptr)
                 has_page=true;break;
             }
         }
+        outb(0xE9,'P'); /* final result delimiter after TLS stage trace */
         outb(0xE9,ok&&has_page?'Y':'N');
     }
 #endif
