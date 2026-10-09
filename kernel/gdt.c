@@ -14,7 +14,12 @@
 void gdt_install(void)
 {
 #if defined(ARCH_x86_64)
+#ifdef FALCON_RING3_TEST
+    extern void ring3_gdt_install(void);
+    ring3_gdt_install();
+#else
     /* boot stub already configured */
+#endif
 #else
 #  error "v5 only ships a 64-bit GDT — see boot/multiboot2.asm"
 #endif
