@@ -173,7 +173,7 @@ jobs:
       - name: Compile test-only native HTTPS-enabled ISO with CI CA root
         run: make iso ENABLE_BEARSSL=1 TLS_CA_BUNDLE=build/tls-test/ca.pem ENABLE_NATIVE_MARKET=1 EXTRA_CFLAGS=-DFALCON_QEMU_TLS_TEST
       - name: Verify real TLS 1.2 HTTP and certificate hostname
-        run: python3 tools/qemu_tls_e2e.py --certificate build/tls-test/server.pem --key build/tls-test/server.key
+        run: python3 tools/qemu_tls_e2e.py --certificate build/tls-test/server.pem --key build/tls-test/server.key --timeout 53
       - name: Verify invalid certificate hostname is rejected
         run: python3 tools/qemu_tls_e2e.py --certificate build/tls-test/bad.pem --key build/tls-test/server.key --expect-failure
       - name: Upload HTTPS boot/debug records
