@@ -20,6 +20,8 @@ static char rx_line[LINE_MAX];
 static char rx_data[PKG_MAX + 1];
 static char rx_id[33];
 static char rx_digest[65];
+static char pending_id[33];
+static void market_rebuild_cached(void);
 static const char *status_text = "Bridge offline. Press R to refresh.";
 
 static bool safe_id(const char *s) {
@@ -121,24 +123,32 @@ static void on_line(char *line) {
         return;
     }
     if (k_strncmp(line, "ERR|", 4) == 0) {
-        status_text = "Bridge error. Check host connection.";
+        status_text = "Bridge error. Cached apps stay available.";
         rx_expected = 0;
+        pending_id[0] = 0;
         return;
     }
     if (k_strncmp(line, "CAT|", 4) == 0) {
         char *f[5];
-        if (parts(line, f, 5) == 4 && N_APP < MARKET_MAX && safe_id(f[1])) {
-            market_app_t *app = &APP[N_APP++];
-            copy_small(app->id, sizeof app->id, f[1]);
-            copy_small(app->version, sizeof app->version, f[2]);
-            copy_small(app->name, sizeof app->name, f[3]);
+        if (parts(line, f, 5) == 4 && safe_id(f[1])) {
+            i32 index = -1;
+            for (i32 i = 0; i < N_APP; i++)
+                if (k_strcmp(APP[i].id, f[1]) == 0) index = i;
+            if (index < 0 && N_APP < MARKET_MAX) index = N_APP++;
+            if (index >= 0) {
+                market_app_t *app = &APP[index];
+                copy_small(app->id, sizeof app->id, f[1]);
+                copy_small(app->version, sizeof app->version, f[2]);
+                copy_small(app->name, sizeof app->name, f[3]);
+            }
         }
         ack();
         return;
     }
     if (k_strncmp(line, "BEGIN|", 6) == 0) {
         char *f[5];
-        if (parts(line, f, 5) != 4 || !safe_id(f[1])) return;
+        if (parts(line, f, 5) != 4 || !safe_id(f[1]) ||
+            !pending_id[0] || k_strcmp(pending_id, f[1]) != 0) return;
         i32 size = 0;
         for (const char *p = f[2]; *p; p++) {
             if (*p < '0' || *p > '9') return;
@@ -199,6 +209,7 @@ static void on_line(char *line) {
             uart_write("ERR\n");
         }
         rx_expected = 0;
+        pending_id[0] = 0;
         return;
     }
 }
@@ -212,6 +223,7 @@ void market_init(void) {
     outb(PORT + 2, 0xC7);
     outb(PORT + 4, 3);
     market_disk_restore();
+    market_rebuild_cached();
 }
 void market_consume_byte(char c);
 void market_poll(void) {
@@ -235,8 +247,8 @@ void market_consume_byte(char c) {
     }
 }
 void market_refresh(void) {
-    N_APP = 0;
-    status_text = "Refreshing GitHub release catalog...";
+    pending_id[0] = 0;
+    status_text = "Refreshing releases; cached apps remain available...";
     uart_write("LIST\n");
 }
 i32 market_count(void) { return N_APP; }
@@ -262,6 +274,7 @@ const char *market_script(i32 i) {
 }
 void market_download(i32 i) {
     if (i < 0 || i >= N_APP) return;
+    copy_small(pending_id, sizeof pending_id, APP[i].id);
     uart_write("GET|");
     uart_write(APP[i].id);
     uart_write("\n");
@@ -277,4 +290,64 @@ void market_uninstall(i32 i) {
     bool ram = shfs_rm_abs(path);
     bool disk = market_disk_delete(APP[i].id);
     status_text = ram || disk ? "Application uninstalled" : "App not installed";
+}
+
+
+/* Offline-first catalog: persisted apps remain runnable when HTTPS is down.
+ * The next LIST merges remote versions with these cached entries.
+ */
+static bool manifest_field(const char *pkg, const char *field,
+                           char *out, i32 cap)
+{
+    const char *p = pkg;
+    i32 nfield = k_strlen(field);
+    while (*p && *p != '\n') p++;
+    if (*p == '\n') p++;
+    for (i32 row = 0; row < 4 && *p; row++) {
+        if (k_strncmp(p, field, nfield) == 0 && p[nfield] == '=') {
+            p += nfield + 1;
+            i32 k = 0;
+            while (p[k] && p[k] != '\n' && k < cap - 1) {
+                if ((u8)p[k] < 32 || (u8)p[k] > 126) return false;
+                out[k] = p[k]; k++;
+            }
+            if (p[k] != '\n') return false;
+            out[k] = 0;
+            return k > 0;
+        }
+        while (*p && *p != '\n') p++;
+        if (*p == '\n') p++;
+    }
+    return false;
+}
+static void cached_package(const char *path, bool is_dir, u32 length, void *ignored)
+{
+    (void)ignored;
+    if (is_dir || length < 75u || N_APP >= MARKET_MAX ||
+        k_strncmp(path, "/home/falcon/apps/", 18) != 0) return;
+    shfs_ent_t *f = shfs_lookup(path);
+    if (!f || !f->data[0]) return;
+    char id[33], name[41], version[25];
+    if (!manifest_field(f->data, "id", id, sizeof id) ||
+        !manifest_field(f->data, "name", name, sizeof name) ||
+        !manifest_field(f->data, "version", version, sizeof version) ||
+        !safe_id(id) || !app_meta(f->data, id)) return;
+    for (i32 i = 0; i < N_APP; i++)
+        if (k_strcmp(APP[i].id, id) == 0) return;
+    market_app_t *app = &APP[N_APP++];
+    copy_small(app->id, sizeof app->id, id);
+    copy_small(app->version, sizeof app->version, version);
+    copy_small(app->name, sizeof app->name, name);
+}
+static void market_rebuild_cached(void)
+{
+    shfs_foreach_path(cached_package, NULL);
+}
+bool market_has_update(i32 i)
+{
+    shfs_ent_t *f = package_file(i);
+    if (!f) return false;
+    char installed_version[25];
+    return manifest_field(f->data, "version", installed_version, sizeof installed_version) &&
+           k_strcmp(installed_version, APP[i].version) != 0;
 }
