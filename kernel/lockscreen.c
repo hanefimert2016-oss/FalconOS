@@ -157,11 +157,18 @@ void lockscreen_render(u32 frame)
     }
     ensure_cursor_valid();
 
-    gfx_gradient_v(PAL_BG_TOP, PAL_BG_HINT);
-    gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 70);
-
-    i32 W = (i32)FB.width, H = (i32)FB.height;
-    i32 cx = W / 2,        cy = H / 2;
+    gfx_gradient_v(0xD9EBFFu,0x8EB8E8u);
+    i32 W=(i32)FB.width,H=(i32)FB.height;
+    i32 cx=W/2,cy=H/2;
+    gfx_circle_a(W/4,H/3,120,0xEAF4FFu,72);
+    gfx_circle_a(W*3/4,H*3/4,165,0x286FE8u,42);
+    gfx_round_rect_a(cx-296,cy-153,592,373,28,
+        SET.theme==THEME_DARK?0x253753u:0xFAFCFFu,229);
+    gfx_round_outline(cx-296,cy-153,592,373,28,
+        SET.theme==THEME_DARK?0x6580AEu:0xDBE9FAu);
+    gfx_round_rect(cx-265,cy-133,30,30,10,0x3478EAu);
+    gfx_text_centered(cx-250,cy-126,"F",0xFFFFFFu);
+    gfx_text(cx-220,cy-126,"FalconOS  /  Sign in",PAL_TEXT_DIM);
 
     /* ---- live clock + "welcome back" line ------------------------------- */
     {
