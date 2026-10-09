@@ -1,678 +1,676 @@
 /* =============================================================================
- *  FalconOS — public kernel header  (FalconOS 1)
- * =============================================================================
- *  All public types, theme palette functions and module-level entry points
- *  live here so the rest of the kernel can stay surgically small.
+ *  FalconOS — kernel entry & dispatcher  (FalconOS 1, x86_64 long mode)
+ * -----------------------------------------------------------------------------
+ *  Boot stub (boot/multiboot2.asm) flips the CPU into long mode and tail-calls
+ *  `long_start` with the multiboot magic in EDI and the info-pointer in ESI
+ *  (System-V AMD64).  We forward to `kernel_main`.
+ *
+ *  Boot sequence:
+ *      1. parse Multiboot2 (framebuffer + memory map)
+ *      2. install GDT/PIC/IDT/PIT, init mouse + Linux compat shim
+ *      3. enable interrupts (sti)
+ *      4. play boot splash (~700 ms, light/dark-aware fade)
+ *      5. if !SET.installed → run installer wizard
+ *      6. lock screen — accept SET.password to enter desktop
+ *      7. main loop @ 100 Hz pacing two kernels + Launchpad + apps
+ *
+ *  Hot keys:
+ *      F1   toggle Personal ↔ Developer kernel  (locked → ignored)
+ *      F2   open / close Launchpad in Personal kernel
+ *      Esc  close active app or Launchpad
  * ============================================================================= */
-#ifndef FALCON_H
-#define FALCON_H
+#include "falcon.h"
 
-/* ---- fixed-width primitives (no libc) ------------------------------------- */
-typedef unsigned char       u8;
-typedef unsigned short      u16;
-typedef unsigned int        u32;
-typedef unsigned long long  u64;
-typedef signed char         i8;
-typedef short               i16;
-typedef int                 i32;
-typedef long long           i64;
-typedef unsigned long       uintptr_t;
-/* Short alias used in low-level code that has to round-trip a memory
- * address through an integer (e.g. dev memory inspector, REPL peek).
- * uintptr_t already captures word-width on 32- and 64-bit builds. */
-typedef uintptr_t           uptr;
-typedef _Bool               bool;
-#define true                1
-#define false               0
-#define NULL                ((void *)0)
+#define MB2_MAGIC_BOOT      0x36D76289u
+#define MB2_TAG_END         0
+#define MB2_TAG_FRAMEBUFFER 8
 
-#ifndef FB_W
-#define FB_W 1920
+typedef struct __attribute__((packed)) {
+    u32 type;
+    u32 size;
+} mb2_tag_t;
+
+typedef struct __attribute__((packed)) {
+    u32 type;
+    u32 size;
+    u64 addr;
+    u32 pitch;
+    u32 width;
+    u32 height;
+    u8  bpp;
+    u8  fb_type;
+    u16 reserved;
+} mb2_fb_t;
+
+volatile u32      g_tick = 0;
+static falcon_mode_t g_mode = MODE_PERSONAL;
+
+volatile bool g_panic = false;
+char          g_panic_msg[80];
+
+/* --------------------------------------------------------------------------- */
+static void parse_multiboot(u64 magic, u64 info_ptr)
+{
+    if ((u32)magic != MB2_MAGIC_BOOT || !info_ptr) return;
+
+    u8 *p = (u8 *)(uintptr_t)info_ptr;
+    u32 total = *(u32 *)p;
+    u8 *end = p + total;
+    p += 8;
+
+    while (p < end) {
+        mb2_tag_t *t = (mb2_tag_t *)p;
+        if (t->type == MB2_TAG_END) break;
+        if (t->type == MB2_TAG_FRAMEBUFFER) {
+            mb2_fb_t *f = (mb2_fb_t *)t;
+            gfx_init((void *)(uintptr_t)f->addr, f->width, f->height, f->pitch, f->bpp);
+        }
+        p += (t->size + 7) & ~7u;
+    }
+
+    mmap_parse((uptr)info_ptr);
+}
+
+/* --------------------------------------------------------------------------- */
+/* Top menu bar (full-width frosted strip with kernel name + clock).           */
+static void draw_menu_bar(void)
+{
+    i32 W = (i32)FB.width;
+    i32 H = 30;
+
+    /* Aero glass strip across the top — blur the wallpaper underneath
+     * so the menu bar feels lifted off the desktop.  When SET.aero is
+     * off, fall back to the cheap flat overlay.                       */
+    if (SET.aero_enabled) {
+        if (SET.theme == THEME_LIQUID) {
+            gfx_blur_rect(0, 0, W, H, 6);
+            gfx_rect_a(0, 0, W, H, 0xE8F6FF, 105);
+            gfx_rect_a(0, 0, W, 1, 0xFFFFFF, 180);
+            gfx_rect_a(0, 1, W, 1, 0xCFF1FF, 120);
+        } else {
+            gfx_blur_rect(0, 0, W, H, 5);
+            gfx_rect_a(0, 0, W, H, PAL_PANEL, 150);
+        }
+    } else {
+        gfx_rect_a(0, 0, W, H, PAL_PANEL, 220);
+    }
+    gfx_rect_a(0, H, W, 1, PAL_HAIRLINE, 255);
+
+    /* left: brand */
+    gfx_circle(20, H / 2, 6, PAL_ACCENT);
+    gfx_text(34, 7, "Falcon", PAL_TEXT);
+
+    /* mode label + dot */
+    const char *label;
+    u32 accent;
+    if (g_mode == MODE_PERSONAL) { label = "Personal"; accent = PAL_ACCENT; }
+    else                         { label = "Developer"; accent = COL_OK; }
+
+    i32 mx = 110;
+    gfx_circle(mx, H / 2, 4, accent);
+    gfx_text(mx + 12, 7, label, PAL_TEXT_DIM);
+
+    /* hint pill (centered) */
+    {
+        const char *hint = T("F2 Launchpad    F12 Power    Esc closes",
+                             "F2 Launchpad    F12 Guc    Esc kapatir");
+        i32 hw = gfx_text_width(hint) + 28;
+        i32 hx = (W - hw) / 2;
+        gfx_round_rect_a(hx, 4, hw, H - 8, 11, PAL_PANEL_DEEP, 255);
+        gfx_text(hx + 14, 7, hint, PAL_TEXT_DIM);
+    }
+
+    /* right: locale-formatted "DD <mon> HH:MM:SS"  +  lang badge      */
+    rtc_time_t now; rtc_local(&now);
+    char clk[24]; char tmp[8];
+    k_strcpy(clk, "");
+    /* day + localized month abbrev */
+    k_itoa(now.day, tmp, 10);
+    if (now.day < 10) k_strcat(clk, "0");
+    k_strcat(clk, tmp);
+    k_strcat(clk, " ");
+    k_strcat(clk, loc_month_short(now.month));
+    k_strcat(clk, "  ");
+    /* HH:MM:SS */
+    k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_strcat(clk, ":");
+    k_itoa(now.min,  tmp, 10); if (now.min  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_strcat(clk, ":");
+    k_itoa(now.sec,  tmp, 10); if (now.sec  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+
+    i32 cw = gfx_text_width(clk);
+    gfx_text(W - cw - 18, 7, clk, PAL_TEXT);
+
+    /* tiny ISO-639 lang badge (TR/EN/DE/FR/ES) */
+    const char *codes[] = { "TR", "EN", "DE", "FR", "ES" };
+    const char *lang = (SET.lang < LANG_COUNT) ? codes[SET.lang] : "EN";
+    gfx_round_rect_a(W - cw - 56, 6, 28, 18, 9, PAL_PANEL_DEEP, 255);
+    gfx_text(W - cw - 48, 8, lang, PAL_ACCENT);
+
+    /* power glyph at the far right (click to open Power options).        */
+    i32 px = W - cw - 88;
+    i32 py = H / 2;
+    gfx_circle_outline(px, py, 9, COL_ERR);
+    gfx_circle_outline(px, py, 8, COL_ERR);
+    gfx_rect(px - 1, py - 11, 3, 7, COL_ERR);
+    gfx_rect(px - 1, py - 11, 3, 3, PAL_PANEL); /* knock out the top */
+
+    /* "?" help glyph — sits 26 px left of the power glyph, opens the
+     * sliding Help drawer.  Subtle outline so it doesn't compete with
+     * the power button visually.                                     */
+    i32 hpx = W - cw - 88 - 28;
+    gfx_circle_outline(hpx, py, 9, PAL_TEXT_DIM);
+    gfx_text_centered(hpx + 1, py - 7, "?", PAL_TEXT_DIM);
+}
+
+/* Hit-test for the power glyph in the menu bar; returns true if (mx,my) is
+ * within the small clickable circle.                                       */
+static bool menu_bar_power_hit(i32 mx, i32 my)
+{
+    if (my < 0 || my > 30) return false;
+    i32 W = (i32)FB.width;
+    /* Re-derive the same x used in draw_menu_bar — must stay in sync.    */
+    rtc_time_t now; rtc_local(&now);
+    char clk[24]; char tmp[8];
+    k_strcpy(clk, "");
+    k_itoa(now.day, tmp, 10);
+    if (now.day < 10) k_strcat(clk, "0");
+    k_strcat(clk, tmp);
+    k_strcat(clk, " ");
+    k_strcat(clk, loc_month_short(now.month));
+    k_strcat(clk, "  ");
+    k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_strcat(clk, ":");
+    k_itoa(now.min,  tmp, 10); if (now.min  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_strcat(clk, ":");
+    k_itoa(now.sec,  tmp, 10); if (now.sec  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    i32 cw = gfx_text_width(clk);
+    i32 px = W - cw - 88;
+    i32 py = 15;
+    i32 dx = mx - px, dy = my - py;
+    return (dx * dx + dy * dy) <= 16 * 16;
+}
+
+/* Same shape, 28 px to the left — the menu-bar "?" help glyph.        */
+static bool main_help_glyph_hit(i32 mx, i32 my)
+{
+    if (my < 0 || my > 30) return false;
+    i32 W = (i32)FB.width;
+    rtc_time_t now; rtc_local(&now);
+    char clk[24]; char tmp[8];
+    k_strcpy(clk, "");
+    k_itoa(now.day, tmp, 10);
+    if (now.day < 10) k_strcat(clk, "0");
+    k_strcat(clk, tmp);
+    k_strcat(clk, " ");
+    k_strcat(clk, loc_month_short(now.month));
+    k_strcat(clk, "  ");
+    k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_strcat(clk, ":");
+    k_itoa(now.min,  tmp, 10); if (now.min  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    k_strcat(clk, ":");
+    k_itoa(now.sec,  tmp, 10); if (now.sec  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
+    i32 cw = gfx_text_width(clk);
+    i32 hpx = W - cw - 88 - 28;
+    i32 hpy = 15;
+    i32 dx = mx - hpx, dy = my - hpy;
+    return (dx * dx + dy * dy) <= 14 * 14;
+}
+
+/* --------------------------------------------------------------------------- */
+static void draw_cursor(void)
+{
+    i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
+    /* drop shadow */
+    gfx_circle_a(mx + 2, my + 3, 9, COL_SHADOW, 90);
+    /* outer ring */
+    gfx_circle(mx, my, 9, PAL_TEXT);
+    /* inner — change color on click */
+    gfx_circle(mx, my, 5, ml ? PAL_ACCENT : PAL_PANEL);
+}
+
+static void draw_blue_dragon(i32 cx, i32 cy, u8 alpha)
+{
+    /* Professional blue dragon emblem - detailed and realistic */
+    u32 deep_blue  = 0x0A1628;
+    u32 body_blue  = 0x1E4A8C;
+    u32 mid_blue   = 0x2A66F5;
+    u32 bright_blue= 0x4A88FF;
+    u32 glow_blue  = 0x5588FF;
+    u32 ice_blue   = 0xBDE2FF;
+    u32 white      = 0xFFFFFF;
+    u32 gold       = 0xFFD700;
+    u32 dark       = 0x050A14;
+
+    /* Outer glow layers - atmosphere around dragon */
+    gfx_circle_a(cx, cy, 90, dark, (u8)(alpha / 4));
+    gfx_circle_a(cx, cy, 80, deep_blue, (u8)(alpha / 3));
+    gfx_circle_a(cx, cy, 70, body_blue, (u8)(alpha / 2));
+
+    /* Main body - sinuous serpentine body */
+    gfx_circle_a(cx - 25, cy + 35, 28, body_blue, alpha);
+    gfx_circle_a(cx - 15, cy + 25, 30, body_blue, alpha);
+    gfx_circle_a(cx - 5, cy + 15, 32, mid_blue, alpha);
+    gfx_circle_a(cx + 5, cy + 5, 34, mid_blue, alpha);
+    gfx_circle_a(cx + 15, cy - 5, 32, mid_blue, alpha);
+    gfx_circle_a(cx + 20, cy - 18, 28, bright_blue, alpha);
+
+    /* Body scales pattern - subtle scale effect */
+    gfx_circle_a(cx - 20, cy + 30, 12, body_blue, (u8)(alpha * 3 / 4));
+    gfx_circle_a(cx - 10, cy + 20, 14, body_blue, (u8)(alpha * 3 / 4));
+    gfx_circle_a(cx, cy + 10, 16, mid_blue, (u8)(alpha * 3 / 4));
+    gfx_circle_a(cx + 10, cy, 14, mid_blue, (u8)(alpha * 3 / 4));
+
+    /* Dragon neck and head - elegant curve */
+    gfx_circle_a(cx + 25, cy - 25, 22, bright_blue, alpha);
+    gfx_circle_a(cx + 30, cy - 32, 18, bright_blue, alpha);
+    gfx_circle_a(cx + 35, cy - 38, 14, mid_blue, alpha);
+
+    /* Dragon snout */
+    gfx_circle_a(cx + 42, cy - 40, 10, body_blue, alpha);
+    gfx_circle_a(cx + 48, cy - 42, 6, body_blue, alpha);
+
+    /* Dragon eye socket */
+    gfx_circle_a(cx + 32, cy - 36, 8, dark, alpha);
+    /* Glowing eye */
+    gfx_circle_a(cx + 33, cy - 37, 5, gold, alpha);
+    gfx_circle_a(cx + 33, cy - 37, 3, white, alpha);
+    gfx_circle_a(cx + 34, cy - 38, 1, white, alpha);
+
+    /* Dragon horns - sharp and angular */
+    gfx_line(cx + 28, cy - 42, cx + 18, cy - 60, ice_blue);
+    gfx_line(cx + 30, cy - 44, cx + 22, cy - 62, ice_blue);
+    gfx_line(cx + 32, cy - 45, cx + 26, cy - 64, white);
+    /* Horn tips - glowing */
+    gfx_circle_a(cx + 18, cy - 60, 3, white, alpha);
+    gfx_circle_a(cx + 22, cy - 62, 3, white, alpha);
+    gfx_circle_a(cx + 26, cy - 64, 2, white, alpha);
+
+    /* Dragon ears/frills */
+    gfx_line(cx + 24, cy - 35, cx + 14, cy - 48, bright_blue);
+    gfx_line(cx + 22, cy - 34, cx + 12, cy - 46, bright_blue);
+    gfx_circle_a(cx + 14, cy - 48, 4, ice_blue, alpha);
+    gfx_circle_a(cx + 12, cy - 46, 3, ice_blue, alpha);
+
+    /* Dragon wings - large and impressive */
+    /* Left wing (viewer's left, dragon's right) */
+    gfx_line(cx + 10, cy - 5, cx - 15, cy - 35, glow_blue);
+    gfx_line(cx + 8, cy - 3, cx - 20, cy - 38, glow_blue);
+    gfx_line(cx + 5, cy, cx - 28, cy - 40, bright_blue);
+    gfx_line(cx + 2, cy + 2, cx - 35, cy - 38, bright_blue);
+    gfx_line(cx - 2, cy + 4, cx - 42, cy - 32, mid_blue);
+    /* Wing membrane details */
+    gfx_circle_a(cx - 15, cy - 35, 8, bright_blue, (u8)(alpha * 2 / 3));
+    gfx_circle_a(cx - 28, cy - 40, 6, bright_blue, (u8)(alpha * 2 / 3));
+    gfx_circle_a(cx - 40, cy - 35, 5, mid_blue, (u8)(alpha * 2 / 3));
+    /* Wing tip feathers */
+    gfx_circle_a(cx - 15, cy - 35, 4, ice_blue, alpha);
+    gfx_circle_a(cx - 28, cy - 40, 3, ice_blue, alpha);
+    gfx_circle_a(cx - 40, cy - 35, 2, ice_blue, alpha);
+
+    /* Dragon tail - long and flowing */
+    gfx_circle_a(cx - 35, cy + 45, 20, body_blue, alpha);
+    gfx_circle_a(cx - 45, cy + 55, 14, body_blue, alpha);
+    gfx_circle_a(cx - 55, cy + 62, 10, deep_blue, alpha);
+    gfx_circle_a(cx - 62, cy + 68, 6, deep_blue, alpha);
+    gfx_circle_a(cx - 68, cy + 72, 3, mid_blue, alpha);
+    /* Tail tuft */
+    gfx_line(cx - 68, cy + 72, cx - 75, cy + 78, bright_blue);
+    gfx_line(cx - 68, cy + 72, cx - 78, cy + 75, bright_blue);
+    gfx_line(cx - 68, cy + 72, cx - 76, cy + 80, ice_blue);
+
+    /* Dragon claws - sharp and dangerous */
+    gfx_line(cx + 20, cy + 15, cx + 25, cy + 35, body_blue);
+    gfx_line(cx + 18, cy + 18, cx + 22, cy + 38, body_blue);
+    gfx_line(cx + 22, cy + 20, cx + 30, cy + 36, body_blue);
+    gfx_line(cx + 25, cy + 22, cx + 35, cy + 34, body_blue);
+    /* Claw tips */
+    gfx_circle_a(cx + 25, cy + 35, 2, white, alpha);
+    gfx_circle_a(cx + 22, cy + 38, 2, white, alpha);
+    gfx_circle_a(cx + 30, cy + 36, 2, white, alpha);
+    gfx_circle_a(cx + 35, cy + 34, 2, white, alpha);
+
+    /* Belly scales - lighter underbelly */
+    gfx_circle_a(cx - 5, cy + 18, 10, ice_blue, (u8)(alpha / 2));
+    gfx_circle_a(cx + 5, cy + 8, 12, ice_blue, (u8)(alpha / 2));
+    gfx_circle_a(cx + 15, cy - 2, 10, ice_blue, (u8)(alpha / 2));
+
+    /* Nostril smoke/breath effect */
+    gfx_circle_a(cx + 50, cy - 41, 3, (u8)(alpha / 2), (u8)(alpha / 2));
+    gfx_circle_a(cx + 52, cy - 40, 2, (u8)(alpha / 3), (u8)(alpha / 3));
+
+    /* Final glow ring */
+    gfx_circle_outline(cx, cy, 65, glow_blue);
+    gfx_circle_outline(cx, cy, 68, (u8)(alpha / 2));
+}
+
+/* --------------------------------------------------------------------------- */
+static void boot_splash(void)
+{
+    /* run for ~150 ticks (1500 ms at 100 Hz) — clean simple boot */
+    u32 start = g_ticks;
+    while (g_ticks - start < 150) {
+        u32 dt = g_ticks - start;
+
+        /* Clean gradient background */
+        gfx_gradient_v(0x1a1a2e, 0x16213e);
+
+        i32 cx = (i32)FB.width  / 2;
+        i32 cy = (i32)FB.height / 2;
+
+        u8  alpha = dt < 20 ? (u8)(dt * 12) : 240;
+
+        /* Simple FalconOS text - clean and modern */
+        gfx_text_lg(cx - 90, cy - 40, "FalconOS", 0x4A90FF);
+        gfx_text_lg(cx + 50, cy - 40, "1", 0x6AAFFF);
+
+        /* Version text */
+        gfx_text_centered(cx, cy + 10, "Blue Dragon Edition", 0x8899AA);
+        i32 r     = 70 + (i32)(dt / 2);
+
+        /* Outer glow rings */
+        gfx_circle_a(cx, cy, r + 20, 0x1A3A6A, (u8)(alpha / 3));
+        gfx_circle_a(cx, cy, r + 10, 0x2A5A8A, (u8)(alpha / 2));
+
+        /* Main circle with gradient effect */
+        gfx_circle_a(cx, cy, r,      0x2A66F5, alpha);
+        gfx_circle_a(cx, cy, r - 16, 0x0A1628, alpha);
+        gfx_circle_a(cx, cy, r - 32, 0x2A66F5, (u8)(alpha * 3 / 4));
+        gfx_circle_a(cx, cy, r - 48, 0x0A1628, alpha);
+
+        /* Draw enhanced dragon */
+        draw_blue_dragon(cx, cy, alpha);
+
+        /* FalconOS 1 text - large and prominent */
+        gfx_text_lg(cx - 80, cy + r + 30, "FalconOS", 0xFFFFFF);
+        gfx_text_lg(cx + 56, cy + r + 30, "1", 0x5588FF);
+
+        /* Subtitle with version */
+        gfx_text_centered(cx, cy + r + 70,
+            T("Blue Dragon Edition", "Mavi Ejderha Surumu"), 0xBDE2FF);
+
+        /* Starting message */
+        gfx_text_centered(cx, cy + r + 92,
+            T("Starting kernel...", "Cekirdek baslatiliyor..."), 0x6688AA);
+
+        /* Architecture badge */
+        gfx_text_centered(cx, cy + r + 114, "x86_64 Long Mode | 64-bit", 0x446688);
+
+        /* Progress bar effect */
+        i32 bar_w = 200;
+        i32 bar_h = 4;
+        i32 bar_x = cx - bar_w / 2;
+        i32 bar_y = cy + r + 135;
+        i32 progress = (i32)(dt * bar_w / 200);
+        gfx_rect(bar_x, bar_y, bar_w, bar_h, 0x1A3A6A);
+        gfx_rect(bar_x, bar_y, progress, bar_h, 0x2A66F5);
+
+        gfx_present();
+        __asm__ volatile ("hlt");
+    }
+}
+
+/* --------------------------------------------------------------------------- */
+static void render_panic_overlay(void)
+{
+    gfx_dim(80);
+    i32 w = 540, h = 120;
+    i32 x = ((i32)FB.width - w) / 2;
+    i32 y = ((i32)FB.height - h) / 2;
+    gfx_round_glass(x, y, w, h, 18);
+    gfx_round_outline(x, y, w, h, 18, COL_ERR);
+    gfx_circle(x + 28, y + h / 2, 12, COL_ERR);
+    gfx_text(x + 56, y + 24, "kernel halted", COL_ERR);
+    gfx_text(x + 56, y + 48, g_panic_msg,     PAL_TEXT);
+    gfx_text(x + 56, y + 80, "reset to recover",  PAL_TEXT_DIM);
+}
+
+/* --------------------------------------------------------------------------- */
+/* Spin a pre-desktop modal (installer or lockscreen). The provided render
+ * + input callbacks are called every frame; the predicate decides when to
+ * exit the loop.                                                              */
+typedef bool (*pred_fn)(void);
+typedef void (*render_fn)(u32);
+typedef void (*key_fn)(i32);
+
+static void modal_loop(pred_fn done, render_fn ren, key_fn ki)
+{
+    u32 frame = 0;
+    u32 last  = g_ticks;
+    while (!done()) {
+        if (g_panic) { render_panic_overlay(); gfx_present();
+                       for (;;) __asm__ volatile ("hlt"); }
+
+        i32 k;
+        while ((k = kbd_poll()) != -1) ki(k);
+
+        gfx_wallpaper();
+        ren(frame);
+        draw_cursor();
+        gfx_present();
+        frame++;
+
+        while (g_ticks - last < 2) __asm__ volatile ("hlt");
+        last = g_ticks;
+    }
+}
+
+/* --------------------------------------------------------------------------- */
+/* Long-mode entry point — called from boot/multiboot2.asm with arguments
+ * already in RDI / RSI per System-V.  We promote to u64 for clarity.        */
+void long_start(u64 magic, u64 info_ptr)
+{
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,'0'); /* physical kernel entry */
 #endif
-#ifndef FB_H
-#define FB_H 1080
+    parse_multiboot(magic, info_ptr);
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,'1'); /* framebuffer parsed */
 #endif
 
-/* ---- framebuffer ---------------------------------------------------------- */
-typedef struct {
-    u32 *pixels;
-    u32  width;
-    u32  height;
-    u32  pitch;
-    u8   bpp;
-} fb_t;
+    if (!FB.pixels) for (;;) __asm__ volatile ("hlt");
 
-extern fb_t FB;
-u32  gfx_back_w(void);
-u32  gfx_back_h(void);
+    /* set up real interrupts so we get a 100 Hz clock + async I/O          */
+    gdt_install();
+    pic_remap();
+    idt_install();
+    pit_init();
+    mouse_init();
+    /* Probe ATA controller BEFORE settings_init so its diskdb_load() can
+     * see attached disks and try to restore SET from LBA0 superblock.     */
+    linux_compat_init();
+    pci_extended_probe();   /* NVMe/xHCI/VGA detection only, no DMA writes */
+#ifdef FALCON_QEMU_PCI_TEST
+    outb(0xE9,pci_extended_count(1)>0&&pci_extended_mmio(1)?'V':'v');
+    outb(0xE9,pci_extended_count(2)>0&&pci_extended_mmio(2)?'U':'u');
+    outb(0xE9,pci_extended_count(3)>0?'G':'g');
+#endif
+    settings_init();
+    /* Installer may choose secure RAM-only mode or an explicit 0xFA partition.
+     * Defer app and persistent file loading until AFTER installer decision. */
 
-/* ---- theme system (FalconOS 1) ------------------------------------------- */
-/*  Palette is selected at runtime; mutate SET.theme and the next frame
- *  re-renders in the new palette. THEME_LIGHT(0) and THEME_DARK(1) keep
- *  their v5 numeric values so existing on-disk SET records still load. */
-typedef enum {
-    THEME_LIGHT    = 0,    /* Lumen      - off-white macOS-Big-Sur            */
-    THEME_DARK     = 1,    /* Nox        - dark counterpart                   */
-    THEME_LIQUID   = 2,    /* Liquid     - frosted-glass / aqua / max-blur     */
-    THEME_NORDIC   = 3,    /* Nordic     - cool blue-grey, low-contrast        */
-    THEME_ROSEGOLD = 4,    /* Rose Gold  - warm pink-gold                     */
-    THEME_COUNT
-} theme_t;
-typedef enum {
-    ACC_BLUE = 0,
-    ACC_PURPLE,
-    ACC_GREEN,
-    ACC_PINK,
-    ACC_GRAPHITE,
-    ACC_COUNT
-} accent_t;
-typedef enum {
-    LANG_TR = 0,    /* Turkce       */
-    LANG_EN = 1,    /* English      */
-    LANG_DE = 2,    /* Deutsch      */
-    LANG_FR = 3,    /* Francais     */
-    LANG_ES = 4,    /* Espanol      */
-    LANG_COUNT,
-} lang_t;
-typedef enum {
-    KBD_TR_Q = 0,    /* Türkçe Q (default for TR users)                  */
-    KBD_TR_F,        /* Türkçe F                                          */
-    KBD_US,          /* US QWERTY                                         */
-    KBD_COUNT
-} kbd_layout_t;
+    pic_unmask(0);   /* PIT      */
+    pic_unmask(1);   /* keyboard */
+    pic_unmask(2);   /* cascade  */
+    pic_unmask(12);  /* mouse    */
+    __asm__ volatile ("sti");
 
-/* Light theme ("Lumen") — 0xRRGGBB ----------------------------------------- */
-#define COL_BG_TOP      0xEAF0F8
-#define COL_BG_BOT      0xC8D5E6
-#define COL_BG_HINT     0xA8BBD3
-#define COL_PANEL       0xFFFFFF
-#define COL_PANEL_HI    0xD8E1EC
-#define COL_PANEL_DEEP  0xF1F4F9
-#define COL_TEXT        0x14181F
-#define COL_TEXT_DIM    0x6E7884
-#define COL_TEXT_FAINT  0xA3ACB7
-#define COL_ACCENT      0x3070FF
-#define COL_ACCENT_DIM  0xB8CDFF
-#define COL_OK          0x2BB673
-#define COL_WARN        0xF59F1A
-#define COL_ERR         0xE53935
-#define COL_PURPLE      0xA45EE5
-#define COL_TEAL        0x16B5A8
-#define COL_GLASS       0xFFFFFF
-#define COL_HAIRLINE    0xC4CDD9
-#define COL_SHADOW      0x000000
+#ifdef FALCON_QEMU_NET_TEST
+    /* CI-only: a real packet exchange, not a mocked socket or fake ping. */
+    {
+        const u8 gateway[4] = {10,0,2,2};
+        outb(0xE9, net_present() ? 'V' : 'v');
+        outb(0xE9, native_net_ping(gateway) ? 'N' : 'n');
+        u8 remote[4];
+        outb(0xE9, native_net_dns_query("example.com", remote) ? 'D' : 'd');
+#ifdef FALCON_QEMU_TCP_TEST
+        char http[512];
+        outb(0xE9,native_http_get_port("10.0.2.2",18080,"/falcon-test",http,sizeof(http)) ? 'T' : 't');
+#endif
+    }
+#endif
 
-/* Dark theme ("Nox") -------------------------------------------------------- */
-#define DCOL_BG_TOP     0x1A1E26
-#define DCOL_BG_BOT     0x0E1117
-#define DCOL_BG_HINT    0x303744
-#define DCOL_PANEL      0x232730
-#define DCOL_PANEL_HI   0x3A4150
-#define DCOL_PANEL_DEEP 0x1B1F27
-#define DCOL_TEXT       0xEBEEF4
-#define DCOL_TEXT_DIM   0x99A1AE
-#define DCOL_TEXT_FAINT 0x636C79
-#define DCOL_HAIRLINE   0x2E3340
-#define DCOL_GLASS      0x1F232C
+#ifdef FALCON_QEMU_TLS_TEST
+    {
+        extern bool native_https_ci_smoke(void);
+        outb(0xE9,'J'); /* before TLS */
+        outb(0xE9,native_https_ci_smoke()?'Z':'z');
+    }
+#endif
 
-/* Runtime palette accessors (use these in render code, not the constants). */
-u32 PAL(u8 role);
-#define PAL_BG_TOP      PAL(0)
-#define PAL_BG_BOT      PAL(1)
-#define PAL_BG_HINT     PAL(2)
-#define PAL_PANEL       PAL(3)
-#define PAL_PANEL_HI    PAL(4)
-#define PAL_PANEL_DEEP  PAL(5)
-#define PAL_TEXT        PAL(6)
-#define PAL_TEXT_DIM    PAL(7)
-#define PAL_TEXT_FAINT  PAL(8)
-#define PAL_ACCENT      PAL(9)
-#define PAL_ACCENT_DIM  PAL(10)
-#define PAL_HAIRLINE    PAL(11)
-#define PAL_GLASS       PAL(12)
+    boot_splash();
 
-/* ---- gfx primitives ------------------------------------------------------- */
-void gfx_init(void *p, u32 w, u32 h, u32 pitch, u8 bpp);
-void gfx_present(void);
-void gfx_clear(u32 c);
-void gfx_gradient_v(u32 top, u32 bot);
-void gfx_wallpaper(void);
-void gfx_pixel(i32 x, i32 y, u32 c);
-void gfx_pixel_a(i32 x, i32 y, u32 c, u8 a);
-void gfx_rect(i32 x, i32 y, i32 w, i32 h, u32 c);
-void gfx_rect_a(i32 x, i32 y, i32 w, i32 h, u32 c, u8 a);
-void gfx_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c);
-void gfx_round_rect_a(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c, u8 a);
-void gfx_round_outline(i32 x, i32 y, i32 w, i32 h, i32 r, u32 c);
-void gfx_round_glass(i32 x, i32 y, i32 w, i32 h, i32 r);
-/* Aero (frosted-glass) primitives — separable box blur the live back
- * buffer in a sub-rect, then optionally tint the blurred pixels with a
- * translucent rounded panel. The blur is *real*: it samples the pixels
- * already rendered behind the panel, so wallpaper / widgets / open
- * windows show through softly. Disable globally via SET.aero_enabled
- * (see settings.c) to fall back to the cheaper flat gfx_round_glass.  */
-void gfx_blur_rect(i32 x, i32 y, i32 w, i32 h, i32 radius);
-void gfx_aero_round_rect(i32 x, i32 y, i32 w, i32 h, i32 r,
-                          u32 tint, u8 tint_alpha);
-/* FalconOS 1 — visual lift helpers used by panels / windows / dialogs. */
-void gfx_round_drop_shadow(i32 x, i32 y, i32 w, i32 h, i32 r);
-void gfx_round_inset_highlight(i32 x, i32 y, i32 w, i32 h, i32 r);
-void gfx_circle(i32 cx, i32 cy, i32 r, u32 c);
-void gfx_circle_a(i32 cx, i32 cy, i32 r, u32 c, u8 alpha);
-void gfx_circle_outline(i32 cx, i32 cy, i32 r, u32 c);
-void gfx_line(i32 x0, i32 y0, i32 x1, i32 y1, u32 c);
-void gfx_text(i32 x, i32 y, const char *s, u32 c);
-void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c);
-i32  gfx_text_width(const char *s);
-void gfx_dim(u8 amount);
+    /* installer: only on the very first boot                                */
+    if (!SET.installed) {
+        kbd_drain(); mouse_drain();
+        modal_loop(installer_is_done, installer_render, installer_input);
+    }
 
-/* Apply the current SET.viewport_w / SET.viewport_h letterbox after drawing. */
-void gfx_apply_viewport(void);
+    shfs_init();
+    pfs_mount();              /* replay checksum-verified durable user files */
+    (void)xfs_mount();         /* separate 32-KiB large-object COW volume */
+    market_init();            /* restore downloaded apps after PFS replay */
+    apps_pkg_sync_receipts_from_state();
 
-/* Font tables — generated by tools/genfont.py.
- *  Index 0..94 is ASCII 0x20..0x7E; index 95..106 are the 12 Turkish
- *  letters Ç ç Ğ ğ İ ı Ö ö Ş ş Ü ü in that order.  gfx_text() decodes
- *  UTF-8 from the source string and dispatches into the right entry.   */
-#define FONT_GLYPH_COUNT  107
-/* 8×16 grayscale (antialiased) — one byte per pixel, row-major.        */
-extern const u8 FONT8X16 [FONT_GLYPH_COUNT][128];
-/* 16×32 1-bit headline font — two bytes per row, MSB = leftmost pixel. */
-extern const u8 FONT16X32[FONT_GLYPH_COUNT][64];
+    /* Drain any keys/clicks queued during the installer so the lockscreen
+     * does not see a stale Enter from the final wizard step.            */
+    kbd_drain(); mouse_drain();
 
-/* Optional headline renderer — same color/coordinate semantics, twice
- * the metrics. Used by titles/installer headings, not by general UI.   */
-void gfx_text_lg(i32 x, i32 y, const char *s, u32 c);
-void gfx_text_lg_centered(i32 cx, i32 y, const char *s, u32 c);
-i32  gfx_text_width_lg(const char *s);
+    /* lock screen — must enter the password to reach the desktop           */
+    modal_loop(lockscreen_is_unlocked, lockscreen_render, lockscreen_input);
 
-/* ---- keyboard ------------------------------------------------------------- */
-i32  kbd_poll(void);
-void kbd_drain(void);
-void kbd_set_focus_text(bool b);
-#define KEY_F1         0x101
-#define KEY_F2         0x102
-#define KEY_F3         0x103
-#define KEY_F4         0x104
-#define KEY_F5         0x105
-#define KEY_F6         0x106
-#define KEY_F7         0x107
-#define KEY_F8         0x108
-#define KEY_F9         0x109
-#define KEY_F10        0x10A
-#define KEY_F11        0x10B
-#define KEY_F12        0x10C
-#define KEY_INSERT     0x110
-#define KEY_PRTSC      0x111
-#define KEY_ESC        0x01B
-#define KEY_TAB        0x009
-#define KEY_ENTER      0x00A
-#define KEY_BACKSPACE  0x008
-#define KEY_UP         0x110
-#define KEY_DOWN       0x111
-#define KEY_LEFT       0x112
-#define KEY_RIGHT      0x113
-#define KEY_HOME       0x114
-#define KEY_END        0x115
-#define KEY_PGUP       0x116
-#define KEY_PGDN       0x117
-#define KEY_DEL        0x07F
-/* UTF-8-capable Turkish letter keys emitted by kbd.c for TR layouts. */
-#define KEY_TR_C_CEDILLA_LO 0x200   /* ç */
-#define KEY_TR_C_CEDILLA_UP 0x201   /* Ç */
-#define KEY_TR_G_BREVE_LO   0x202   /* ğ */
-#define KEY_TR_G_BREVE_UP   0x203   /* Ğ */
-#define KEY_TR_DOTLESS_I_LO 0x204   /* ı */
-#define KEY_TR_DOTTED_I_UP  0x205   /* İ */
-#define KEY_TR_O_UMLAUT_LO  0x206   /* ö */
-#define KEY_TR_O_UMLAUT_UP  0x207   /* Ö */
-#define KEY_TR_S_CEDILLA_LO 0x208   /* ş */
-#define KEY_TR_S_CEDILLA_UP 0x209   /* Ş */
-#define KEY_TR_U_UMLAUT_LO  0x20A   /* ü */
-#define KEY_TR_U_UMLAUT_UP  0x20B   /* Ü */
+    /* Same for the lockscreen → desktop handoff.                          */
+    kbd_drain(); mouse_drain();
+    outb(0xE9, 'H'); /* QEMU: user authenticated and desktop entered */
 
-/* Modifier-state bitmask returned by kbd_mod_state().                    */
-#define KMOD_SHIFT  (1u << 0)
-#define KMOD_CTRL   (1u << 1)
-#define KMOD_ALT    (1u << 2)
-#define KMOD_CAPS   (1u << 3)
-u32  kbd_mod_state(void);
-/* Driver telemetry counters — surfaced in Settings ▸ Drivers.        */
-void kbd_stats(u32 *seen, u32 *keys, u32 *drops);
+    /* First time the user reaches the desktop, slide the Help drawer
+     * open automatically so they discover the F1/F2/F12 shortcuts and
+     * mouse / window gestures immediately.  diskdb_save() in
+     * helppanel_handle_*() flips SET.help_seen so it stays dismissed.  */
+    if (!SET.help_seen) helppanel_open();
 
-/* ---- mouse ---------------------------------------------------------------- */
-void mouse_init(void);
-void mouse_get(i32 *x, i32 *y, bool *left);
-bool mouse_consume_click(void);
-bool mouse_peek_click(void);
-void mouse_inject_click(void);
-void mouse_drain(void);
-bool mouse_consume_right(void);
-bool mouse_consume_double(void);
-/* Driver telemetry — packet seen / dropped (desync or overflow) / clicks. */
-void mouse_stats(u32 *seen, u32 *dropped, u32 *clicks);
+    /* main loop: paced to PIT — wait for at least 1 tick before next frame */
+    u32 last = g_ticks;
+    for (;;) {
+        market_poll(); /* bounded COM1 input: no blocking network I/O */
+        if (g_panic) { render_panic_overlay(); gfx_present();
+                       for (;;) __asm__ volatile ("hlt"); }
 
-/* ---- timer / clock -------------------------------------------------------- */
-void pit_init(void);
-u32  pit_ms(void);
-void pit_sleep(u32 ms);
-void pit_uptime(u32 *h, u32 *m, u32 *s);
-extern volatile u32 g_ticks;          /* 100 Hz, set by IRQ0 */
+        /* Sign out / Sleep from the power menu set lockscreen back to
+         * locked — re-enter the lockscreen modal until unlocked again.   */
+        if (!lockscreen_is_unlocked()) {
+            if (apps_active() >= 0) apps_close();
+            if (launchpad_is_open()) launchpad_close();
+            power_menu_close();
+            kbd_drain(); mouse_drain();
+            modal_loop(lockscreen_is_unlocked, lockscreen_render, lockscreen_input);
+            kbd_drain(); mouse_drain();
+            last = g_ticks;
+        }
 
-/* ---- real-time clock (CMOS / MC146818) ----------------------------------- */
-typedef struct {
-    u32 year;     /* full 4-digit, e.g. 2026 */
-    u8  month;    /* 1..12  */
-    u8  day;      /* 1..31  */
-    u8  hour;     /* 0..23  */
-    u8  min;      /* 0..59  */
-    u8  sec;      /* 0..59  */
-} rtc_time_t;
+        i32 k;
+        while ((k = kbd_poll()) != -1) {
+            /* Power menu absorbs all keys while open (Esc / arrows / Enter). */
+            if (power_menu_is_open()) { power_menu_handle_key(k); continue; }
+            /* Help drawer absorbs everything except F-keys so the user
+             * can still reach Power / Launchpad / kernel toggle from it. */
+            if (helppanel_is_open() && k != KEY_F1 && k != KEY_F2 && k != KEY_F12) {
+                helppanel_handle_key(k); continue;
+            }
+            /* F1: switch between Personal and Developer shells. */
+            if (k == KEY_F1) {
+                if (apps_active() >= 0) apps_close();
+                if (launchpad_is_open()) launchpad_close();
+                g_mode = (g_mode == MODE_PERSONAL) ? MODE_DEVELOPER : MODE_PERSONAL;
+                continue;
+            }
+            if (k == KEY_F2 && g_mode == MODE_PERSONAL) {
+                if (launchpad_is_open()) launchpad_close();
+                else                     launchpad_open();
+                continue;
+            }
+            if (k == KEY_F12) {
+                if (launchpad_is_open()) launchpad_close();
+                power_menu_open();
+                continue;
+            }
+            if (launchpad_is_open()) {
+                launchpad_input(k);
+                continue;
+            }
+            if (g_mode == MODE_PERSONAL)  mode_personal_input(k);
+            else                          mode_developer_input(k);
+        }
 
-void rtc_now(rtc_time_t *t);     /* raw CMOS read (UTC on most BIOSes)   */
-void rtc_local(rtc_time_t *t);   /* CMOS + SET.tz_minutes, date rolled  */
+        /* Mouse: power menu > help drawer > menubar glyphs > desktop.
+         *
+         * Important: the help drawer must NOT swallow clicks that fall
+         * outside its 420-px right-edge panel.  Earlier builds consumed
+         * any click while the drawer was up, which silently ate the
+         * very first traffic-light / dock click new users tried.  Now
+         * an outside click closes the drawer AND falls through to the
+         * normal WM / dock / desktop pipeline so the same click also
+         * does what the user expected (open Calculator, click a traffic
+         * light, etc.).                                                  */
+        {
+            i32 mx, my; bool ml; mouse_get(&mx, &my, &ml);
+            (void)ml;
+            if (power_menu_is_open()) {
+                bool edge = mouse_consume_click();
+                (void)power_menu_handle_mouse(mx, my, edge);
+            } else if (mouse_peek_click() && menu_bar_power_hit(mx, my)) {
+                (void)mouse_consume_click();   /* swallow */
+                power_menu_open();
+            } else if (mouse_peek_click() && main_help_glyph_hit(mx, my)) {
+                (void)mouse_consume_click();
+                if (helppanel_is_open()) helppanel_close();
+                else                     helppanel_open();
+            } else if (helppanel_is_open()) {
+                /* peek (don't consume) so an outside click can still
+                 * reach the WM / dock / desktop after dismissing the
+                 * drawer.                                                */
+                i32 panel_x = (i32)FB.width - 420;
+                bool inside = (mx >= panel_x);
+                bool edge   = mouse_peek_click();
+                if (inside && edge) {
+                    (void)mouse_consume_click();
+                    (void)helppanel_handle_mouse(mx, my, true);
+                } else if (edge) {
+                    /* outside click: dismiss drawer but DO NOT consume
+                     * the click — let the WM / dock see it normally.   */
+                    helppanel_close();
+                }
+            }
+            /* else: leave the click in the queue; personal/dev paths will
+             * consume it themselves (desktop pins, WM, etc.).             */
+        }
 
-/* ---- gdt / idt / pic ------------------------------------------------------ */
-void gdt_install(void);
-void idt_install(void);
-void pic_remap(void);
-void pic_unmask(u8 irq);
-void pic_eoi(u32 vec);
+        gfx_wallpaper();
 
-/* ---- CPU helpers ---------------------------------------------------------- */
-u8   inb(u16 port);
-void outb(u16 port, u8 v);
-u16  inw(u16 port);
-void outw(u16 port, u16 v);
-void insw(u16 port, void *buf, u32 count);
-void outsw(u16 port, const void *buf, u32 count);
-u64  rdtsc(void);
+        if (g_mode == MODE_PERSONAL)  mode_personal_render(g_tick);
+        else                          mode_developer_render(g_tick);
 
-/* ---- utility -------------------------------------------------------------- */
-void  k_itoa(u32 v, char *buf, i32 base);
-void  k_u64_to_dec(u64 v, char *buf);      /* decimal ASCII, max ~20 digits     */
-void  k_u64_fixed16_hex(u64 v, char *dst); /* 16 nibbles + NUL (no 0x prefix) */
-void  k_pad(char *buf, i32 width, char fill);
-i32   k_strlen(const char *s);
-void  k_memcpy(void *d, const void *s, u32 n);
-void  k_memset(void *d, u8 v, u32 n);
-/* Volatile zero-fill that the compiler may not optimise away. Use this
- * for transient password / key buffers so plaintext doesn't linger in
- * stack or BSS slots after authentication.                             */
-void  k_explicit_bzero(void *p, u32 n);
-char *k_strcat(char *d, const char *s);
-char *k_strcpy(char *d, const char *s);
-i32   k_strcmp(const char *a, const char *b);
-i32   k_strncmp(const char *a, const char *b, i32 n);
-u32   k_parse_hex(const char *s);
-/* Convert an input key to UTF-8 bytes (ASCII + Turkish keycodes above).
- * Returns byte count written to out (1..3), or 0 if key is not printable. */
-i32   key_to_utf8(i32 key, char out[4]);
+        if (launchpad_is_open()) launchpad_render(g_tick);
 
-/* ---- multiboot2 memory map ------------------------------------------------ */
-typedef struct { u64 base; u64 length; u32 type; } mmap_entry_t;
-#define MMAP_MAX 24
-extern mmap_entry_t MMAP[MMAP_MAX];
-extern i32          MMAP_N;
-extern u64          RAM_TOTAL_BYTES;   /* summed type-1 RAM from firmware map */
-void mmap_parse(uptr info_ptr);
-const char *mmap_type_name(u32 t);
+        draw_menu_bar();
+        helppanel_render(g_tick);                /* slides in/out      */
+        if (power_menu_is_open()) power_menu_render(g_tick);
+        gfx_apply_viewport();
+        draw_cursor();
 
-/* ---- developer log -------------------------------------------------------- */
-void log_push_dev(const char *s);
+        gfx_present();
+        g_tick++;
+        native_net_poll(); /* native RTL8139 ARP/IPv4 receiver, bounded polling */
+        fvm_tick();        /* cooperative, bounded application scheduling */
+        /* One bounded copy-on-write SHFS record at most every 0.1 seconds. */
+        if ((g_tick % 5u) == 0u) pfs_sync_step();
 
-/* ---- developer REPL ------------------------------------------------------- */
-void repl_input(i32 key);
-void repl_render(i32 x, i32 y, i32 w, i32 h);
+        /* pace at ~50 FPS (every 2 PIT ticks) — halt CPU between frames     */
+        while (g_ticks - last < 2) __asm__ volatile ("hlt");
+        last = g_ticks;
+    }
+}
 
-/* ---- panic ---------------------------------------------------------------- */
-extern volatile bool g_panic;
-extern char          g_panic_msg[80];
-
-/* ---- mode dispatcher ------------------------------------------------------ */
-typedef enum { MODE_PERSONAL = 0, MODE_DEVELOPER = 1 } falcon_mode_t;
-
-void mode_personal_render(u32 frame);
-void mode_personal_input(i32 key);
-
-void mode_developer_render(u32 frame);
-void mode_developer_input(i32 key);
-
-/* GitHub Releases FAPP/1 Marketplace over host-assisted COM1 (QEMU). */
-void market_init(void);
-void market_poll(void);
-void market_refresh(void);
-i32 market_count(void);
-const char *market_name(i32 i);
-const char *market_version(i32 i);
-const char *market_status(void);
-bool market_installed(i32 i);
-bool market_has_update(i32 i);
-i32 market_version_compare(const char *a, const char *b);
-bool market_version_valid(const char *s);
-bool codedium_build_pkg(const char *src,u32 length,char *out,u32 capacity,u32 *actual);
-const char *market_script(i32 i);
-void market_download(i32 i);
-bool market_line_allowed(const char *line, i32 size);
-
-/* ---- application framework (Personal kernel) ------------------------------ */
-i32          apps_count(void);
-const char  *apps_name(i32 i);
-const char  *apps_display_name(i32 i);     /* localized label for LANG_TR UI   */
-const char  *apps_display_subtitle(i32 i);
-u32          apps_tint(i32 i);
-const char  *apps_subtitle(i32 i);
-void         apps_draw_icon(i32 i, i32 cx, i32 cy);
-void         apps_open(i32 i);
-void         apps_close(void);
-i32          apps_active(void);
-i32          apps_minimized(void);
-void         apps_render_active(u32 frame);
-void         apps_input_active(i32 key);
-void         hw_probe_summary(char *dst, i32 cap);
-void         apps_pkg_on_install(i32 catalog_idx);
-void         apps_pkg_on_remove(i32 catalog_idx);
-void         apps_pkg_sync_receipts_from_state(void);
-/* WM mouse handler — returns true when it consumed the click. */
-bool         apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge);
-
-/* ---- Launchpad (full-screen app grid, F2) --------------------------------- */
-void launchpad_open(void);
-void launchpad_close(void);
-bool launchpad_is_open(void);
-void launchpad_render(u32 frame);
-void launchpad_input(i32 key);
-i32  launchpad_cursor(void);
-
-/* ---- Jarvis (built-in assistant, FalconOS 1) ----------------------------- */
-void jarvis_reset(void);
-void jarvis_render(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame);
-void jarvis_input(i32 key);
-void jarvis_icon(i32 cx, i32 cy);
-
-/* ---- Help panel (slides in from the right, FalconOS 1) ------------------- */
-void helppanel_open(void);
-void helppanel_close(void);
-bool helppanel_is_open(void);
-void helppanel_render(u32 frame);
-bool helppanel_handle_key(i32 key);                    /* true = consumed */
-bool helppanel_handle_mouse(i32 mx, i32 my, bool click);
-bool menu_bar_help_hit(i32 mx, i32 my);                /* exposed for main */
-
-/* ---- desktop widgets + shortcuts (v5) ------------------------------------ */
-void widgets_render(u32 frame);
-void desktop_pins_render(u32 frame);
-bool desktop_pins_input_click(i32 mx, i32 my);     /* returns true if launched */
-bool desktop_pin_toggle(i32 app_id);                /* returns new pinned state */
-bool desktop_pin_is_pinned(i32 app_id);
-
-/* ---- v5 boot screens ------------------------------------------------------ */
-typedef enum {
-    SCR_INSTALL = 0,    /* first-boot wizard (lang, theme, password)        */
-    SCR_LOCK    = 1,    /* lock screen (password entry)                     */
-    SCR_DESKTOP = 2     /* normal Personal/Developer dispatch               */
-} screen_t;
-
-void installer_render(u32 frame);
-void installer_input(i32 key);
-bool installer_is_done(void);
-
-void lockscreen_render(u32 frame);
-void lockscreen_input(i32 key);
-bool lockscreen_is_unlocked(void);
-void lockscreen_lock(void);
-
-/* ---- Power menu (FalconOS 1) --------------------------------------------- */
-void power_menu_open(void);
-void power_menu_close(void);
-bool power_menu_is_open(void);
-void power_menu_render(u32 frame);
-void power_menu_handle_key(i32 key);
-bool power_menu_handle_mouse(i32 mx, i32 my, bool click_edge);
-
-/* ---- multi-user database (v5) -------------------------------------------- */
-/*  Up to FALCON_MAX_USERS accounts.  The first one created in the installer
- *  becomes the system "default" — every cold boot opens the lock screen
- *  focused on that user.  Passwords are NEVER stored as plaintext: each user
- *  carries a 16-byte random salt and a 32-byte PBKDF2-HMAC-SHA256 hash that
- *  is stretched 50 000 rounds.  See kernel/auth.c.                        */
-#define FALCON_MAX_USERS    8
-#define FALCON_SALT_BYTES   16
-#define FALCON_HASH_BYTES   32
-#define FALCON_NAME_BYTES   24
-
-typedef struct {
-    bool   in_use;
-    bool   is_default;                    /* first-created user = main      */
-    char   name[FALCON_NAME_BYTES];
-    u8     salt[FALCON_SALT_BYTES];
-    u8     hash[FALCON_HASH_BYTES];
-    u8     no_password;                   /* 1 = empty pwd, hash unused     */
-    accent_t accent;                      /* per-user accent for avatar    */
-    /* FalconOS 1 — security audit / brute-force resistance.  Persistent so a
-     * reboot does not reset the throttle window mid-attack.            */
-    u32    failed_attempts;               /* since last successful unlock   */
-    u32    last_login_uptime_ms;          /* PIT ms at successful unlock    */
-    u32    last_fail_uptime_ms;           /* PIT ms at most recent failure  */
-} falcon_user_t;
-
-/* ---- runtime settings (single source of truth) ---------------------------- */
-typedef struct {
-    bool        installed;       /* installer wizard completed              */
-    theme_t     theme;
-    accent_t    accent;
-    lang_t      lang;
-    kbd_layout_t kbd_layout;     /* TR-Q / TR-F / US                        */
-    bool        animations;
-    i32         dock_size;       /* 0..4 → 50px..86px tile                  */
-    i32         viewport_w;      /* 0 = native, else letterbox sub-rect     */
-    i32         viewport_h;
-    char        password[24];    /* deprecated single-user; kept for compat */
-    char        owner[24];       /* deprecated; mirrors users[default].name */
-    bool        widgets_shown;   /* hide widget grid if false               */
-    bool        center_circle;   /* legacy v4 hero (default false in v5)    */
-
-    /* multi-user (v5+) */
-    falcon_user_t users[FALCON_MAX_USERS];
-    i32         user_count;
-    i32         default_user;    /* index into users[]                      */
-    i32         active_user;     /* who unlocked the desktop                */
-
-    /* v5.2 "Aero" — frosted-glass / translucency toggle. Default true on
-     * x86_64 (≈ 4 ms per panel even in TCG), users on slow boxes can
-     * disable from Settings.                                              */
-    bool        aero_enabled;
-    /* v5.2 timezone offset in *minutes* east of UTC. e.g. Istanbul = +180,
-     * London = 0/+60, NYC = -300, Tokyo = +540. Read by pit_uptime() to
-     * convert wall-clock to local time without a full tz database.        */
-    i32         tz_minutes;
-    /* v5.2 first-run welcome banner — shown once on the desktop after
-     * the initial install completes, dismissable.                         */
-    bool        welcome_shown;
-    /* FalconOS 1 — installer disk-target picked at setup.
-     *   >= 0  → persist FalconFS superblock on that ATA index (see ata_pio.c).
-     *   == -1 → “güvenli çalıştırma”: session only (diskdb_save is a no-op);
-     *            no FalconFS persistence on removable / selected mode.       */
-    i32         install_disk;
-    /* FalconOS 1 — sliding Help panel.  Auto-opens on the very first
-     * desktop session so a newcomer immediately sees the keyboard /
-     * mouse / window-management cheat-sheet, then never again unless
-     * the user clicks the ? glyph in the menu bar.                    */
-    bool        help_seen;
-    /* FalconOS 1 — `prg install` persistence.  Byte i (0/1) tracks whether
-     * CATALOG[i] is currently installed.  Built-ins live in CATALOG slots
-     * 0..N-1 and are forced to 1 on every boot regardless of disk state.
-     * 128 entries gives ~1.5× headroom over today's 85-entry catalogue and
-     * fits comfortably inside the 2 048-byte FalconFS superblock budget. */
-    u8          prg_installed[128];
-} settings_t;
-
-extern settings_t SET;
-
-void settings_init(void);
-
-const char *T(const char *en, const char *tr);  /* tr/en switch helper      */
-/* 5-way translation: NULL slots fall back to English. Used when v5.2
- * adds DE/FR/ES coverage to a string that already had TR localised.   */
-const char *TX(const char *en, const char *tr, const char *de,
-               const char *fr, const char *es);
-const char *lang_name(lang_t l);                /* "Turkce", "English", ... */
-const char *kbd_layout_name(kbd_layout_t l);
-
-/* ---- locale-aware formatting --------------------------------------------- */
-char        loc_decimal_sep(void);              /* ',' or '.'               */
-const char *loc_month_short(u8 month_1_to_12);  /* "Jan", "Oca", "Jan", ... */
-void        loc_format_date(char *out, const rtc_time_t *t);
-void        loc_format_int_grouped(char *out, u32 value);  /* 1.234.567 etc */
-
-/* ---- multi-user helpers (v5+) -------------------------------------------- */
-i32  users_add(const char *name, const char *plaintext_pwd, accent_t accent);
-bool users_remove(i32 idx);
-bool users_set_default(i32 idx);
-bool users_change_password(i32 idx, const char *new_plaintext);
-bool users_verify(i32 idx, const char *plaintext);
-/* Heuristic 0..3 strength rating: 0=empty/very-short, 1=weak,
- * 2=ok, 3=strong (length >= 12 + mixed classes).                       */
-i32  password_strength(const char *plain);
-const falcon_user_t *users_at(i32 idx);
-i32  users_count(void);
-
-/* ---- crypto: SHA-256 + PBKDF2 (kernel/auth.c) ---------------------------- */
-void sha256_hash(const u8 *data, u32 len, u8 out[32]);
-void hmac_sha256(const u8 *key, u32 klen, const u8 *msg, u32 mlen, u8 out[32]);
-void pbkdf2_sha256(const u8 *pwd, u32 plen,
-                   const u8 *salt, u32 slen,
-                   u32 iterations, u8 *out, u32 outlen);
-void rng_bytes(u8 *out, u32 n);
-void hex_encode(const u8 *in, u32 n, char *out);   /* out >= n*2+1 chars   */
-
-/* ---- disk persistence: FalconFS superblock (kernel/diskdb.c) ------------- */
-#define FALCONFS_MAGIC      0x46414C43   /* 'FALC' */
-#define FALCONFS_VERSION    3            /* FalconOS 1.1: prg install state  */
-#define FALCONFS_PARTITION_TYPE 0xFA     /* dedicated MBR partition ONLY   */
-
-void diskdb_load(void);          /* searches only valid FalconOS partitions */
-bool diskdb_save(void);          /* refuses to write unpartitioned disks    */
-bool diskdb_present(void);       /* true if valid saved settings were read  */
-bool diskdb_target_available(i32 disk); /* true for a safe MBR target */
-bool diskdb_store_io(u32 rel_sector, u8 *buffer, u32 sectors, bool write);
-/* App payload slots, reserved after the settings superblock. */
-void market_disk_restore(void);
-bool market_disk_save(const char *id, const char *pkg, u32 length);
-bool market_disk_delete(const char *id);
-bool codedium_project_save(const char *source, u32 size);
-i32 codedium_project_load(char *dest, u32 capacity);
-void market_uninstall(i32 index);
-
-/* ---- ATA PIO (linux/ata_pio.c) ------------------------------------------- */
-void ata_init(void);
-bool ata_read_lba28 (i32 dev, u32 lba, u8 *buf512, u32 sectors);
-bool ata_write_lba28(i32 dev, u32 lba, const u8 *buf512, u32 sectors);
-
-/* ---- keyboard layout (kernel/kbd.c, switched by SET.kbd_layout) ---------- */
-void hid_keymap_init(void);
-i32  kbd_translate(u8 sc, kbd_layout_t layout, bool shift);
-
-/* ---- prg package manager + Store app -------------------------------------- */
-typedef struct {
-    const char *name;
-    const char *version;
-    const char *summary;
-    const char *category;
-    const char *depends;
-    u32         size_kb;
-    bool        builtin;         /* ships with the OS, can't be removed     */
-} prg_pkg_t;
-
-i32                prg_count(void);
-const prg_pkg_t   *prg_at(i32 i);
-const prg_pkg_t   *prg_find(const char *name);
-bool               prg_is_installed(i32 i);
-bool               prg_install(i32 i);
-bool               prg_remove(i32 i);
-i32                prg_installed_count(void);
-
-/* ---- Linux compatibility (drivers + UAPI shims) -------------------------- */
-void   linux_compat_init(void);
-const char *linux_compat_summary(void);
-i32    ata_probe_count(void);          /* 0..2 ATA devices detected      */
-const char *ata_model(i32 idx);
-u64    ata_sectors(i32 idx);
-void   ata_stats(u32 *reads, u32 *writes, u32 *retries, u32 *failed);
-void   hid_keymap_dump(char *buf, u32 max);
-
-/* ---- USB host controller driver (linux/usb_core.c) ---------------------- */
-void   usb_init(void);
-bool   usb_present(void);
-i32    usb_device_count(void);
-bool   usb_keyboard_connected(void);
-bool   usb_storage_connected(void);
-const char *usb_summary(void);
-
-/* ---- virtio-net network driver (linux/virtio_net.c) ---------------------- */
-bool   net_init(void);
-bool   net_present(void);
-bool   net_connected(void);
-const u8 *net_mac_addr(void);
-void   net_mac_string(char *out);
-const char *net_ip_addr(void);
-const char *net_netmask(void);
-const char *net_gateway(void);
-void   net_set_ip(const char *ip);
-void   net_set_netmask(const char *nm);
-void   net_set_gateway(const char *gw);
-void   net_stats(u32 *tx_pkt, u32 *rx_pkt, u32 *tx_by, u32 *rx_by,
-                 u32 *tx_err, u32 *rx_err);
-bool   net_dhcp(void);
-const char *net_summary(void);
-
-/* Sandboxed FVM/1 application instances (not native ELF/ring3). */
-i32 fvm_spawn_source(const char *name,const char *data,u32 length);
-i32 fvm_spawn_file(const char *path);
-void fvm_tick(void);
-bool fvm_kill(i32 slot);
-i32 fvm_state(i32 slot);
-i32 fvm_last_print(i32 slot);
-void fvm_status(char *out,i32 capacity);
-
-/* XFS1 large-object store, partition type 0xFA only; QEMU first. */
-bool xfs_mount(void);
-bool xfs_ready(void);
-u32 xfs_max_size(void);
-u32 xfs_capacity(void);
-u32 xfs_corrupt_copies(void);
-i32 xfs_read(const char *name,u8 *out,u32 capacity);
-bool xfs_write(const char *name,const u8 *data,u32 len);
-bool xfs_remove(const char *name);
-u32 xfs_count(void);
-bool xfs_fsck(u32 *files,u32 *bad_copies);
-
-/* Native IPv4/ICMP packet networking; not a TLS or full TCP stack. */
-void native_net_poll(void);
-/* Guest-native TCP IPv4 client, single connection, QEMU-first. */
-bool native_net_ipv4_send(const u8 remote[4],u8 protocol,const u8 *payload,u16 bytes);
-void native_net_local_ipv4(u8 out[4]);
-void native_tcp_receive(const u8 *ip,u32 total);
-bool native_tcp_connect(const u8 remote[4],u16 port);
-i32 native_tcp_write(const u8 *data,u32 length);
-i32 native_tcp_read(u8 *out,u32 cap,u32 timeout_ticks);
-void native_tcp_close(void);
-i32 native_tcp_state(void);
-bool native_http_get(const char *hostname,const char *path,char *result,u32 cap);
-bool native_http_get_port(const char *hostname,u16 port,const char *path,char *result,u32 cap);
-bool native_https_get(const char *hostname,const char *path,char *result,u32 cap);
-
-bool native_net_ping(const u8 ip[4]);
-bool native_net_parse_ipv4(const char *text, u8 out[4]);
-bool native_net_arp_known(void);
-bool native_net_dns_query(const char *hostname,u8 address[4]);
-bool native_net_dns_parse(const u8 *packet,u32 length,u16 expected_id,u8 answer[4]);
-void native_net_arp_mac(u8 out[6]);
-u32 native_net_rx_count(void);
-
-/* ---- network tools (kernel/net_tools.c) ------------------------------------- */
-void   net_tools_dispatch(const char *cmd, char *out);
-
-/* tiny global tick (incremented by main loop, NOT real time — see g_ticks) */
-extern volatile u32 g_tick;
-
-#endif /* FALCON_H */
+/* Compatibility shim: old 32-bit entry expected `kernel_main(magic, info)`
+ * with u32 args.  Some tooling may still reference it; forward to long_start. */
+void kernel_main(u64 magic, u64 info_ptr) { long_start(magic, info_ptr); }
