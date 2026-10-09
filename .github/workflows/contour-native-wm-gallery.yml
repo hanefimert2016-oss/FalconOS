@@ -1,0 +1,40 @@
+name: Contour native multiwindow and real framebuffer gallery
+on:
+  push:
+    branches: ['feature/contour-native-multiwindow']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qemu-native-window-gallery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native x86_64 OS toolchain and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build actual FalconOS ISO
+        run: make iso
+      - name: Validate Multiboot2
+        run: grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: QEMU native app and simultaneous window screenshot smoke
+        run: timeout 200s python3 tools/qemu_ui_smoke.py --boot-seconds 7
+      - name: Archive unmodified QEMU framebuffer PNG images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Contour-Native-PNG
+          path: |
+            build/FalconOS-Aura-*.png
+            build/FalconOS-Store-screen.png
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Archive native bootable ISO
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Contour-Native-ISO
+          path: build/FalconOS.iso
+          retention-days: 14

@@ -372,6 +372,7 @@ void         apps_open(i32 i);
 void         apps_close(void);
 i32          apps_active(void);
 i32          apps_minimized(void);
+bool         apps_is_open(i32 app); /* any visible native window */
 void         apps_render_active(u32 frame);
 void         apps_input_active(i32 key);
 void         hw_probe_summary(char *dst, i32 cap);
