@@ -24,6 +24,10 @@ jobs:
         run: |
           gcc -std=gnu11 -Wall -Wextra -Ikernel tests/market_storage_test.c kernel/shfs.c kernel/market_data.c -o build/test-market-cache
           ./build/test-market-cache
+      - name: Test native Marketplace serial protocol
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Ikernel tests/market_protocol_test.c kernel/marketplace.c kernel/shfs.c -o build/test-market-protocol
+          ./build/test-market-protocol
       - name: Compile ISO
         run: make iso
       - name: Validate Multiboot2 kernel
