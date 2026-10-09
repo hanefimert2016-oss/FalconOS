@@ -106,6 +106,13 @@ void shfs_init(void)
     G[3].data[0]= 0;
     G[3].used   = true;
     G[3].is_dir = true;
+
+    /* A real runnable user-created-format FVM program, not a shell alias. */
+    k_strcpy(G[4].path,"/home/falcon/demo.fvm");
+    k_strcpy(G[4].data,"FVM/1\\nPUSH 40\\nPUSH 2\\nADD\\nPRINT\\nHALT\\n");
+    G[4].len=k_strlen(G[4].data);
+    G[4].used=true;
+    G[4].is_dir=false;
 }
 
 bool shfs_abs_from(const char *cwd, const char *rel, char *out, i32 cap)
