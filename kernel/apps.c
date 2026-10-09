@@ -4334,10 +4334,8 @@ static void wm_paint_window(u32 frame,bool focused) {
         i32 hx=wx+ww-14,hy=wy+wh-14;
         for(i32 j=0;j<3;j++)gfx_rect(hx-j*4,hy+j*4,3,3,PAL_TEXT_FAINT);
     }
-    if(focused)gfx_text_centered(wx+ww/2,wy+wh-24,
-        T("Drag title | resize corner | Esc closes focused window",
-          "Basliktan tasi | koseden boyutlandir | Esc etkin pencereyi kapat"),
-        PAL_TEXT_FAINT);
+    /* Controls remain in the title bar and Help drawer. Do not paint a
+     * generic hint over app-specific footer text (Files/Browser/CodeDium). */
 }
 void apps_render_active(u32 frame) {
     if(wm_slot_count<=0)return;
