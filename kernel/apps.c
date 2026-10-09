@@ -1049,7 +1049,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
             "touch cp mv mkdir rmdir basename dirname more less xxd file "
             "echo printf yes seq expr test [ env set unset alias export "
-            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm dns ping "
+            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm dns ping http https "
             "groups who w users hostname uptime cal date reboot shutdown "
             "which type prg pkg open chrome falco heroic video search "
             "update man | > >>");
@@ -1302,6 +1302,22 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             k_itoa(address[i],number,10);
             k_strcat(out,number);
             if(i<3)k_strcat(out,".");
+        }
+        return 0;
+    }
+    if(k_strcmp(cmd,"https")==0 || k_strcmp(cmd,"http")==0) {
+        if(argc<3 || cap<128 || cap>4096) {
+            k_strcpy(out,"usage: https <hostname> <path> (TLS verified) | http <hostname> <path> (plaintext)");
+            return 1;
+        }
+        bool secure=k_strcmp(cmd,"https")==0;
+        bool ok=secure ? native_https_get(argv[1],argv[2],out,(u32)cap)
+                       : native_http_get(argv[1],argv[2],out,(u32)cap);
+        if(!ok) {
+            k_strcpy(out, secure ?
+                 "https: TLS handshake, certificate, DNS or response validation failed (never downgraded)" :
+                 "http: failed, timed out or incomplete response");
+            return 1;
         }
         return 0;
     }
