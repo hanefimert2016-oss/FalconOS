@@ -3151,7 +3151,7 @@ static void browser_page_from_http(void){
     browser_text[n]=0;
     browser_loaded=true;
     browser_scroll=0;
-    k_strcpy(browser_status,"HTTPS verified - live response (read-only text view)");
+    k_strcpy(browser_status,"TLS+hostname verified - bounded HTML text preview (may be partial)");
 }
 static void browser_load(void){
     browser_loaded=false;browser_result[0]=0;browser_text[0]=0;
@@ -3209,10 +3209,10 @@ static void browser_load(void){
             return;
         }
     }else{
-        verified=native_https_get(hostname,path,browser_result,sizeof browser_result);
+        verified=native_https_get_preview(hostname,path,browser_result,sizeof browser_result);
         if(!verified){
             k_strcpy(browser_status,
-                "Native HTTPS failed: TLS/CA, DNS, size limit or timeout.");
+                "Native TLS failed: check CA, DNS, network or response size.");
             return;
         }
     }
