@@ -200,3 +200,24 @@ jobs:
           name: FalconOS-PCI-NVMe-xHCI-VGA
           path: build/pci-probe-debug.log
           if-no-files-found: ignore
+
+  ring3-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ring3 Multiboot and QEMU tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build real Ring3 INT80 test kernel
+        run: make iso ENABLE_RING3_TEST=1
+      - name: Test CPL3 user code, syscall and kernel resume in QEMU
+        run: python3 tools/qemu_ring3_e2e.py
+      - name: Upload ring3 trap trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-CPL3-INT80
+          path: build/ring3-debug.log
+          if-no-files-found: ignore
