@@ -362,10 +362,10 @@ static void shfs_ls_cb(const char *name, bool is_dir, void *ud)
 {
     shfs_ls_ctx_t *c = (shfs_ls_ctx_t *)ud;
     if (!c || !c->out || c->cap < 8) return;
-    if (!c->first && k_strlen(c->out) + 2 < (u32)c->cap)
+    if (!c->first && (u32)k_strlen(c->out) + 2u < (u32)c->cap)
         k_strcat(c->out, "  ");
     c->first = false;
-    if (k_strlen(c->out) + k_strlen(name) + 3 >= (u32)c->cap) return;
+    if ((u32)k_strlen(c->out) + (u32)k_strlen(name) + 3u >= (u32)c->cap) return;
     k_strcat(c->out, name);
     if (is_dir) k_strcat(c->out, "/");
 }
@@ -391,7 +391,7 @@ void shfs_paths_dump(char *out, i32 cap)
     out[0] = 0;
     for (i32 i = 0; i < SHFS_MAX_ENTRIES; i++) {
         if (!G[i].used) continue;
-        if (k_strlen(out) + k_strlen(G[i].path) + 2 >= (u32)cap) break;
+        if ((u32)k_strlen(out) + (u32)k_strlen(G[i].path) + 2u >= (u32)cap) break;
         k_strcat(out, G[i].path);
         k_strcat(out, "\n");
     }
@@ -407,7 +407,7 @@ void shfs_du_dump(char *out, i32 cap)
         if (!G[i].used || G[i].is_dir) continue;
         total += G[i].len;
         k_itoa(G[i].len, num, 10);
-        if (k_strlen(out) + k_strlen(G[i].path) + k_strlen(num) + 8 >= (u32)cap) break;
+        if ((u32)k_strlen(out) + (u32)k_strlen(G[i].path) + (u32)k_strlen(num) + 8u >= (u32)cap) break;
         k_strcat(out, num);
         k_strcat(out, "\t");
         k_strcat(out, G[i].path);
