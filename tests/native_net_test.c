@@ -53,6 +53,16 @@ int main(void){
  CHECK(native_net_ping(ip),5);
  CHECK(native_net_arp_known()&&native_net_rx_count()>=2,6);
  drop=true;CHECK(!native_net_ping(ip),7);
- puts("PASS native ARP+ICMP wire-format checks and real reply timeout semantics");
+ static const u8 dns_sample[]={
+ 0x12,0x34,0x81,0x80,0,1,0,1,0,0,0,0,
+ 7,'e','x','a','m','p','l','e',
+ 3,'c','o','m',0,0,1,0,1,
+ 0xc0,0x0c,0,1,0,1,0,0,0,60,0,4,93,184,216,34};
+ u8 resolved[4]={0};
+ CHECK(native_net_dns_parse(dns_sample,sizeof dns_sample,0x1234,resolved),8);
+ CHECK(resolved[0]==93 && resolved[1]==184 && resolved[2]==216 && resolved[3]==34,9);
+ CHECK(!native_net_dns_parse(dns_sample,sizeof dns_sample,0x9999,resolved),10);
+ CHECK(!native_net_dns_parse(dns_sample,sizeof dns_sample-3,0x1234,resolved),11);
+ puts("PASS native ARP+ICMP+DNS wire-format checks and real reply timeout semantics");
  return 0;
 }
