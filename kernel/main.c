@@ -498,6 +498,13 @@ void long_start(u64 magic, u64 info_ptr)
     }
 #endif
 
+#ifdef FALCON_QEMU_TLS_TEST
+    {
+        extern bool native_https_ci_smoke(void);
+        outb(0xE9,native_https_ci_smoke()?'Z':'z');
+    }
+#endif
+
     boot_splash();
 
     /* installer: only on the very first boot                                */
