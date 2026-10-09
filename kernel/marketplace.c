@@ -85,6 +85,7 @@ bool market_line_allowed(const char *line, i32 size) {
 }
 static bool check_package(void) {
     if (rx_used != rx_expected || !app_meta(rx_data, rx_id)) return false;
+    for (i32 i = 0; i < rx_used; i++) if (rx_data[i] == 0) return false;
     u8 digest[32];
     char hex[65];
     sha256_hash((const u8 *)rx_data, rx_used, digest);
@@ -137,6 +138,7 @@ static void on_line(char *line) {
     if (k_strncmp(line, "BEGIN|", 6) == 0) {
         char *f[5];
         if (parts(line, f, 5) != 4 || !safe_id(f[1])) return;
+        if (!safe_id(f[1])) return;
         i32 size = 0;
         for (const char *p = f[2]; *p; p++) {
             if (*p < '0' || *p > '9') return;
@@ -145,10 +147,15 @@ static void on_line(char *line) {
         }
         if (!size || k_strlen(f[3]) != 64) return;
         for (i32 j = 0; j < 64; j++) if (hexn(f[3][j]) < 0) return;
+        /* A response cannot install a different application. */
+        bool requested = false;
+        for (i32 j = 0; j < N_APP; j++)
+            if (k_strcmp(APP[j].id, f[1]) == 0) requested = true;
+        if (!requested) { uart_write("ERR\n"); return; }
         copy_small(rx_id, sizeof rx_id, f[1]);
         copy_small(rx_digest, sizeof rx_digest, f[3]);
         rx_used = 0;
-        rx_data[0] = 0; /* prevent stale data from an earlier larger package */
+        rx_data[0] = 0;
         rx_expected = size;
         status_text = "Downloading verified package...";
         ack();
@@ -164,7 +171,7 @@ static void on_line(char *line) {
             if (a < 0 || b < 0) return;
             rx_data[rx_used++] = (char)((a << 4) | b);
         }
-        rx_data[rx_used] = 0; /* PKG_MAX + 1 buffer: always NUL-terminated */
+        rx_data[rx_used] = 0;
         ack();
         return;
     }
@@ -347,7 +354,6 @@ static void on_line(char *line) {
         copy_small(rx_id, sizeof rx_id, f[1]);
         copy_small(rx_digest, sizeof rx_digest, f[3]);
         rx_used = 0;
-        rx_data[0] = 0; /* prevent stale data from an earlier larger package */
         rx_expected = size;
         status_text = "Downloading verified package...";
         ack();
@@ -363,7 +369,6 @@ static void on_line(char *line) {
             if (a < 0 || b < 0) return;
             rx_data[rx_used++] = (char)((a << 4) | b);
         }
-        rx_data[rx_used] = 0; /* PKG_MAX + 1 buffer: always NUL-terminated */
         ack();
         return;
     }
