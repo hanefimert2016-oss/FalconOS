@@ -309,3 +309,24 @@ jobs:
           name: FalconOS-ELF64-CPL3-proof
           path: build/elf-ring3-debug.log
           if-no-files-found: ignore
+
+  elf-ring3-scheduler:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native Ring3 scheduling test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build opt-in two-process ELF scheduler test
+        run: make iso ENABLE_RING3_TEST=1 EXTRA_CFLAGS=-DFALCON_QEMU_SCHED_TEST
+      - name: Verify two cooperative CPL3 tasks switch and resume
+        run: python3 tools/qemu_ring3_sched_e2e.py
+      - name: Archive native task scheduling trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-native-ELF-cooperative-scheduler
+          path: build/ring3-scheduler-debug.log
+          if-no-files-found: ignore
