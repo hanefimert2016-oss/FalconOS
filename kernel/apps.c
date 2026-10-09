@@ -3828,11 +3828,98 @@ u32 apps_tint(i32 i) {
     if (i < 0 || i >= apps_count()) return 0x2BB673;
     return i < builtin_app_count() ? APPS[i].tint : 0x2BB673;
 }
-void apps_draw_icon(i32 i, i32 cx, i32 cy)
-{
-    if (i < 0 || i >= apps_count()) return;
-    if (i >= builtin_app_count()) { icon_term(cx, cy); return; }
-    if (APPS[i].draw_icon) APPS[i].draw_icon(cx, cy);
+/* Material-symbol family: all first-party app icons share one 36px optical
+ * grid, restrained rounded geometry and legible white vector strokes.
+ * No borrowed Chromebook brand icon files or giant decorative fake apps.
+ */
+void apps_draw_icon(i32 i,i32 cx,i32 cy){
+    if(i<0||i>=apps_count())return;
+    const u32 white=0xFFFFFFu,shadow=0xECF3FFu;
+    u32 col=apps_tint(i);
+    if(i==5)col=0x1C304Eu;
+    if(i==14)col=0x2865E8u;
+    if(i==1)col=0xECA847u;
+    gfx_round_rect(cx-18,cy-18,36,36,12,col);
+    /* Inner letterforms are high-contrast and consistent at shelf size. */
+    switch(i){
+    case 1: /* Files */
+        gfx_round_rect(cx-12,cy-9,13,5,2,white);
+        gfx_round_rect(cx-12,cy-5,24,17,4,shadow);
+        gfx_line(cx-9,cy+3,cx+9,cy+3,0xD59C42u);
+        break;
+    case 14: /* Browser: globe, not deceptive Chrome logo */
+        gfx_circle_outline(cx,cy,12,white);
+        gfx_line(cx-11,cy,cx+11,cy,white);
+        gfx_line(cx,cy-12,cx,cy+12,white);
+        gfx_circle_outline(cx,cy,5,shadow);
+        break;
+    case 13: /* Falco search */
+        gfx_circle_outline(cx-2,cy-3,9,white);
+        gfx_line(cx+5,cy+4,cx+13,cy+12,white);
+        gfx_circle(cx-2,cy-3,3,0xCAE5FFu);
+        break;
+    case 6: /* Calculator */
+        gfx_round_rect(cx-10,cy-13,20,26,4,white);
+        gfx_rect(cx-7,cy-9,14,5,0x5A4BC4u);
+        for(i32 y=0;y<2;y++)for(i32 x=0;x<3;x++)
+            gfx_circle(cx-5+x*5,cy+3+y*5,2,0x8479E8u);
+        break;
+    case 7: /* Notes */
+        gfx_round_rect(cx-10,cy-12,20,26,4,white);
+        gfx_rect(cx-6,cy-6,12,2,0xBC9447u);
+        gfx_rect(cx-6,cy,12,2,0xBC9447u);
+        gfx_rect(cx-6,cy+6,8,2,0xBC9447u);
+        break;
+    case 3: /* Settings: slider controls */
+        gfx_line(cx-11,cy-8,cx+11,cy-8,white);
+        gfx_line(cx-11,cy,cx+11,cy,white);
+        gfx_line(cx-11,cy+8,cx+11,cy+8,white);
+        gfx_circle(cx+4,cy-8,3,0xBED5FFu);
+        gfx_circle(cx-5,cy,3,0xBED5FFu);
+        gfx_circle(cx+6,cy+8,3,0xBED5FFu);
+        break;
+    case 5: case 18: /* Terminal and code */
+        gfx_round_rect(cx-13,cy-11,26,22,5,0x121D2Cu);
+        gfx_text(cx-9,cy-6,i==18?"{}":">_",0xB2FCDEu);
+        break;
+    case 2: /* Store */
+        gfx_round_rect(cx-11,cy-7,22,21,4,white);
+        gfx_line(cx-7,cy-6,cx-7,cy-13,white);
+        gfx_line(cx+7,cy-6,cx+7,cy-13,white);
+        gfx_line(cx-7,cy-13,cx+7,cy-13,white);
+        gfx_text_centered(cx,cy-1,"+",0x20A372u);
+        break;
+    case 8: /* Clock */
+        gfx_circle_outline(cx,cy,12,white);
+        gfx_line(cx,cy,cx,cy-8,white);
+        gfx_line(cx,cy,cx+7,cy+4,white);
+        break;
+    case 9: /* Telemetry */
+        gfx_line(cx-12,cy+11,cx+12,cy+11,white);
+        gfx_rect(cx-10,cy,5,10,white);
+        gfx_rect(cx-2,cy-8,5,18,white);
+        gfx_rect(cx+6,cy-3,5,13,white);
+        break;
+    case 4: /* Update */
+        gfx_circle_outline(cx,cy,12,white);
+        gfx_line(cx,cy-9,cx,cy+6,white);
+        gfx_line(cx-6,cy+2,cx,cy+8,white);
+        gfx_line(cx+6,cy+2,cx,cy+8,white);
+        break;
+    case 17: /* Information */
+        gfx_circle_outline(cx,cy,12,white);
+        gfx_text_centered(cx,cy-6,"i",white);
+        break;
+    case 10: /* Calendar */
+        gfx_round_rect(cx-12,cy-11,24,23,5,white);
+        gfx_rect(cx-12,cy-8,24,6,0x5B84CDu);
+        gfx_circle(cx-4,cy+5,3,0x5B84CDu);
+        break;
+    default:
+        if(i>=builtin_app_count()){
+            gfx_text_centered(cx,cy-7,"P",white);
+        }else if(APPS[i].draw_icon)APPS[i].draw_icon(cx,cy);
+    }
 }
 
 void apps_input_active(i32 key)
