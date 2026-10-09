@@ -4,7 +4,8 @@ No GPU or dynamic GLTF parser is needed in Ring0. Source parts are actual GLB.
 This is deliberately a build-time baker, never an unsafe boot-time file parser.
 """
 import base64, json, struct, pathlib, argparse
-import cv2, numpy as np, trimesh
+import cv2, numpy as np, trimesh, io
+from PIL import Image
 
 def load(path):
     with open(path,"rb") as f:
@@ -53,15 +54,39 @@ def bake(src,out,count):
     up=np.cross(right,forward);up/=np.linalg.norm(up)
     light=np.array([.3,.7,1.]);light/=np.linalg.norm(light)
     palette_colors={
-        "Pedestal_Base":np.array([20,23,33.]),
-        "Dragon_Head":np.array([19,90,227.]),
-        "Dragon_Jaw":np.array([19,90,227.]),
-        "FalconOS_Typography":np.array([219,239,255.])}
+        "Pedestal_Base":np.array([46,58,99.]),
+        "Dragon_Head":np.array([22,148,255.]),
+        "Dragon_Jaw":np.array([34,173,255.]),
+        "FalconOS_Typography":np.array([236,250,255.])}
+    # Sample the actual glTF albedo textures, not just flat assigned colors.
+    # Texture images are packed in the original binary GLB bufferViews.
+    textures={}
+    for mat,im in ((0,0),(1,4)):
+        image=j["images"][im]
+        view=j["bufferViews"][image["bufferView"]]
+        off=view.get("byteOffset",0)
+        raw=binary[off:off+view["byteLength"]]
+        textures[mat]=np.asarray(Image.open(io.BytesIO(raw)).convert("RGB"),
+                                  dtype=np.uint8)
     source={}
     for name,mesh in meshes.items():
-        source[name]=(np.asarray(mesh.vertices,dtype=np.float32),
-                      np.asarray(mesh.faces,dtype=np.int32),
-                      np.asarray(mesh.face_normals,dtype=np.float32))
+        vertices=np.asarray(mesh.vertices,dtype=np.float32)
+        faces=np.asarray(mesh.faces,dtype=np.int32)
+        normals=np.asarray(mesh.face_normals,dtype=np.float32)
+        mi={"Pedestal_Base":0,"Dragon_Head":1,"Dragon_Jaw":1,
+            "FalconOS_Typography":2}[name]
+        face_albedo=np.ones(len(faces),dtype=np.float32)
+        if mi in textures:
+            node=j["nodes"][node_names[name]]
+            primitive=j["meshes"][node["mesh"]]["primitives"][0]
+            texcoord=accessor(primitive["attributes"]["TEXCOORD_0"])
+            center_uv=texcoord[faces].mean(axis=1)
+            texture=textures[mi]
+            hh,ww=texture.shape[:2]
+            u=np.clip((center_uv[:,0] % 1.0)*(ww-1),0,ww-1).astype(np.int32)
+            v=np.clip((1.0-center_uv[:,1] % 1.0)*(hh-1),0,hh-1).astype(np.int32)
+            face_albedo=np.clip(texture[v,u].mean(axis=1)/205.0,.63,1.32)
+        source[name]=(vertices,faces,normals,face_albedo)
     W,H=480,360
     palette_sum=np.zeros((192,3),dtype=np.float64)
     palette_count=np.zeros(192,dtype=np.uint64)
@@ -71,7 +96,7 @@ def bake(src,out,count):
         img=np.zeros((H,W,3),dtype=np.uint8)
         triangles=[]
         root=sample(0,"translation",time,[0,0,0])
-        for name,(original,faces,original_normals) in source.items():
+        for name,(original,faces,original_normals,face_albedo) in source.items():
             node=j["nodes"][node_names[name]]
             trans=sample(node_names[name],"translation",time,
                          node.get("translation",[0,0,0]))
@@ -101,10 +126,15 @@ def bake(src,out,count):
                 tri[:,1,1]-tri[:,0,1])*(tri[:,2,0]-tri[:,0,0])
             visible=(depth[faces]>0.05).all(axis=1)&(dot>0)&(abs(area)>.35)
             ids=np.where(visible)[0]
-            lum=np.clip(.4+.55*(normals[ids]@light),.25,1.15)
-            col=np.clip(palette_colors[name][None,:]*lum[:,None]+(
-                np.array([2,8,25]) if name.startswith("Dragon") else 0),
-                0,255).astype(np.uint8)
+            lum=np.clip(.74+.48*(normals[ids]@light),.55,1.3)
+            view_vector=camera-center[ids]
+            view_vector/=np.maximum(np.linalg.norm(view_vector,axis=1)[:,None],1e-4)
+            rim=np.maximum(0.,1.-np.abs((normals[ids]*view_vector).sum(axis=1)))**1.8
+            glow=(np.array([16.,65.,115.]) if name.startswith("Dragon")
+                else np.array([36.,32.,75.])) if name!="FalconOS_Typography" else np.array([12.,18.,23.])
+            col=np.clip(
+                palette_colors[name][None,:]*lum[:,None]*face_albedo[ids,None]+
+                rim[:,None]*glow[None,:],0,255).astype(np.uint8)
             for i,c in zip(ids,col):
                 triangles.append((face_depth[i],tri[i].astype(np.int32),
                                   tuple(int(x) for x in c[::-1])))
@@ -164,7 +194,7 @@ if __name__=="__main__":
     ap=argparse.ArgumentParser()
     ap.add_argument("--source",default="build/boot_intro.glb")
     ap.add_argument("--out",default="build/boot_model_frames.inc")
-    ap.add_argument("--frames",type=int,default=24)
+    ap.add_argument("--frames",type=int,default=48)
     args=ap.parse_args()
     files=sorted(pathlib.Path("assets/boot").glob("intro_glb.part*.b64"))
     if len(files)!=16:raise SystemExit(f"need 16 original GLB parts, got {len(files)}")
