@@ -638,6 +638,10 @@ void fvm_status(char *out,i32 capacity);
 /* Experimental only; available when ENABLE_RING3_TEST=1. */
 #ifdef FALCON_RING3_TEST
 bool ring3_run_elf(const u8 *image,u32 length);
+/* Ring3 preview-only cooperative user ELF scheduler (2 tasks). */
+i32 ring3_spawn_elf(const u8 *image,u32 length);
+bool ring3_schedule_one(void);
+u32 ring3_native_running(void);
 #endif
 bool elf64_inspect(const u8 *image,u32 length,u64 *entry,u32 *segments);
 bool elf64_stage(const u8 *image,u32 length,u8 *arena,u32 arena_len,u64 *entry);
