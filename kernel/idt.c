@@ -86,8 +86,26 @@ static const char *EXC_NAMES[32] = {
     "Reserved","Reserved","Reserved","Reserved","Reserved","Reserved","Security","Reserved"
 };
 
+#ifdef FALCON_QEMU_TLS_TEST
+static void isr_debug_hex(u64 v,u32 digits){
+    static const char chars[]="0123456789ABCDEF";
+    for(u32 n=digits;n>0;n--)
+        outb(0xE9,(u8)chars[(v>>(4u*(n-1)))&15u]);
+}
+#endif
 void isr_handler(regs_t *r)
 {
+#ifdef FALCON_QEMU_TLS_TEST
+    /* Test-only crash record: vector / error / faulting instruction pointer.
+     * Handle #PF/#GP without attempting unsafe printf or heap operations. */
+    outb(0xE9,'@');
+    isr_debug_hex(r->vec,2u);
+    outb(0xE9,':');
+    isr_debug_hex(r->err,16u);
+    outb(0xE9,':');
+    isr_debug_hex(r->rip,16u);
+    outb(0xE9,';');
+#endif
     extern volatile bool g_panic;
     extern char          g_panic_msg[80];
     g_panic = true;
