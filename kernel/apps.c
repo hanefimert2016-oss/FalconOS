@@ -57,6 +57,7 @@ void apps_open(i32 i)
         return;
     }
     active_app = i;
+    if (i == 2) outb(0xE9, 'S');  /* QEMU trace: Store actually opened */
     minimized_app = -1;
     open_at_ms = pit_ms();
 }
@@ -3165,6 +3166,7 @@ static void render_heroic(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 
 /* ---- Marketplace: actual release catalogue + verified FAPP/1 script launch --- */
 static i32 market_cursor;
+static bool market_first_frame = true;
 static void market_launch(i32 i)
 {
     const char *script = market_script(i);
@@ -3214,6 +3216,10 @@ static void market_input_key(i32 key)
 }
 static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
+    if (market_first_frame) {
+        outb(0xE9, 'M');  /* QEMU trace: Store window really rendered */
+        market_first_frame = false;
+    }
     (void)frame;
     section(wx, wy, "FalconOS Marketplace", "GitHub Releases  |  .app.pkg  |  SHA-256");
     gfx_text(wx + 24, wy + 42, "R: refresh  U: update  D: remove  Enter: get/run  C: CodeDium", PAL_TEXT_DIM);
