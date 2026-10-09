@@ -159,3 +159,84 @@ irq_table:
     dq irq %+ i
 %assign i i+1
 %endrep
+
+; ---- Experimental CPL3 return and INT 0x80 (not enabled in release) -------
+%ifdef FALCON_RING3_TEST
+section .bss
+align 8
+saved_ring_rsp:   resq 1
+saved_ring_rbx:   resq 1
+saved_ring_rbp:   resq 1
+saved_ring_r12:   resq 1
+saved_ring_r13:   resq 1
+saved_ring_r14:   resq 1
+saved_ring_r15:   resq 1
+
+section .text
+global ring3_enter
+global ring3_syscall_int80
+extern ring3_syscall_dispatch
+ring3_enter:
+    ; User code can clobber nonvolatile registers. Preserve kernel ABI.
+    mov [rel saved_ring_rsp], rsp
+    mov [rel saved_ring_rbx], rbx
+    mov [rel saved_ring_rbp], rbp
+    mov [rel saved_ring_r12], r12
+    mov [rel saved_ring_r13], r13
+    mov [rel saved_ring_r14], r14
+    mov [rel saved_ring_r15], r15
+    mov ax, 0x23
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    push qword 0x23
+    push rsi
+    pushfq
+    pop rax
+    or rax, 0x200           ; IF, allow PIC timer to continue running
+    and rax, ~0x3000        ; IOPL=0, user cannot inb/outb
+    push rax
+    push qword 0x1B
+    push rdi
+    iretq
+
+ring3_syscall_int80:
+    PUSHA64
+    ; On CPL3 entry, CPU used TSS.RSP0 and pushed SS/RSP/RFLAGS/CS/RIP.
+    ; Full saved frame layout after PUSHA64: CS at rsp+128.
+    mov rax, [rsp+128]
+    and eax, 3
+    cmp eax, 3
+    jne .invalid
+    mov rdi, [rsp+112]      ; user RAX syscall number
+    mov rbx, rsp
+    and rsp, -16
+    cld
+    call ring3_syscall_dispatch
+    mov rsp, rbx
+    cmp rax, 1
+    je .leave_ring3         ; syscall 2 (exit)
+    mov [rsp+112], rax
+    POPA64
+    iretq
+.invalid:
+    mov qword [rsp+112], -38
+    POPA64
+    iretq
+.leave_ring3:
+    mov rsp, [rel saved_ring_rsp]
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    mov rbx, [rel saved_ring_rbx]
+    mov rbp, [rel saved_ring_rbp]
+    mov r12, [rel saved_ring_r12]
+    mov r13, [rel saved_ring_r13]
+    mov r14, [rel saved_ring_r14]
+    mov r15, [rel saved_ring_r15]
+    ret
+%endif
