@@ -3,7 +3,7 @@
 #include "shfs.h"
 #include <stdio.h>
 #include <string.h>
-#define SECTORS 2400u
+#define SECTORS 4600u
 static u8 disk[SECTORS*512u];
 settings_t SET;
 i32 k_strlen(const char *s) {return (i32)strlen(s);}
