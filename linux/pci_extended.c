@@ -108,5 +108,6 @@ u32 pci_extended_info(u32 kind,u32 field){
     if(field==3)return c->cap0;
     if(field==4)return c->cap1;
     if(field==5)return c->cap2;
+    if(field==6)return ((u32)c->bus<<16)|((u32)c->dev<<8)|c->fun;
     return 0;
 }
