@@ -121,7 +121,7 @@ static void shelf(void){
         if(bx+tile>x+w-168)break;
         bool hovered=within(mx,my,bx,y+11,tile,53);
         i32 id=SHELF_APPS[i];
-        bool running=(apps_active()==id||apps_minimized()==id);
+        bool running=(apps_is_open(id)||apps_minimized()==id);
         if(hovered||running||i==shelf_cursor)
             gfx_round_rect_a(bx,y+11,tile,52,16,
                 hovered?0xBFD8FCu:0xDDE9FAu,190);
