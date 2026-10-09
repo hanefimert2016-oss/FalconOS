@@ -20,6 +20,10 @@ jobs:
           mkdir -p build
           gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/diskdb_test.c kernel/diskdb.c -o build/test-diskdb
           ./build/test-diskdb
+      - name: Test native Marketplace persistence
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Ikernel tests/market_storage_test.c kernel/shfs.c kernel/market_data.c -o build/test-market-cache
+          ./build/test-market-cache
       - name: Compile ISO
         run: make iso
       - name: Validate Multiboot2 kernel
