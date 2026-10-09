@@ -1,4 +1,4 @@
-/* FalconOS native TCP/IPv4: single, polled, bounded client connection.
+/* FalconOS native TCP/IPv4: four independent, polled client sockets.
  *
  * Implements SYN/ACK 3-way handshake, checksums, in-order data, window,
  * ACK, FIN/RST, retransmission of SYN and data, timeouts. It is intentionally
@@ -16,6 +16,7 @@ extern void native_net_local_ipv4(u8 out[4]);
 #define TCP_RX_LIMIT 4096u
 #define TCP_MSS 1000u
 #define TCP_LOCAL_PORT 43001u
+#define TCP_SOCKETS 4u
 #define TCP_TIMEOUT 120u
 #define TCP_RETRIES 3u
 #define TCP_FIN 0x01u
@@ -28,14 +29,16 @@ typedef enum {TCP_CLOSED,TCP_SYN_SENT,TCP_ESTABLISHED,
 typedef struct {
     tcp_phase_t phase;
     u8 remote[4];
-    u16 port;
+    u16 port,local_port;
     u32 snd_una,snd_nxt,rcv_nxt;
     u16 peer_window;
     u8 rx[TCP_RX_LIMIT];
     u32 used;
     bool peer_fin;
 } tcp_conn_t;
-static tcp_conn_t C;
+static tcp_conn_t CONNECTIONS[TCP_SOCKETS];
+static tcp_conn_t *ACTIVE=&CONNECTIONS[0];
+#define C (*ACTIVE)
 static u16 get16(const u8 *p){return (u16)(((u16)p[0]<<8)|p[1]);}
 static u32 get32(const u8 *p){return ((u32)p[0]<<24)|((u32)p[1]<<16)|((u32)p[2]<<8)|p[3];}
 static void put16(u8 *p,u16 n){p[0]=(u8)(n>>8);p[1]=(u8)n;}
@@ -65,7 +68,7 @@ static bool emit(u32 sequence,u8 flags,const u8 *data,u16 count){
     if(count>TCP_MSS)return false;
     static u8 segment[20+TCP_MSS];
     k_memset(segment,0,(u32)20+count);
-    put16(segment,TCP_LOCAL_PORT);put16(segment+2,C.port);
+    put16(segment,C.local_port);put16(segment+2,C.port);
     put32(segment+4,sequence);
     if(flags&TCP_ACK)put32(segment+8,C.rcv_nxt);
     segment[12]=0x50;
@@ -77,7 +80,7 @@ static bool emit(u32 sequence,u8 flags,const u8 *data,u16 count){
     return native_net_ipv4_send(C.remote,6,segment,(u16)(20u+count));
 }
 /* RX is invoked from RTL8139 polling, synchronous with the caller. */
-void native_tcp_receive(const u8 *ip,u32 total) {
+static void receive_current(const u8 *ip,u32 total) {
     if(C.phase==TCP_CLOSED||C.phase==TCP_ERROR||!ip||total<40)return;
     u32 ihl=(u32)(ip[0]&15u)*4u;
     if(ihl<20 || total<ihl+20 || !same_ip(ip+12,C.remote))return;
@@ -85,7 +88,7 @@ void native_tcp_receive(const u8 *ip,u32 total) {
     u16 bytes=(u16)(total-ihl);
     u32 header=(u32)(segment[12]>>4)*4u;
     if(header<20||header>60||header>bytes||
-       get16(segment)!=C.port||get16(segment+2)!=TCP_LOCAL_PORT)return;
+       get16(segment)!=C.port||get16(segment+2)!=C.local_port)return;
     u8 local[4];native_net_local_ipv4(local);
     if(tcp_checksum(C.remote,local,segment,bytes)!=0)return;
     u8 flags=segment[13];
@@ -101,6 +104,7 @@ void native_tcp_receive(const u8 *ip,u32 total) {
         (void)emit(C.snd_nxt,TCP_ACK,NULL,0);
         return;
     }
+    if(flags&TCP_ACK)C.peer_window=get16(segment+14);
     if(flags&TCP_ACK && (i32)(acked-C.snd_una)>=0 &&
        (i32)(C.snd_nxt-acked)>=0)C.snd_una=acked;
     if(sequence!=C.rcv_nxt) {
@@ -126,6 +130,27 @@ void native_tcp_receive(const u8 *ip,u32 total) {
         (void)emit(C.snd_nxt,TCP_ACK,NULL,0);
     }
 }
+/* Port/IP tuple selects the independent receiving socket. No cross-talk
+ * between simultaneous sessions, including pending ACKs and FINs. */
+void native_tcp_receive(const u8 *ip,u32 total){
+    if(!ip||total<40)return;
+    u32 ihl=(u32)(ip[0]&15u)*4u;
+    if(ihl<20||total<ihl+20)return;
+    const u8 *tcp=ip+ihl;
+    u16 remote=get16(tcp),local=get16(tcp+2);
+    tcp_conn_t *previous=ACTIVE;
+    for(u32 i=0;i<TCP_SOCKETS;i++){
+        tcp_conn_t *candidate=&CONNECTIONS[i];
+        if(candidate->phase==TCP_CLOSED||candidate->phase==TCP_ERROR)continue;
+        if(candidate->local_port==local&&candidate->port==remote &&
+           same_ip(ip+12,candidate->remote)){
+            ACTIVE=candidate;
+            receive_current(ip,total);
+            ACTIVE=previous;
+            return;
+        }
+    }
+}
 static bool wait_until_ack(u32 target,u32 deadline_ticks) {
     u32 start=g_ticks;
     while((i32)(C.snd_una-target)<0 && g_ticks-start<deadline_ticks) {
@@ -134,11 +159,11 @@ static bool wait_until_ack(u32 target,u32 deadline_ticks) {
     }
     return (i32)(C.snd_una-target)>=0;
 }
-bool native_tcp_connect(const u8 remote[4],u16 port){
+static bool connect_current(const u8 remote[4],u16 port,u16 local_port){
     if(!remote||!port||!net_present())return false;
     k_memset(&C,0,sizeof C);
     k_memcpy(C.remote,remote,4);
-    C.port=port;C.phase=TCP_SYN_SENT;
+    C.port=port;C.local_port=local_port;C.phase=TCP_SYN_SENT;
     C.snd_nxt=(u32)rdtsc();
     C.snd_una=C.snd_nxt;
     /* Prevent a zero or repeatable fixed initial SYN sequence. */
@@ -157,13 +182,30 @@ bool native_tcp_connect(const u8 remote[4],u16 port){
     C.phase=TCP_CLOSED;
     return false;
 }
+bool native_tcp_connect(const u8 remote[4],u16 port){
+    ACTIVE=&CONNECTIONS[0];
+    return connect_current(remote,port,TCP_LOCAL_PORT);
+}
+i32 native_tcp_socket_open(const u8 remote[4],u16 port){
+    if(!remote||!port)return -1;
+    tcp_conn_t *previous=ACTIVE;
+    for(u32 i=1;i<TCP_SOCKETS;i++){
+        tcp_conn_t *candidate=&CONNECTIONS[i];
+        if(candidate->phase!=TCP_CLOSED && candidate->phase!=TCP_ERROR)continue;
+        ACTIVE=candidate;
+        bool ok=connect_current(remote,port,(u16)(TCP_LOCAL_PORT+i));
+        ACTIVE=previous;
+        if(ok)return (i32)i;
+    }
+    return -1;
+}
 i32 native_tcp_write(const u8 *data,u32 length){
     if(C.phase!=TCP_ESTABLISHED||(!data&&length))return -1;
     u32 sent=0;
     while(sent<length){
         u32 remain=length-sent;
         u16 size=(u16)(remain>TCP_MSS?TCP_MSS:remain);
-        if(C.peer_window && size>C.peer_window)size=C.peer_window;
+        if(size>C.peer_window)size=C.peer_window;
         if(!size)return sent ? (i32)sent : -1;
         u32 sequence=C.snd_nxt;
         u32 target=sequence+size;
@@ -201,3 +243,25 @@ void native_tcp_close(void){
     C.phase=TCP_CLOSED;
 }
 i32 native_tcp_state(void){return (i32)C.phase;}
+
+static tcp_conn_t *socket_use(i32 handle){
+    if(handle<=0 || handle>=(i32)TCP_SOCKETS)return NULL;
+    tcp_conn_t *c=&CONNECTIONS[handle];
+    return c->phase==TCP_CLOSED||c->phase==TCP_ERROR?NULL:c;
+}
+i32 native_tcp_socket_write(i32 handle,const u8 *data,u32 len){
+    tcp_conn_t *socket=socket_use(handle);if(!socket)return -1;
+    tcp_conn_t *previous=ACTIVE;ACTIVE=socket;
+    i32 n=native_tcp_write(data,len);ACTIVE=previous;return n;
+}
+i32 native_tcp_socket_read(i32 handle,u8 *out,u32 cap,u32 timeout){
+    tcp_conn_t *socket=socket_use(handle);if(!socket)return -1;
+    tcp_conn_t *previous=ACTIVE;ACTIVE=socket;
+    i32 n=native_tcp_read(out,cap,timeout);ACTIVE=previous;return n;
+}
+bool native_tcp_socket_close(i32 handle){
+    tcp_conn_t *socket=socket_use(handle);if(!socket)return false;
+    tcp_conn_t *previous=ACTIVE;ACTIVE=socket;
+    native_tcp_close();ACTIVE=previous;return true;
+}
+u32 native_tcp_socket_capacity(void){return TCP_SOCKETS;}
