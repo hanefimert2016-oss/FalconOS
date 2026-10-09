@@ -84,8 +84,8 @@ def main():
             command(sock, "sendkey esc", .4)
             before = screenshot(sock, first)
             command(sock, "sendkey f2", .8)
-            command(sock, "sendkey right", .3)
-            command(sock, "sendkey right", .3)
+            # Functional Shelf launcher: Store is eighth favorite (slot 7).
+            for _ in range(7): command(sock, "sendkey right", .17)
             command(sock, "sendkey ret", 1.5)
             after = screenshot(sock, last)
         score = picture_difference(before, after)
