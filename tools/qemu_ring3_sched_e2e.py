@@ -29,7 +29,7 @@ try:
                 raise AssertionError("Incomplete round-robin/user syscalls: "+repr(trace))
             print("PASS two native CPL3 ELF tasks yield, schedule round-robin, resume registers, exit")
             break
-        if b"z" in data[data.index(b"K"):] if b"K" in data else False:
+        if b"K" in data and b"z" in data[data.index(b"K"):]:
             raise AssertionError("CPL3 scheduler failed: "+repr(data))
         time.sleep(.2)
     else:
