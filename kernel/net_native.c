@@ -110,9 +110,15 @@ bool native_net_ping(const u8 ip[4]){
     if(!peer_known || !equal(peer_ip,nexthop,4)){
         peer_known=false;
         arp_request(nexthop);
+#ifdef FALCON_QEMU_NET_TEST
+        outb(0xE9,'a');
+#endif
         u32 start=g_ticks;
         while(!peer_known && g_ticks-start<150u)native_net_poll();
         if(!peer_known)return false;
+#ifdef FALCON_QEMU_NET_TEST
+        outb(0xE9,'A');
+#endif
     }
     u8 packet[14+20+16];
     k_memset(packet,0,sizeof packet);
@@ -130,8 +136,16 @@ bool native_net_ping(const u8 ip[4]){
     wr16(ic+2,checksum(ic,16));
     echo_seen=false;
     if(!rtl8139_send(packet,sizeof packet))return false;
+#ifdef FALCON_QEMU_NET_TEST
+    outb(0xE9,'t');
+#endif
     u32 start=g_ticks;
     while(!echo_seen && g_ticks-start<200u)native_net_poll();
+    if(echo_seen) {
+#ifdef FALCON_QEMU_NET_TEST
+        outb(0xE9,'E');
+#endif
+    }
     return echo_seen;
 }
 bool native_net_parse_ipv4(const char *text,u8 out[4]){
