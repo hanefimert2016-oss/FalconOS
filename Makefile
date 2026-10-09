@@ -55,6 +55,13 @@ ISO_DIR     := $(BUILD)/iso
 
 # BearSSL is opt-in: releases keep HTTPS FAIL-CLOSED until real TLS CI passes.
 ENABLE_BEARSSL ?= 0
+ENABLE_NATIVE_MARKET ?= 0
+ifeq ($(ENABLE_NATIVE_MARKET),1)
+ifneq ($(ENABLE_BEARSSL),1)
+$(error Native Marketplace requires ENABLE_BEARSSL=1; insecure fetch is forbidden)
+endif
+EXTRA_CFLAGS += -DFALCON_NATIVE_MARKET
+endif
 TLS_CA_BUNDLE ?= /etc/ssl/certs/ca-certificates.crt
 TLS_PATH := third_party/bearssl
 ifeq ($(ENABLE_BEARSSL),1)
