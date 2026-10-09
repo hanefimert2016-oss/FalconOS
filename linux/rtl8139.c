@@ -46,7 +46,7 @@ bool rtl8139_init(void){
         rx_position=0;tx_next=0;
         outl32(io_base+0x30,(u32)(uintptr_t)rx_mem);
         outw(io_base+0x3C,0); /* poll ISR; no IRQ handler needed */
-        outl32(io_base+0x44,0x0000000Eu); /* physical, broadcast, multicast */
+        outl32(io_base+0x44,0x0000008Fu); /* accept-all + WRAP, QEMU RTL8139 RX baseline */
         outl32(io_base+0x40,0x03000700u); /* recommended TX DMA threshold */
         outb(io_base+0x37,0x0Cu); /* RX + TX enable */
         outw(io_base+0x38,0);
