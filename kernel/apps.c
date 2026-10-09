@@ -3756,7 +3756,7 @@ static app_def_t APPS[] = {
     { "Gallery",    "palette swatches",    0xC084FC, render_gallery,  NULL,             icon_gallery  },
     { "Video",      "software player",     0x16B5A8, render_video,    video_input_key,  icon_video    },
     { "Falco",      "native web search",   0x2A66F5, render_falco,    falco_input_key,  icon_falco    },
-    { "Chrome",     "Tab to switch tabs",  0x4285F4, render_browser, chrome_input_key,  icon_browser  },
+    { "Browser",    "Native TLS 1.2 text web", 0x4285F4, render_browser, chrome_input_key, icon_browser },
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
@@ -3828,7 +3828,7 @@ const char *apps_display_name(i32 i)
         case 11: return "Galeri";
         case 12: return "Video";
         case 13: return "Falco";
-        case 14: return "Chrome";
+        case 14: return "Tarayici";
         case 15: return "Heroic";
         case 16: return "Jarvis";
         case 17: return "Hakkında";
@@ -3859,7 +3859,7 @@ const char *apps_display_subtitle(i32 i)
         case 11: return "Renk paleti";
         case 12: return "Yazılım oynatıcı";
         case 13: return "Yerel indeks arama";
-        case 14: return "Sekme görünümü (demo)";
+        case 14: return "Dogrulanmis HTTPS metin gorunumu";
         case 15: return "Oyun başlatıcı (uyum)";
         case 16: return "Yapay asistan";
         case 17: return "FalconOS bilgisi";
