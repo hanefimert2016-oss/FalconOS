@@ -17,6 +17,7 @@ extern bool native_net_init(void);
 extern const u8 *rtl8139_mac(void);
 extern bool native_net_parse_ipv4(const char *,u8 out[4]);
 extern void native_net_config(u8 ip[4],u8 mask[4],u8 gw[4]);
+extern bool native_dhcp_acquire(u8 ip[4],u8 mask[4],u8 gateway[4],u8 dns[4]);
 extern void rtl8139_stats(u32 *,u32 *,u32 *,u32 *,u32 *,u32 *);
 static void native_config_update(void);
 
@@ -343,8 +344,23 @@ static void native_config_update(void) {
         native_net_parse_ipv4(NET_DEV.gateway,gw))
         native_net_config(ip,mask,gw);
 }
-/* DHCP is not implemented; never return a synthetic DHCP lease. */
-bool net_dhcp(void) { return false; }
+static void format_ipv4(char target[16],const u8 v[4]){
+    target[0]=0;
+    for(i32 i=0;i<4;i++){
+        char number[16];k_itoa(v[i],number,10);
+        k_strcat(target,number);
+        if(i<3)k_strcat(target,".");
+    }
+}
+bool net_dhcp(void){
+    if(!net_present())return false;
+    u8 ip[4],mask[4],gateway[4],dns[4];
+    if(!native_dhcp_acquire(ip,mask,gateway,dns))return false;
+    format_ipv4(NET_DEV.ip_addr,ip);
+    format_ipv4(NET_DEV.netmask,mask);
+    format_ipv4(NET_DEV.gateway,gateway);
+    return true;
+}
 /* Network summary for system info */
 const char *net_summary(void)
 {
