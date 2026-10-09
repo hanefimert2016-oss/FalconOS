@@ -288,3 +288,24 @@ jobs:
           name: FalconOS-USB3-xHCI-Command
           path: build/xhci-command-debug.log
           if-no-files-found: ignore
+
+  elf64-ring3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native ELF user-mode and QEMU toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build experimental ELF loader and INT80 kernel
+        run: make iso ENABLE_RING3_TEST=1 EXTRA_CFLAGS=-DFALCON_QEMU_ELF_TEST
+      - name: Execute ELF64 checked text in real Ring3
+        run: python3 tools/qemu_elf_ring3_e2e.py
+      - name: Store ELF/CPL3 trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-ELF64-CPL3-proof
+          path: build/elf-ring3-debug.log
+          if-no-files-found: ignore
