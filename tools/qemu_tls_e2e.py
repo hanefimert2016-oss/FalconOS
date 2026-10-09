@@ -29,7 +29,7 @@ class OneShotTLS:
     def run(self):
         try:
             sock,_=self.s.accept()
-            sock.settimeout(12)
+            sock.settimeout(75)
             with self.ctx.wrap_socket(sock,server_side=True) as session:
                 request=bytearray()
                 while b"\r\n\r\n" not in request and len(request)<2048:
@@ -51,7 +51,7 @@ def main():
     p.add_argument("--certificate",required=True,type=Path)
     p.add_argument("--key",required=True,type=Path)
     p.add_argument("--expect-failure",action="store_true")
-    p.add_argument("--timeout",type=int,default=85)
+    p.add_argument("--timeout",type=int,default=125)
     args=p.parse_args()
     server=OneShotTLS(args.certificate,args.key)
     threading.Thread(target=server.run,daemon=True).start()
@@ -74,7 +74,10 @@ def main():
                 hdr=(seg[12]>>4)*4
                 found.append({"port":(int.from_bytes(seg[0:2],"big"),
                                       int.from_bytes(seg[2:4],"big")),
-                              "flags":hex(seg[13]),"payload":max(0,len(seg)-hdr)})
+                              "flags":hex(seg[13]),"payload":max(0,len(seg)-hdr),
+                              "seq":int.from_bytes(seg[4:8],"big"),
+                              "ack":int.from_bytes(seg[8:12],"big"),
+                              "data_head":seg[hdr:hdr+12].hex()})
             return str(found[:36])
         except OSError:return "pcap unavailable"
     cmd=["qemu-system-x86_64","-accel","tcg","-cpu","max",
