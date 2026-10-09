@@ -636,6 +636,18 @@ void fvm_status(char *out,i32 capacity);
 
 /* Native IPv4/ICMP packet networking; not a TLS or full TCP stack. */
 void native_net_poll(void);
+/* Guest-native TCP IPv4 client, single connection, QEMU-first. */
+bool native_net_ipv4_send(const u8 remote[4],u8 protocol,const u8 *payload,u16 bytes);
+void native_net_local_ipv4(u8 out[4]);
+void native_tcp_receive(const u8 *ip,u32 total);
+bool native_tcp_connect(const u8 remote[4],u16 port);
+i32 native_tcp_write(const u8 *data,u32 length);
+i32 native_tcp_read(u8 *out,u32 cap,u32 timeout_ticks);
+void native_tcp_close(void);
+i32 native_tcp_state(void);
+bool native_http_get(const char *hostname,const char *path,char *result,u32 cap);
+bool native_https_get(const char *hostname,const char *path,char *result,u32 cap);
+
 bool native_net_ping(const u8 ip[4]);
 bool native_net_parse_ipv4(const char *text, u8 out[4]);
 bool native_net_arp_known(void);
