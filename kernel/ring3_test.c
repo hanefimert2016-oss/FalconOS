@@ -108,15 +108,19 @@ static const u8 kernel_probe[]={
       0xCD,0x80,               /* int 0x80 */
       0x0F,0x0B                /* ud2: impossible to return into user code */
     };
-static bool ring3_exited;
+static bool ring3_exited,ring3_yielded;
+static i32 current_native_pid=-1;
+extern u64 ring3_saved_user_frame[20];
+extern void ring3_resume(void);
 u64 ring3_syscall_dispatch(u64 number){
     u16 cs;
     __asm__ volatile("mov %%cs,%0":"=r"(cs));
     if((cs&3u)!=0) return (u64)-1;
     if(number==1){outb(0xE9,'U');return 0;}
     if(number==2){ring3_exited=true;return 1;} /* exit -> saved Ring0 stack */
-    if(number==3)return 42; /* getpid: experiment has one user process */
+    if(number==3)return current_native_pid<0?42u:(u64)(current_native_pid+1);
     if(number==4)return g_ticks; /* time ticks, no user pointer */
+    if(number==5){ring3_yielded=true;return 2;} /* voluntary yield */
     return (u64)-38; /* ENOSYS */
 }
 bool ring3_probe(void){
@@ -130,7 +134,7 @@ bool ring3_probe(void){
  * page. Fails closed; no dynamic linking, imports, relocation, writable code
  * or arbitrary kernel addresses. A future VM manager must own CR3/TSS.
  */
-bool ring3_run_elf(const u8 *elf,u32 size){
+static bool stage_ring3_elf(const u8 *elf,u32 size,u8 text[4096],u64 *entry_out){
     static u8 arena[2u*1024u*1024u];
     u64 entry=0;
     u32 segments=0;
@@ -151,10 +155,82 @@ bool ring3_run_elf(const u8 *elf,u32 size){
     if(typ!=1||flags!=5||vaddr!=0x400000ull||memsz>4096u)return false;
     u64 staged_entry=0;
     if(!elf64_stage(elf,size,arena,sizeof arena,&staged_entry))return false;
-    if(!map_guarded_user(arena,4096u))return false;
-    ring3_exited=false;
-    ring3_enter(USER_PAGE+(staged_entry-0x400000ull),USER_STACK+4096-16);
+    k_memcpy(text,arena,4096u);
+    *entry_out=staged_entry;
+    return true;
+}
+bool ring3_run_elf(const u8 *elf,u32 size){
+    static u8 code[4096];
+    u64 entry=0;
+    if(!stage_ring3_elf(elf,size,code,&entry))return false;
+    if(!map_guarded_user(code,4096u))return false;
+    ring3_exited=false;ring3_yielded=false;
+    current_native_pid=-1;
+    ring3_enter(USER_PAGE+(entry-0x400000ull),USER_STACK+4096-16);
     return ring3_exited;
+}
+/* Two independently saved native ELF user tasks, switched only after
+ * voluntary syscall(5). The kernel owns the frame and stack copies; user
+ * memory stays limited to the mapped RX text and RW stack pages.
+ * This is COOPERATIVE, not timer-preemptive or full per-process CR3.
+ */
+#define RING3_NATIVE_TASKS 2
+typedef struct {
+    bool runnable,started,finished;
+    u8 text[4096],stack[4096];
+    u64 frame[20],entry;
+    u32 slices;
+} native_task_t;
+static native_task_t native_tasks[RING3_NATIVE_TASKS];
+static u32 round_robin;
+i32 ring3_spawn_elf(const u8 *elf,u32 len){
+    for(i32 i=0;i<RING3_NATIVE_TASKS;i++){
+        native_task_t *task=&native_tasks[i];
+        if(task->runnable)continue;
+        u64 entry=0;
+        if(!stage_ring3_elf(elf,len,task->text,&entry))return -1;
+        k_memset(task->stack,0,sizeof task->stack);
+        task->entry=entry;task->slices=0;
+        task->started=false;task->finished=false;task->runnable=true;
+        return i;
+    }
+    return -1;
+}
+bool ring3_schedule_one(void){
+    for(u32 search=0;search<RING3_NATIVE_TASKS;search++){
+        u32 index=round_robin%RING3_NATIVE_TASKS;
+        round_robin=(index+1)%RING3_NATIVE_TASKS;
+        native_task_t *task=&native_tasks[index];
+        if(!task->runnable)continue;
+        if(task->slices>=32u){task->runnable=false;return false;}
+        if(!map_guarded_user(task->text,4096u))return false;
+        ring3_exited=false;ring3_yielded=false;current_native_pid=(i32)index;
+        if(task->started){
+            k_memcpy((void *)(uintptr_t)USER_STACK,task->stack,4096u);
+            k_memcpy(ring3_saved_user_frame,task->frame,sizeof task->frame);
+            ring3_resume();
+        }else{
+            task->started=true;
+            ring3_enter(USER_PAGE+(task->entry-0x400000ull),USER_STACK+4096u-16u);
+        }
+        task->slices++;
+        current_native_pid=-1;
+        if(ring3_exited){
+            task->runnable=false;task->finished=true;
+        }else if(ring3_yielded){
+            k_memcpy(task->stack,(const void *)(uintptr_t)USER_STACK,4096u);
+            k_memcpy(task->frame,ring3_saved_user_frame,sizeof task->frame);
+        }else {
+            task->runnable=false;return false;
+        }
+        return true;
+    }
+    return false;
+}
+u32 ring3_native_running(void){
+    u32 n=0;for(u32 i=0;i<RING3_NATIVE_TASKS;i++)
+        if(native_tasks[i].runnable)n++;
+    return n;
 }
 #ifdef FALCON_QEMU_ELF_TEST
 static void set16(u8 *p,u16 n){p[0]=(u8)n;p[1]=(u8)(n>>8);}
@@ -182,6 +258,43 @@ bool ring3_elf_demo(void){
     };
     k_memcpy(image+128,program,sizeof program);
     return ring3_run_elf(image,128u+sizeof program);
+}
+#endif
+
+
+#ifdef FALCON_QEMU_SCHED_TEST
+static void native16(u8 *p,u16 n){p[0]=(u8)n;p[1]=(u8)(n>>8);}
+static void native64(u8 *p,u64 n){
+    for(u32 j=0;j<8;j++)p[j]=(u8)(n>>(j*8));
+}
+bool ring3_sched_demo(void){
+    static const u8 commands[]={
+        0xB8,5,0,0,0,0xCD,0x80, /* syscall yield */
+        0xB8,1,0,0,0,0xCD,0x80, /* syscall diagnostic */
+        0xB8,2,0,0,0,0xCD,0x80, /* syscall exit */
+        0x0F,0x0B
+    };
+    u8 image[192];k_memset(image,0,sizeof image);
+    image[0]=0x7f;image[1]='E';image[2]='L';
+    image[3]='F';image[4]=2;image[5]=1;image[6]=1;
+    native16(image+16,2);native16(image+18,62);
+    image[20]=1;native64(image+24,0x400000ull);
+    native64(image+32,64u);
+    native16(image+52,64);native16(image+54,56);native16(image+56,1);
+    image[64]=1;image[68]=5;
+    native64(image+72,128u);native64(image+80,0x400000ull);
+    native64(image+96,sizeof commands);
+    native64(image+104,4096u);native64(image+112,1u);
+    k_memcpy(image+128,commands,sizeof commands);
+    if(ring3_spawn_elf(image,128u+sizeof commands)!=0)return false;
+    if(ring3_spawn_elf(image,128u+sizeof commands)!=1)return false;
+    for(u32 step=0;step<4;step++){
+        outb(0xE9,(step&1u)?'B':'A');
+        if(!ring3_schedule_one())return false;
+    }
+    return !native_tasks[0].runnable && !native_tasks[1].runnable &&
+        native_tasks[0].finished && native_tasks[1].finished &&
+        native_tasks[0].slices==2 && native_tasks[1].slices==2;
 }
 #endif
 
