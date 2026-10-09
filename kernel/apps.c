@@ -3708,6 +3708,30 @@ static app_def_t APPS[] = {
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
+/* ChromeOS-style launcher catalog: native functions only, stable original
+ * app IDs for desktop pins, Store receipts and automation compatibility.
+ * Demo video/palette gallery, Heroic (no Linux ABI) and Jarvis (not a
+ * connected AI) are deliberately absent rather than mislabeled as working.
+ * USB UVC camera is not yet implemented and is never faked.
+ */
+static const i32 LAUNCH_FAVORITES[] = {1,14,13,6,7,3,5,2,8};
+static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,10,18,5};
+static const i32 LAUNCH_ALL[] = {1,14,13,6,7,3,5,2,8,9,4,17,10,18};
+i32 apps_launcher_count(i32 group) {
+    if(group==0) return (i32)(sizeof LAUNCH_FAVORITES/sizeof *LAUNCH_FAVORITES);
+    if(group==1) return (i32)(sizeof LAUNCH_SYSTEM/sizeof *LAUNCH_SYSTEM);
+    return (i32)(sizeof LAUNCH_ALL/sizeof *LAUNCH_ALL)+market_count();
+}
+i32 apps_launcher_id(i32 group,i32 index) {
+    i32 count=apps_launcher_count(group);
+    if(index<0||index>=count)return -1;
+    if(group==0)return LAUNCH_FAVORITES[index];
+    if(group==1)return LAUNCH_SYSTEM[index];
+    i32 count_builtin=(i32)(sizeof LAUNCH_ALL/sizeof *LAUNCH_ALL);
+    if(index<count_builtin)return LAUNCH_ALL[index];
+    return builtin_app_count()+index-count_builtin;
+}
+
 i32 apps_count(void) { return builtin_app_count() + market_count(); }
 const char *apps_name(i32 i) {
     if (i < 0 || i >= apps_count()) return "?";
