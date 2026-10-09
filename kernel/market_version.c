@@ -77,3 +77,14 @@ i32 market_version_compare(const char *a, const char *b)
     }
     return 0;
 }
+
+
+bool market_version_valid(const char *s)
+{
+    if(!s) return false;
+    u32 parts[3];
+    const char *pre;
+    u32 len=0;
+    while(s[len]) { if(len>=24) return false; len++; }
+    return parse_semver(s,parts,&pre);
+}

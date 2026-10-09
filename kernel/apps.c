@@ -3282,7 +3282,7 @@ static void code_init(void)
     code_ready = true;
     shfs_init();
     shfs_ent_t *file = shfs_lookup("/home/falcon/Desktop/project.fsh");
-    const char *sample = "# CodeDium Studio\nclear\necho Hello from CodeDium\nuname\n";
+    const char *sample = "# app-id: codedium-demo\n# app-name: CodeDium Demo\n# app-version: 1.0.0\n# app-summary: Built inside FalconOS\nclear\necho Hello from CodeDium\nuname\n";
     const char *source = (file && !file->is_dir) ? file->data : sample;
     i32 disklen = codedium_project_load(code_text, CODE_CAP);
     if (disklen > 0) source = code_text;
@@ -3326,24 +3326,20 @@ static void code_run(void)
 }
 static void code_export(void)
 {
-    const char *header =
-        "FAPP/1\nid=codedium-demo\nname=CodeDium Demo\n"
-        "version=1.0.0\nsummary=Created inside FalconOS CodeDium\n\n";
-    i32 n = k_strlen(header);
-    i32 add_newline = (!code_len || code_text[code_len - 1] != '\n') ? 1 : 0;
-    if (n + code_len + add_newline >= SHFS_FBYTES) {
-        code_status = "Export error: package exceeds 4096 bytes"; return;
+    static char pkg[SHFS_FBYTES];
+    u32 bytes=0;
+    if (!codedium_build_pkg(code_text,(u32)code_len,pkg,
+                            sizeof pkg,&bytes)) {
+        code_status = "Export failed: check # app-* metadata, commands or 4 KiB limit";
+        return;
     }
     shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/code.app.pkg", false);
-    if (!file) { code_status = "Export failed: RAM file system full"; return; }
-    k_memcpy(file->data, header, n);
-    k_memcpy(file->data + n, code_text, code_len);
-    i32 exported_len = code_len;
-    if (!code_len || code_text[code_len - 1] != '\n')
-        file->data[n + exported_len++] = '\n';
-    file->len = n + exported_len;
-    file->data[file->len] = 0;
-    code_status = "Exported code.app.pkg to Desktop (guest RAM)";
+    if (!file) {
+        code_status = "Export failed: guest RAM file system is full"; return;
+    }
+    k_memcpy(file->data,pkg,bytes+1);
+    file->len=bytes;
+    code_status = "Created valid FAPP/1 code.app.pkg in guest Desktop";
 }
 static void code_input_key(i32 key)
 {

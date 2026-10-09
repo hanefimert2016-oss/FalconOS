@@ -348,6 +348,8 @@ const char *market_status(void);
 bool market_installed(i32 i);
 bool market_has_update(i32 i);
 i32 market_version_compare(const char *a, const char *b);
+bool market_version_valid(const char *s);
+bool codedium_build_pkg(const char *src,u32 length,char *out,u32 capacity,u32 *actual);
 const char *market_script(i32 i);
 void market_download(i32 i);
 bool market_line_allowed(const char *line, i32 size);
