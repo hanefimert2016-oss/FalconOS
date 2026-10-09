@@ -112,7 +112,8 @@ def main():
             off=len(debug.read_bytes())
             command(sock, "sendkey ret", 1.2)
             wait_for_marker(debug,b"zCn1",after=off,timeout=30) # Store ID=2
-            time.sleep(.8)
+            wait_for_marker(debug,b"gC",after=off,timeout=35) # actual presented Store frame
+            time.sleep(.5)
             after = screenshot(sock, last)
 
             # All these are actual native rendered windows, not Launchpad.
@@ -132,7 +133,9 @@ def main():
                 command(sock,"sendkey ret",1.0)
                 marker=("z"+chr(ord("A")+app_id)+"n1").encode("ascii")
                 wait_for_marker(debug,marker,after=off,timeout=35)
-                time.sleep(.9)
+                painted=("g"+chr(ord("A")+app_id)).encode("ascii")
+                wait_for_marker(debug,painted,after=off,timeout=35)
+                time.sleep(.45)
                 ppm=root/("FalconOS-Aura-"+name+".ppm")
                 shot=screenshot(sock,ppm)
                 if picture_difference(before,shot)<40:
@@ -147,7 +150,8 @@ def main():
             off=len(debug.read_bytes())
             command(sock,"sendkey ret",1.6)  # Files while Settings remains
             wait_for_marker(debug,b"zBn2",after=off,timeout=35)
-            command(sock,"info status",1.2)
+            wait_for_marker(debug,b"gB",after=off,timeout=35)
+            command(sock,"info status",.65)
             multi2=root/"FalconOS-Aura-MultiWindow-2.ppm"
             shot2=screenshot(sock,multi2)
             if picture_difference(shot,shot2)<40:
@@ -159,7 +163,8 @@ def main():
             off=len(debug.read_bytes())
             command(sock,"sendkey ret",1.6)  # Browser; 3 windows must remain
             wait_for_marker(debug,b"zOn3",after=off,timeout=35)
-            command(sock,"info status",1.2)
+            wait_for_marker(debug,b"gO",after=off,timeout=35)
+            command(sock,"info status",.65)
             multi3=root/"FalconOS-Aura-MultiWindow-3.ppm"
             shot3=screenshot(sock,multi3)
             if picture_difference(shot2,shot3)<40:
@@ -174,6 +179,8 @@ def main():
             off=len(debug.read_bytes())
             command(sock,"sendkey ret",.65)    # CodeDium
             wait_for_marker(debug,b"zSn4",after=off,timeout=35)
+            wait_for_marker(debug,b"gS",after=off,timeout=35)
+            time.sleep(.5)
             ppm4=root/"FalconOS-Aura-MultiWindow-4.ppm"
             screenshot(sock,ppm4)
             ppm_to_png(ppm4,root/"FalconOS-Aura-MultiWindow-4.png")
@@ -182,7 +189,7 @@ def main():
             ppm_to_png(ppm,root/"FalconOS-Aura-CodeDium.png")
             if picture_difference(before,screen)<40:
                 raise AssertionError("CodeDium did not render in actual guest")
-            command(sock,"sendkey f7",.5) # export reviewed FAPP/1 source
+            command(sock,"sendkey f7",1.5) # export reviewed FAPP/1 source
             ppm=root/"FalconOS-Aura-CodeDium-Export.ppm"
             screenshot(sock,ppm)
             ppm_to_png(ppm,root/"FalconOS-Aura-CodeDium-Export.png")
@@ -204,6 +211,9 @@ def main():
                 command(sock,"sendkey ret",.7)
                 marker=("z"+chr(ord("A")+app_id)).encode("ascii")
                 wait_for_marker(debug,marker,after=off,timeout=35)
+                painted=("g"+chr(ord("A")+app_id)).encode("ascii")
+                wait_for_marker(debug,painted,after=off,timeout=35)
+                time.sleep(.45)
                 ppm=root/("FalconOS-Aura-"+name+".ppm")
                 screenshot(sock,ppm)
                 ppm_to_png(ppm,root/("FalconOS-Aura-"+name+".png"))
@@ -215,6 +225,8 @@ def main():
             off=len(debug.read_bytes())
             command(sock,"sendkey ret",.8) # Clock at Favorites index 8
             wait_for_marker(debug,b"zIn4",after=off,timeout=35)
+            wait_for_marker(debug,b"gI",after=off,timeout=35)
+            time.sleep(.45)
             ppm=root/"FalconOS-Aura-Clock.ppm"
             screenshot(sock,ppm)
             ppm_to_png(ppm,root/"FalconOS-Aura-Clock.png")
