@@ -3154,6 +3154,9 @@ static void browser_page_from_http(void){
     k_strcpy(browser_status,"TLS+hostname verified - bounded HTML text preview (may be partial)");
 }
 static void browser_load(void){
+#ifdef FALCON_QEMU_BROWSER_TEST
+    outb(0xE9,'b'); /* user pressed Enter inside the real GUI */
+#endif
     browser_loaded=false;browser_result[0]=0;browser_text[0]=0;
     if(!net_present()){
         k_strcpy(browser_status,"No RTL8139 NIC. Set Virt-Manager network model to rtl8139.");
@@ -3217,6 +3220,9 @@ static void browser_load(void){
         }
     }
     browser_page_from_http();
+#ifdef FALCON_QEMU_BROWSER_TEST
+    outb(0xE9,browser_loaded?'Y':'N');
+#endif
     if(browser_loaded && browser_host_gateway)
         k_strcpy(browser_status,
             "HOST-verified HTTPS | local VM link plaintext | read-only");
