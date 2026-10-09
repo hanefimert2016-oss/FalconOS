@@ -221,7 +221,7 @@ ring3_syscall_int80:
     cmp rax, 2
     je .yield_ring3
     cmp rax, 1
-    je .leave_ring3         ; syscall 2 (exit)
+    je ring3_leave_kernel         ; syscall 2 (exit)
     mov [rsp+112], rax
     POPA64
     iretq
@@ -238,7 +238,7 @@ ring3_syscall_int80:
     cld
     rep movsq
     mov qword [rel ring3_saved_user_frame + 112], 0
-    jmp .leave_ring3
+    jmp ring3_leave_kernel
 
 global ring3_resume
 ring3_resume:
@@ -264,7 +264,7 @@ ring3_resume:
     mov gs, ax
     POPA64
     iretq
-.leave_ring3:
+ring3_leave_kernel:
     mov rsp, [rel saved_ring_rsp]
     mov ax, 0x10
     mov ds, ax
