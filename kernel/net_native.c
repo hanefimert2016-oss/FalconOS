@@ -8,6 +8,7 @@ extern bool rtl8139_ready(void);
 extern const u8 *rtl8139_mac(void);
 extern bool rtl8139_send(const u8 *,u32);
 extern void rtl8139_poll(void (*)(const u8 *,u32));
+extern void native_tcp_receive(const u8 *ip,u32 total);
 
 static u8 guest_ip[4]={10,0,2,15};
 static u8 guest_mask[4]={255,255,255,0};
@@ -90,6 +91,10 @@ static void native_receive(const u8 *frame,u32 n){
     if(!equal(ip+16,guest_ip,4))return;
     /* No fragmented IP reassembly in this first native-stack milestone. */
     if(rd16(ip+6)&0x3FFFu)return;
+    if(ip[9]==6 && total>=ihl+20) {
+        native_tcp_receive(ip,total);
+        return;
+    }
     if(ip[9]==17 && total>=ihl+8 && dns_waiting &&
        equal(ip+12,dns_ip,4)){
         const u8 *udp=ip+ihl;
@@ -249,6 +254,31 @@ static bool udp_send(const u8 remote[4],u16 source_port,u16 dest_port,
     if(bytes)k_memcpy(udp+8,payload,bytes);
     return rtl8139_send(frame,frame_size);
 }
+
+/* Native IPv4 output for TCP sockets; shares the verified RTL8139 + ARP
+ * transport with UDP/ICMP. No fragmentation, maximum TCP payload 1460. */
+bool native_net_ipv4_send(const u8 remote[4],u8 protocol,
+                          const u8 *payload,u16 bytes){
+    if(!remote||!payload||!bytes||bytes>1460 || !rtl8139_ready() ||
+       !neighbor(remote))return false;
+    static u8 ethernet_frame[14+20+1460];
+    u32 n=14u+20u+(u32)bytes;
+    k_memset(ethernet_frame,0,n);
+    ethernet(ethernet_frame,peer_mac,0x0800);
+    u8 *ip=ethernet_frame+14;
+    ip[0]=0x45;wr16(ip+2,(u16)(20u+bytes));
+    wr16(ip+4,(u16)(rdtsc()&65535u));
+    wr16(ip+6,0x4000);ip[8]=64;ip[9]=protocol;
+    k_memcpy(ip+12,guest_ip,4);
+    k_memcpy(ip+16,remote,4);
+    wr16(ip+10,checksum(ip,20));
+    k_memcpy(ip+20,payload,bytes);
+    return rtl8139_send(ethernet_frame,n);
+}
+void native_net_local_ipv4(u8 out[4]){
+    if(out)k_memcpy(out,guest_ip,4);
+}
+
 bool native_net_dns_query(const char *hostname,u8 address[4]){
     if(!hostname || !address || !rtl8139_ready())return false;
     static u8 request[512];
