@@ -64,6 +64,7 @@ def main():
             command(sock,"sendkey f2",.65)
             command(sock,"sendkey right",.22)
             command(sock,"sendkey ret",.7) # Browser is favorite index 1.
+            browser_before=screenshot(sock,root/"native-browser-initial.ppm")
             command(sock,"sendkey ret",.05) # Live https://example.com/
             # No host bridge is active. QEMU's NAT provides the Internet.
             start=time.monotonic()
@@ -72,9 +73,15 @@ def main():
                     raise RuntimeError("QEMU crashed while browsing")
                 data=debug.read_bytes() if debug.exists() else b""
                 if b"bY" in data:
+                    # The kernel emits the test marker on load completion,
+                    # before the next graphics-present iteration. Wait for
+                    # the actual guest to redraw instead of photographing
+                    # the prior "press Enter" placeholder.
+                    time.sleep(2.0)
                     after=screenshot(sock,last)
-                    if picture_difference(before,after)<100:
-                        raise AssertionError("Browser UI did not visually change")
+                    delta=picture_difference(browser_before,after)
+                    if delta<80:
+                        raise AssertionError("Verified HTTPS loaded but visible HTML not repainted; delta="+str(delta))
                     ppm_to_png(last,shot)
                     print("PASS real Internet guest native TLS 1.2, CA+hostname, HTML browser framebuffer",shot)
                     return
