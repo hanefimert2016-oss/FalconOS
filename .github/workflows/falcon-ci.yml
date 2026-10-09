@@ -27,9 +27,9 @@ jobs:
           ls -lh build/falcon.elf build/FalconOS.iso
       - name: Inspect boot files inside ISO
         run: |
-          xorriso -indev build/FalconOS.iso -find /boot -type f -print | tee build/iso-contents.txt
-          grep -F '/boot/falcon.elf' build/iso-contents.txt
-          grep -F '/boot/grub/grub.cfg' build/iso-contents.txt
+          xorriso -indev build/FalconOS.iso -ls /boot -ls /boot/grub | tee build/iso-contents.txt
+          grep -F 'falcon.elf' build/iso-contents.txt
+          grep -F 'grub.cfg' build/iso-contents.txt
       - name: Export bootable ISO
         uses: actions/upload-artifact@v4
         with:
