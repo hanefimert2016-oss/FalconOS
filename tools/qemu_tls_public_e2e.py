@@ -2,7 +2,7 @@
 """Outbound real internet HTTPS from FalconOS guest, not host-side proxy.
 
 Pass only after QEMU RTL8139 -> DHCP/IP -> DNS -> TCP -> BearSSL TLS 1.2
-CA/hostname validation -> authenticated HTTP 200 with Example Domain text.
+CA/hostname validation -> authenticated HTTP 200 snippet with Example Domain text.\nStrict package/file HTTPS additionally requires complete HTTP framing.
 """
 from pathlib import Path
 import subprocess,time,argparse
