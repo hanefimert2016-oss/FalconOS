@@ -14,10 +14,13 @@ def main():
     log=Path("build/native-public-https.log")
     log.parent.mkdir(exist_ok=True)
     if log.exists():log.unlink()
+    pcap=Path("build/native-public-https.pcap")
+    if pcap.exists():pcap.unlink()
     cmd=["qemu-system-x86_64","-accel","tcg","-cpu","max","-m","1024",
          "-smp","1","-cdrom",args.iso,
          "-display","none","-vga","std",
          "-netdev","user,id=net0","-device","rtl8139,netdev=net0",
+         "-object",f"filter-dump,id=publicwatch,netdev=net0,file={pcap}",
          "-serial","none","-monitor","none",
          "-debugcon",f"file:{log}","-global","isa-debugcon.iobase=0xe9",
          "-no-reboot"]
@@ -28,10 +31,10 @@ def main():
             if q.poll() is not None:
                 raise RuntimeError("Guest exited/crashed before public HTTPS")
             output=log.read_bytes() if log.exists() else b""
-            if b"pY" in output:
+            if b"PY" in output:
                 print("PASS real public example.com certificate-validated native HTTPS inside QEMU")
                 return
-            if b"pN" in output:
+            if b"PN" in output:
                 raise AssertionError("Real public HTTPS request failed after DNS/TCP/TLS: "+repr(output))
             time.sleep(.3)
         raise TimeoutError("Guest public native HTTPS timeout; debug="+repr(log.read_bytes() if log.exists() else b""))
