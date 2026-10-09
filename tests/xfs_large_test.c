@@ -54,7 +54,7 @@ int main(void){
     CHECK(xfs_read("big_file.bin",back,sizeof back)==32768,16);
     CHECK(back[0]==0xA5&&back[32767]==0xA5,17);
     /* Damage most recent generation; fallback to original. */
-    disk[(4096u+10u)*512u+512u]^=0x55u;
+    disk[(4096u+66u+10u)*512u+512u]^=0x55u;
     CHECK(xfs_mount(),18);
     CHECK(xfs_read("big_file.bin",back,sizeof back)==32768,19);
     CHECK(back[0]==0 && back[1]==37,20);
