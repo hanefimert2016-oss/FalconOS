@@ -22,8 +22,32 @@ static bool shfs_starts_with(const char *s, const char *pref)
     return true;
 }
 
+/* Refuse overlong paths BEFORE any k_strcpy into fixed SHFS_PATH buffers. */
+static bool shfs_path_ok(const char *s)
+{
+    if (!s || s[0] != '/') return false;
+    i32 n = 0, segment_start = 1;
+    while (s[n]) {
+        if (n >= SHFS_PATH - 1) return false;
+        if (s[n] == '/' && n > 0) {
+            if (n == segment_start || (n == segment_start + 1 && s[segment_start] == '.') ||
+                (n == segment_start + 2 && s[segment_start] == '.' &&
+                 s[segment_start + 1] == '.')) return false;
+            segment_start = n + 1;
+        }
+        n++;
+    }
+    if (n == 0 || (n > 1 && s[n-1] == '/')) return false;
+    if ((n == segment_start + 1 && s[segment_start] == '.') ||
+        (n == segment_start + 2 && s[segment_start] == '.' &&
+         s[segment_start + 1] == '.')) return false;
+    return true;
+}
+static bool g_shfs_initialized = false;
 void shfs_init(void)
 {
+    if (g_shfs_initialized) return;
+    g_shfs_initialized = true;
     for (i32 i = 0; i < SHFS_MAX_ENTRIES; i++) {
         G[i].used   = false;
         G[i].is_dir = false;
@@ -68,25 +92,25 @@ bool shfs_abs_from(const char *cwd, const char *rel, char *out, i32 cap)
         i32 i = 0;
         while (rel[i] && i < cap - 1) { out[i] = rel[i]; i++; }
         out[i] = 0;
-        return true;
+        return !rel[i] && shfs_path_ok(out);
     }
     if (k_strcmp(rel, ".") == 0) {
         k_strcpy(out, cwd);
-        return (i32)k_strlen(out) < cap;
+        return (i32)k_strlen(out) < cap && shfs_path_ok(out);
     }
     if (k_strcmp(rel, "..") == 0) {
         k_strcpy(out, cwd);
         i32 n = shfs_path_len(out);
         while (n > 1 && out[n - 1] != '/') n--;
         if (n > 1) { out[n - 1] = 0; } else { out[1] = 0; }
-        return true;
+        return shfs_path_ok(out);
     }
     i32 cn = shfs_path_len(cwd);
     if (cn + 1 + shfs_path_len(rel) >= cap) return false;
     k_strcpy(out, cwd);
     if (out[cn - 1] != '/') { out[cn] = '/'; out[cn + 1] = 0; cn++; }
     k_strcat(out, rel);
-    return true;
+    return shfs_path_ok(out);
 }
 
 shfs_ent_t *shfs_lookup(const char *abs_path)
@@ -115,6 +139,7 @@ static shfs_ent_t *alloc_slot(void)
 bool shfs_mkdir_abs(const char *abs_path)
 {
     if (!abs_path || !abs_path[0]) return false;
+    if (!shfs_path_ok(abs_path)) return false;
     if (shfs_lookup(abs_path)) return true;
     shfs_ent_t *e = alloc_slot();
     if (!e) return false;
@@ -128,6 +153,7 @@ bool shfs_mkdir_abs(const char *abs_path)
 
 bool shfs_touch_abs(const char *abs_path)
 {
+    if (!shfs_path_ok(abs_path)) return false;
     shfs_ent_t *e = shfs_lookup(abs_path);
     if (e) {
         if (e->is_dir) return false;
@@ -145,6 +171,7 @@ bool shfs_touch_abs(const char *abs_path)
 
 shfs_ent_t *shfs_open_w_abs(const char *abs_path, bool append)
 {
+    if (!shfs_path_ok(abs_path)) return NULL;
     shfs_ent_t *f = shfs_lookup(abs_path);
     if (!f) {
         f = alloc_slot();
@@ -189,8 +216,20 @@ bool shfs_rm_abs(const char *abs_path)
 
 bool shfs_rename_abs(const char *from_abs, const char *to_abs)
 {
+    if (!shfs_path_ok(from_abs) || !shfs_path_ok(to_abs)) return false;
     shfs_ent_t *e = shfs_lookup(from_abs);
     if (!e || shfs_lookup(to_abs)) return false;
+    /* Check every descendant's new path before modifying any entry. */
+    if (e->is_dir) {
+        i32 oldn = shfs_path_len(from_abs);
+        i32 newn = shfs_path_len(to_abs);
+        for (i32 i = 0; i < SHFS_MAX_ENTRIES; i++) {
+            if (!G[i].used || &G[i] == e ||
+                !shfs_starts_with(G[i].path, from_abs) ||
+                G[i].path[oldn] != '/') continue;
+            if (newn + shfs_path_len(G[i].path + oldn) >= SHFS_PATH) return false;
+        }
+    }
     k_strcpy(e->path, to_abs);
     /* rename children prefixes if directory */
     if (e->is_dir) {

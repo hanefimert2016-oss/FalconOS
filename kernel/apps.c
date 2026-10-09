@@ -26,6 +26,8 @@ static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
 static i32 minimized_app = -1; /* last app sent to dock by yellow light */
 static void falco_set_query(const char *q);
+static void market_launch(i32 i);
+static i32 builtin_app_count(void);
 
 /* ----- window manager state (FalconOS 1) ---------------------------------
  * The dispatcher used to centre every app window on every frame. With
@@ -45,7 +47,20 @@ static bool wm_resizing = false;
 static i32  wm_resize_grab_x = 0, wm_resize_grab_y = 0;
 static i32  wm_resize_start_w = 0, wm_resize_start_h = 0;
 
-void apps_open(i32 i)  { active_app = i; minimized_app = -1; open_at_ms = pit_ms(); }
+void apps_open(i32 i)
+{
+    if (i < 0 || i >= apps_count()) return;
+    if (i >= builtin_app_count()) {
+        i32 index = i - builtin_app_count();
+        if (market_installed(index)) market_launch(index);
+        else { active_app = 2; market_download(index); }
+        return;
+    }
+    active_app = i;
+    if (i == 2) outb(0xE9, 'S');  /* QEMU trace: Store actually opened */
+    minimized_app = -1;
+    open_at_ms = pit_ms();
+}
 void apps_close(void)  { active_app = -1; wm_max = false;
                           wm_dragging = false; wm_resizing = false; }
 i32  apps_active(void) { return active_app; }
@@ -291,25 +306,44 @@ static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 }
 
 /* --- Files --------------------------------------------------------------- */
-static const char *FAKE_FILES[] = {
-    "README.md",       "boot/multiboot2.asm",  "kernel/main.c",
-    "kernel/gfx.c",    "kernel/personal.c",    "kernel/dev.c",
-    "kernel/idt.c",    "kernel/apps.c",        "kernel/launchpad.c",
-    "kernel/repl.c",   "Makefile",             "linker.ld",
-};
+/* Files: actual RAM-backed SHFS listing, not a mocked source tree. */
+static i32 files_scroll = 0;
+static void files_input_key(i32 key)
+{
+    if (key == KEY_UP && files_scroll > 0) files_scroll--;
+    if (key == KEY_DOWN && files_scroll < SHFS_MAX_ENTRIES-1) files_scroll++;
+}
+typedef struct { i32 x, y, w, limit, row, seen; } file_draw_ctx_t;
+static void files_row(const char *path, bool is_dir, u32 len, void *ud)
+{
+    file_draw_ctx_t *c = (file_draw_ctx_t *)ud;
+    if (c->seen++ < files_scroll || c->row >= c->limit) return;
+    i32 y = c->y + c->row * 28;
+    gfx_round_rect_a(c->x, y, c->w, 25, 6,
+                     (c->row & 1) ? PAL_PANEL : PAL_PANEL_DEEP, 255);
+    gfx_text(c->x + 12, y + 5, is_dir ? "[D]" : "[F]", is_dir ? COL_OK : PAL_ACCENT);
+    gfx_text(c->x + 47, y + 5, path, PAL_TEXT);
+    if (!is_dir) {
+        char num[12];
+        k_itoa(len, num, 10);
+        gfx_text(c->x + c->w - 80, y + 5, num, PAL_TEXT_DIM);
+    }
+    c->row++;
+}
 static void render_files(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
-    (void)frame; (void)ww; (void)wh;
+    (void)frame;
+    shfs_init();
     section(wx, wy, T("Files", "Dosyalar"),
-            T("/ (sample tree)", "/ (örnek ağaç)"));
-    i32 n = (i32)(sizeof FAKE_FILES / sizeof *FAKE_FILES);
-    for (i32 i = 0; i < n; i++) {
-        i32 y = wy + 60 + i * 22;
-        if (i % 2 == 0)
-            gfx_round_rect_a(wx + 22, y - 2, ww - 44, 20, 6, PAL_PANEL_DEEP, 255);
-        gfx_circle(wx + 36, y + 8, 5, PAL_ACCENT);
-        gfx_text(wx + 50, y + 2, FAKE_FILES[i], PAL_TEXT);
-    }
+            T("Live guest RAM filesystem - arrows scroll", "Gercek RAM dosya sistemi - oklarla kaydir"));
+    file_draw_ctx_t ctx = {
+        wx + 22, wy + 58, ww - 44, (wh - 110) / 28, 0, 0
+    };
+    if (ctx.limit < 1) ctx.limit = 1;
+    shfs_foreach_path(files_row, &ctx);
+    if (ctx.seen == 0) gfx_text(wx + 36, wy + 74, "No files", PAL_TEXT_DIM);
+    gfx_text(wx + 24, wy + wh - 24,
+             "Desktop/project.fsh and downloaded apps appear here.", PAL_TEXT_FAINT);
 }
 
 /* --- Clock: analog dial -------------------------------------------------- */
@@ -3129,6 +3163,284 @@ static void render_heroic(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
              PAL_TEXT_FAINT);
 }
 
+
+/* ---- Marketplace: actual release catalogue + verified FAPP/1 script launch --- */
+static i32 market_cursor;
+static bool market_first_frame = true;
+static void market_launch(i32 i)
+{
+    const char *script = market_script(i);
+    if (!script) return;
+    outb(0xE9, 'R'); /* QEMU integration event: installed script launched */
+    term_init();
+    term_push("Marketplace: running verified FAPP/1 script");
+    while (*script) {
+        char line[184];
+        i32 n = 0;
+        while (script[n] && script[n] != '\n' && n < 182) n++;
+        if (script[n] && script[n] != '\n') {
+            term_push("Marketplace: invalid script line"); break;
+        }
+        for (i32 j = 0; j < n; j++) line[j] = script[j];
+        line[n] = 0;
+        if (n && line[0] != '#') {
+            if (!market_line_allowed(line, n)) {
+                term_push("Marketplace: unsafe command rejected");
+                break;
+            }
+            sh_run_line(line);
+        }
+        script += n;
+        if (*script == '\n') script++;
+    }
+    apps_open(5); /* real Terminal output, no arbitrary ELF execution */
+}
+static void market_input_key(i32 key)
+{
+    i32 n = market_count();
+    if (key == 'r' || key == 'R' || key == KEY_F5) {
+        market_refresh(); market_cursor = 0; return;
+    }
+    if (key == 'c' || key == 'C') {
+        apps_open(18); return; /* CodeDium Studio */
+    }
+    if ((key == 'd' || key == 'D') && n > 0) {
+        market_uninstall(market_cursor); return;
+    }
+    if ((key == 'u' || key == 'U') && n > 0) { market_download(market_cursor); return; }
+    if (key == KEY_UP && market_cursor > 0) market_cursor--;
+    if (key == KEY_DOWN && market_cursor < n-1) market_cursor++;
+    if (key == KEY_ENTER && n > 0) {
+        if (market_installed(market_cursor)) market_launch(market_cursor);
+        else market_download(market_cursor);
+    }
+}
+static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+{
+    if (market_first_frame) {
+        outb(0xE9, 'M');  /* QEMU trace: Store window really rendered */
+        market_first_frame = false;
+    }
+    (void)frame;
+    section(wx, wy, "FalconOS Marketplace", "GitHub Releases  |  .app.pkg  |  SHA-256");
+    gfx_text(wx + 24, wy + 42, "R: refresh  U: update  D: remove  Enter: get/run  C: CodeDium", PAL_TEXT_DIM);
+    gfx_text(wx + 24, wy + 63, market_status(), PAL_ACCENT);
+    i32 mx, my; bool held; mouse_get(&mx, &my, &held); (void)held;
+    bool clicked = mouse_peek_click();
+    if (clicked && mx >= wx + 24 && mx <= wx + ww - 24 &&
+        my >= wy + 36 && my <= wy + 56) {
+        market_refresh(); (void)mouse_consume_click(); clicked = false;
+    }
+    i32 n = market_count();
+    if (n == 0) {
+        gfx_round_rect_a(wx + 24, wy + 103, ww - 48, 90, 14, PAL_PANEL_DEEP, 255);
+        gfx_text(wx + 42, wy + 133, "No releases loaded. Run make market-bridge, press R.", PAL_TEXT);
+    }
+    i32 visible = (wh - 146) / 33;
+    if (visible < 1) visible = 1;
+    i32 first = market_cursor - visible / 2;
+    if (first < 0) first = 0;
+    if (first > n - visible) first = n - visible;
+    if (first < 0) first = 0;
+    for (i32 i = first; i < n && i < first + visible; i++) {
+        i32 y = wy + 102 + (i - first) * 33;
+        bool selected = i == market_cursor;
+        gfx_round_rect_a(wx + 24, y, ww - 48, 29, 8,
+                         selected ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
+        gfx_round_outline(wx + 24, y, ww - 48, 29, 8,
+                          selected ? PAL_ACCENT : PAL_HAIRLINE);
+        gfx_circle(wx + 40, y + 14, 6, selected ? PAL_ACCENT : COL_OK);
+        gfx_text(wx + 57, y + 6, market_name(i), PAL_TEXT);
+        gfx_text(wx + ww / 2, y + 6, market_version(i), PAL_TEXT_FAINT);
+        bool installed = market_installed(i);
+        bool outdated = installed && market_has_update(i);
+        gfx_text(wx + ww - 140, y + 6,
+                 outdated ? "UPDATE" : (installed ? "RUN" : "GET"),
+                 outdated ? COL_WARN : (installed ? COL_OK : PAL_ACCENT));
+        if (clicked && mx >= wx + 24 && mx < wx + ww - 24 &&
+            my >= y && my <= y + 29) {
+            market_cursor = i;
+            if (market_has_update(i)) market_download(i);
+            else if (market_installed(i)) market_launch(i);
+            else market_download(i);
+            (void)mouse_consume_click(); clicked = false;
+        }
+    }
+    gfx_text(wx + 24, wy + wh - 27,
+             "FAPP/1 script packages | Host-assisted HTTPS | Guest files in RAM", PAL_TEXT_FAINT);
+}
+
+/* ---- CodeDium: native editable FAPP/1 source, file save and script preview --- */
+#define CODE_CAP 4096
+static char code_text[CODE_CAP];
+static i32 code_len, code_cursor;
+static bool code_ready;
+static const char *code_status = "F5 Save  |  F6 Run  |  F7 Export .app.pkg";
+static void code_init(void)
+{
+    if (code_ready) return;
+    code_ready = true;
+    shfs_init();
+    shfs_ent_t *file = shfs_lookup("/home/falcon/Desktop/project.fsh");
+    const char *sample = "# app-id: codedium-demo\n# app-name: CodeDium Demo\n# app-version: 1.0.0\n# app-summary: Built inside FalconOS\nclear\necho Hello from CodeDium\nuname\n";
+    const char *source = (file && !file->is_dir) ? file->data : sample;
+    i32 disklen = codedium_project_load(code_text, CODE_CAP);
+    if (disklen > 0) source = code_text;
+    i32 n = k_strlen(source);
+    if (n >= CODE_CAP) n = CODE_CAP - 1;
+    k_memcpy(code_text, source, n);
+    code_text[n] = 0;
+    code_cursor = code_len = n;
+}
+static void code_save(void)
+{
+    shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/project.fsh", false);
+    if (!file) { code_status = "Save error: RAM file system is full"; return; }
+    k_memcpy(file->data, code_text, code_len + 1);
+    file->len = code_len;
+    code_status = codedium_project_save(code_text, code_len)
+        ? "Saved project to RAM and safe FalconOS disk"
+        : "Saved in RAM only (no safe disk selected)";
+}
+static void code_run(void)
+{
+    term_init();
+    for (i32 at = 0; at < code_len;) {
+        char line[184]; i32 n = 0;
+        while (at + n < code_len && code_text[at + n] != '\n' && n < 182) n++;
+        if (at + n < code_len && code_text[at + n] != '\n') {
+            code_status = "Script line exceeds 182 chars"; return;
+        }
+        k_memcpy(line, code_text + at, n); line[n] = 0;
+        if (n && line[0] != '#') {
+            if (!market_line_allowed(line, n)) {
+                code_status = "Unsafe command denied (FAPP/1 allowlist)"; return;
+            }
+            sh_run_line(line);
+        }
+        at += n;
+        if (at < code_len && code_text[at] == '\n') at++;
+    }
+    code_status = "Executed in built-in Terminal";
+    apps_open(5);
+}
+static void code_export(void)
+{
+    static char pkg[SHFS_FBYTES];
+    u32 bytes=0;
+    if (!codedium_build_pkg(code_text,(u32)code_len,pkg,
+                            sizeof pkg,&bytes)) {
+        code_status = "Export failed: check # app-* metadata, commands or 4 KiB limit";
+        return;
+    }
+    shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/code.app.pkg", false);
+    if (!file) {
+        code_status = "Export failed: guest RAM file system is full"; return;
+    }
+    k_memcpy(file->data,pkg,bytes+1);
+    file->len=bytes;
+    code_status = "Created valid FAPP/1 code.app.pkg in guest Desktop";
+}
+static void code_input_key(i32 key)
+{
+    code_init();
+    if (key == KEY_F5) { code_save(); return; }
+    if (key == KEY_F6) { code_run(); return; }
+    if (key == KEY_F7) { code_export(); return; }
+    if ((kbd_mod_state() & KMOD_CTRL) && (key == 's' || key == 'S')) {
+        code_save(); return;
+    }
+    if (key == KEY_UP || key == KEY_DOWN) {
+        i32 start = code_cursor;
+        while (start > 0 && code_text[start - 1] != '\n') start--;
+        i32 column = code_cursor - start;
+        if (key == KEY_UP && start > 0) {
+            i32 previous_end = start - 1;
+            i32 previous_start = previous_end;
+            while (previous_start > 0 && code_text[previous_start - 1] != '\n')
+                previous_start--;
+            i32 width = previous_end - previous_start;
+            code_cursor = previous_start + (column < width ? column : width);
+        } else if (key == KEY_DOWN) {
+            i32 end = code_cursor;
+            while (end < code_len && code_text[end] != '\n') end++;
+            if (end < code_len) {
+                i32 next_start = end + 1, next_end = next_start;
+                while (next_end < code_len && code_text[next_end] != '\n') next_end++;
+                i32 width = next_end - next_start;
+                code_cursor = next_start + (column < width ? column : width);
+            }
+        }
+        return;
+    }
+    if (key == KEY_LEFT && code_cursor > 0) { code_cursor--; return; }
+    if (key == KEY_RIGHT && code_cursor < code_len) { code_cursor++; return; }
+    if (key == KEY_HOME) {
+        while (code_cursor > 0 && code_text[code_cursor - 1] != '\n') code_cursor--;
+        return;
+    }
+    if (key == KEY_END) {
+        while (code_cursor < code_len && code_text[code_cursor] != '\n') code_cursor++;
+        return;
+    }
+    if (key == KEY_BACKSPACE && code_cursor > 0) {
+        for (i32 i = code_cursor - 1; i < code_len; i++) code_text[i] = code_text[i+1];
+        code_len--; code_cursor--; return;
+    }
+    if (key == KEY_DEL && code_cursor < code_len) {
+        for (i32 i = code_cursor; i < code_len; i++) code_text[i] = code_text[i+1];
+        code_len--; return;
+    }
+    char c = 0;
+    if (key == KEY_ENTER) c = '\n';
+    else if (key == KEY_TAB) c = ' ';
+    else if (key >= 32 && key < 127) c = (char)key;
+    if (c && code_len + 1 < CODE_CAP) {
+        for (i32 i = code_len; i >= code_cursor; i--) code_text[i+1] = code_text[i];
+        code_text[code_cursor++] = c; code_len++;
+    }
+}
+static void render_codedium(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+{
+    (void)frame;
+    code_init();
+    section(wx, wy, "CodeDium Studio", "Native FAPP/1 script editor, protected command execution");
+    gfx_round_rect(wx + 18, wy + 45, ww - 36, wh - 92, 10, 0x101A2C);
+    gfx_rect(wx + 20, wy + 46, 36, wh - 95, 0x1B2942);
+    i32 line = 0, col = 0, cursor_line = 0, cursor_col = 0;
+    for (i32 j = 0; j < code_cursor; j++) {
+        if (code_text[j] == '\n') { cursor_line++; cursor_col = 0; }
+        else cursor_col++;
+    }
+    /* Keep the cursor in view: render a vertical window of source lines. */
+    i32 visible = (wh - 116) / 19;
+    if (visible < 1) visible = 1;
+    i32 first = cursor_line >= visible ? cursor_line - visible + 1 : 0;
+    char buf[115];
+    i32 bi = 0;
+    for (i32 pos = 0; pos <= code_len; pos++) {
+        char ch = code_text[pos];
+        i32 max_chars = (ww - 102) / 8;
+        if (max_chars >= (i32)sizeof buf) max_chars = (i32)sizeof buf - 1;
+        if (ch != '\n' && ch != 0 && bi < max_chars) {
+            buf[bi++] = ch; continue;
+        }
+        buf[bi] = 0;
+        if (line >= first && line < first + visible) {
+            i32 y = wy + 54 + (line - first) * 19;
+            char num[12]; k_itoa(line + 1, num, 10);
+            gfx_text(wx + 27, y, num, PAL_TEXT_FAINT);
+            gfx_text(wx + 66, y, buf, buf[0] == '#' ? 0x78B69A : 0xDDE7FF);
+            if (line == cursor_line) {
+                i32 x = wx + 66 + cursor_col * 8;
+                if (x < wx + ww - 27) gfx_rect(x, y + 15, 8, 2, PAL_ACCENT);
+            }
+        }
+        bi = 0; line++;
+    }
+    gfx_text(wx + 22, wy + wh - 37, code_status, PAL_TEXT_DIM);
+}
+
 /* ===== app table & dispatch ============================================= */
 typedef void (*app_render_fn)(i32 x, i32 y, i32 w, i32 h, u32 f);
 typedef void (*app_input_fn)(i32 key);
@@ -3144,8 +3456,8 @@ typedef struct {
 
 static app_def_t APPS[] = {
     { "Home",       "quick links",         0x3070FF, render_home,     NULL,             icon_home     },
-    { "Files",      "in-memory tree",      0xF59F1A, render_files,    NULL,             icon_files    },
-    { "Store",      "prg packages",        0x2BB673, render_store,    store_input_key,  icon_store    },
+    { "Files",      "live guest RAM files", 0xF59F1A, render_files,    files_input_key,  icon_files    },
+    { "Store",      "GitHub Releases apps",  0x2BB673, render_market,   market_input_key, icon_store    },
     { "Settings",   "system + theme",      0x6E7884, render_settings, set_input_key,    icon_settings },
     { "Sistem Güncellemeleri", "prg + FalconFS özeti", 0x05B897, render_updates,
       updates_input_key, icon_updates },
@@ -3162,15 +3474,25 @@ static app_def_t APPS[] = {
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
+    { "CodeDium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
 };
 
-i32 apps_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
-const char *apps_name(i32 i)     { return APPS[i].name; }
-const char *apps_subtitle(i32 i) { return APPS[i].subtitle; }
+static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
+i32 apps_count(void) { return builtin_app_count() + market_count(); }
+const char *apps_name(i32 i) {
+    if (i < 0 || i >= apps_count()) return "?";
+    return i < builtin_app_count() ? APPS[i].name : market_name(i - builtin_app_count());
+}
+const char *apps_subtitle(i32 i) {
+    if (i < 0 || i >= apps_count()) return "";
+    return i < builtin_app_count() ? APPS[i].subtitle :
+        (market_installed(i - builtin_app_count()) ? "Downloaded FAPP app" : "Download from Store");
+}
 
 const char *apps_display_name(i32 i)
 {
     if (i < 0 || i >= apps_count()) return "?";
+    if (i >= builtin_app_count()) return market_name(i - builtin_app_count());
     if (SET.lang != LANG_TR)
         return APPS[i].name;
     switch (i) {
@@ -3199,11 +3521,14 @@ const char *apps_display_name(i32 i)
 const char *apps_display_subtitle(i32 i)
 {
     if (i < 0 || i >= apps_count()) return "";
+    if (i >= builtin_app_count())
+        return market_installed(i - builtin_app_count())
+            ? T("Installed FAPP/1", "Yuklu FAPP/1") : T("Get app from Store", "Magazadan indir");
     if (SET.lang != LANG_TR)
         return APPS[i].subtitle;
     switch (i) {
         case 0:  return "Hızlı bağlantılar";
-        case 1:  return "Örnek dosya listesi";
+        case 1:  return "Gerçek RAM dosyaları";
         case 2:  return "prg paket merkezi";
         case 3:  return "sistem + tema";
         case 4:  return "prg + FalconFS özeti";
@@ -3224,10 +3549,14 @@ const char *apps_display_subtitle(i32 i)
     }
 }
 
-u32         apps_tint(i32 i)     { return APPS[i].tint; }
-
+u32 apps_tint(i32 i) {
+    if (i < 0 || i >= apps_count()) return 0x2BB673;
+    return i < builtin_app_count() ? APPS[i].tint : 0x2BB673;
+}
 void apps_draw_icon(i32 i, i32 cx, i32 cy)
 {
+    if (i < 0 || i >= apps_count()) return;
+    if (i >= builtin_app_count()) { icon_term(cx, cy); return; }
     if (APPS[i].draw_icon) APPS[i].draw_icon(cx, cy);
 }
 

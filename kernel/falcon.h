@@ -337,6 +337,23 @@ void mode_personal_input(i32 key);
 void mode_developer_render(u32 frame);
 void mode_developer_input(i32 key);
 
+/* GitHub Releases FAPP/1 Marketplace over host-assisted COM1 (QEMU). */
+void market_init(void);
+void market_poll(void);
+void market_refresh(void);
+i32 market_count(void);
+const char *market_name(i32 i);
+const char *market_version(i32 i);
+const char *market_status(void);
+bool market_installed(i32 i);
+bool market_has_update(i32 i);
+i32 market_version_compare(const char *a, const char *b);
+bool market_version_valid(const char *s);
+bool codedium_build_pkg(const char *src,u32 length,char *out,u32 capacity,u32 *actual);
+const char *market_script(i32 i);
+void market_download(i32 i);
+bool market_line_allowed(const char *line, i32 size);
+
 /* ---- application framework (Personal kernel) ------------------------------ */
 i32          apps_count(void);
 const char  *apps_name(i32 i);
@@ -531,11 +548,20 @@ void hex_encode(const u8 *in, u32 n, char *out);   /* out >= n*2+1 chars   */
 /* ---- disk persistence: FalconFS superblock (kernel/diskdb.c) ------------- */
 #define FALCONFS_MAGIC      0x46414C43   /* 'FALC' */
 #define FALCONFS_VERSION    3            /* FalconOS 1.1: prg install state  */
-#define FALCONFS_SECTOR     0            /* LBA0 of master ATA device      */
+#define FALCONFS_PARTITION_TYPE 0xFA     /* dedicated MBR partition ONLY   */
 
-void diskdb_load(void);          /* called from settings_init()             */
-bool diskdb_save(void);          /* writes SET into LBA0                    */
-bool diskdb_present(void);       /* true if last load found a magic block   */
+void diskdb_load(void);          /* searches only valid FalconOS partitions */
+bool diskdb_save(void);          /* refuses to write unpartitioned disks    */
+bool diskdb_present(void);       /* true if valid saved settings were read  */
+bool diskdb_target_available(i32 disk); /* true for a safe MBR target */
+bool diskdb_store_io(u32 rel_sector, u8 *buffer, u32 sectors, bool write);
+/* App payload slots, reserved after the settings superblock. */
+void market_disk_restore(void);
+bool market_disk_save(const char *id, const char *pkg, u32 length);
+bool market_disk_delete(const char *id);
+bool codedium_project_save(const char *source, u32 size);
+i32 codedium_project_load(char *dest, u32 capacity);
+void market_uninstall(i32 index);
 
 /* ---- ATA PIO (linux/ata_pio.c) ------------------------------------------- */
 void ata_init(void);

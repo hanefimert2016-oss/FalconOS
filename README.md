@@ -18,6 +18,16 @@
       ~~~~~~~~~~~
 ```
 
+## Marketplace + CodeDium (experimental)
+The native Store now lists actual GitHub Releases FAPP/1 packages, verifies
+SHA-256 and launches allowlisted commands through Terminal. Run `make run-market`
+on Linux to boot QEMU with a host HTTPS-to-COM1 bridge (native TCP/TLS is
+unfinished). Packages use the dedicated FalconOS partition for a persistent
+48-slot application cache when you explicitly select a safe disk.
+CodeDium is accessible by pressing C inside Store, with F5 save, F6 run,
+F7 export. CodeDium source files persist on explicitly selected safe partitions. The GUI Files app now lists real RAM files, not a demo tree.
+See `docs/MARKETPLACE.md` and `docs/FALCONOS-V2-STATUS.md` for limits and milestones.
+
 ## What is it?
 
 FalconOS is a self-hosted, ~84 kB freestanding **64-bit** kernel that
@@ -284,20 +294,19 @@ make run                  # SDL window — pick resolution at the GRUB menu
 make run-headless         # no window — useful for screenshots / CI
 make run-fb               # boot the ELF directly via -kernel (faster iter)
 
-# ---- persistent disk: user accounts + settings survive reboots -----------
-# `make run-disk` creates a 4 GiB raw IDE drive at build/falcon.img on the
-# first run, then attaches it as the primary master. The kernel writes the
-# whole user database (incl. PBKDF2 hashes) to LBA0–3 on every change.
-make run-disk             # SDL window  + persistent disk
-make run-disk-headless    # no window   + persistent disk
-make wipe-disk            # delete build/falcon.img → installer next time
+# ---- safe persistent disk (MBR type FA) --------------------------------
+# make run-disk creates a new sparse 4 GiB raw test image, not your host SSD.
+# Legacy build/falcon-safe.raw is untouched; see docs/SAFE-DISK.md.
+make run-disk             # persistent dedicated QEMU disk
+make run-disk-headless    # headless persistent QEMU disk
+make wipe-disk            # deletes ONLY build/falcon-safe.raw
 
 # resource tuning (defaults are already high: RAM=12288, CPUS=6, VRAM=256)
 make run RAM=16384 CPUS=8 VRAM=512
 
 # ---- manually attach a disk image to a one-off run -----------------------
 qemu-system-x86_64 -cdrom build/FalconOS.iso -m 12288M -smp 6 \
-    -drive file=build/falcon.img,format=raw,if=ide,index=0 \
+    -drive file=build/falcon-safe.raw,format=raw,if=ide,index=0 \
     -no-reboot -no-shutdown -display sdl -vga std -global VGA.vgamem_mb=256
 ```
 
@@ -314,7 +323,7 @@ qemu-system-x86_64 -cdrom build/FalconOS.iso -m 12288M -smp 6 \
    6. User password (24 chars max — type → Enter; PBKDF2 hashed)
    7. *"Add another user?"* — Yes opens steps 5–6 again, No commits
       `SET.installed = true` and writes the whole settings + user
-      table to LBA0 via `diskdb_save()`.
+      table inside the dedicated partition via `diskdb_save()`.
 3. **Lock screen** — focused on the system-default user (the first
    one created); ←/→ to switch user, type the password, Enter to
    unlock. The desktop shell starts when `users_verify()` succeeds.
@@ -483,7 +492,7 @@ kernel/
   users.c            multi-user database (≤ 8 accounts, default user
                      promotion, constant-time hash compare)
   diskdb.c           FalconFS superblock + Fletcher-16 checksum
-                     persisting SET to LBA0–3 via libata-style PIO
+                     persisting SET inside a dedicated partition via libata-style PIO
   installer.c        first-boot wizard (lang/theme/accent/kbd/users)
   lockscreen.c       multi-user picker + PBKDF2 verify + shake-on-error
   widgets.c          6-card desktop widget grid

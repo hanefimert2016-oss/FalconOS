@@ -150,6 +150,11 @@ static void draw_user_strip(i32 cx, i32 cy, i32 selected)
 
 void lockscreen_render(u32 frame)
 {
+    static bool first_rendered = false;
+    if (!first_rendered) {
+        outb(0xE9, 'W'); /* QEMU: lock screen reached */
+        first_rendered = true;
+    }
     ensure_cursor_valid();
 
     gfx_gradient_v(PAL_BG_TOP, PAL_BG_HINT);

@@ -38,7 +38,6 @@ void launchpad_close(void)
 static void clamp_cursor(void)
 {
     i32 n = apps_count();
-    if (n > LP_MAX) n = LP_MAX;
     if (g_cursor < 0)      g_cursor = 0;
     if (g_cursor > n - 1)  g_cursor = n - 1;
 }
@@ -51,6 +50,8 @@ void launchpad_input(i32 key)
     if (key == KEY_RIGHT) g_cursor++;
     if (key == KEY_UP)    g_cursor -= LP_COLS;
     if (key == KEY_DOWN)  g_cursor += LP_COLS;
+    if (key == KEY_PGDN) g_cursor += LP_MAX;
+    if (key == KEY_PGUP) g_cursor -= LP_MAX;
     clamp_cursor();
 
     /* `p` / `P`  — toggle desktop pin for the highlighted app           */
@@ -97,7 +98,11 @@ void launchpad_render(u32 frame)
     i32 scale = 85 + (i32)(dt * 15 / 200);          /* percent */
 
     i32 n = apps_count();
-    if (n > LP_MAX) n = LP_MAX;
+    clamp_cursor();
+    i32 page = g_cursor / LP_MAX;
+    i32 first = page * LP_MAX;
+    i32 end = first + LP_MAX;
+    if (end > n) end = n;
 
     /* tile sizing (relative to FB so 1080p / 2K look good) */
     i32 tile_base = (i32)FB.height / 7;             /* ~155 at 1080p */
@@ -111,6 +116,14 @@ void launchpad_render(u32 frame)
 
     /* title */
     gfx_text_centered((i32)FB.width / 2, grid_y - 60, "Launchpad", PAL_TEXT);
+    char pages_label[64], a[12], b[12];
+    k_strcpy(pages_label, "Page ");
+    k_itoa((u32)(page + 1), a, 10);
+    k_strcat(pages_label, a);
+    k_strcat(pages_label, " / ");
+    k_itoa((u32)((n + LP_MAX - 1) / LP_MAX), b, 10);
+    k_strcat(pages_label, b);
+    gfx_text_centered((i32)FB.width / 2, grid_y - 83, pages_label, PAL_TEXT_DIM);
     gfx_text_centered((i32)FB.width / 2, grid_y - 36,
                       T("arrows + Enter to open, click to launch, P pins to desktop, Esc closes",
                         "ok ile gez Enter ile aç, tıkla, P masaüstüne sabitler, Esc kapatır"),
@@ -119,8 +132,9 @@ void launchpad_render(u32 frame)
     i32 mx, my; bool ml; mouse_get(&mx, &my, &ml); (void)ml;
     bool clicked = mouse_consume_click();
 
-    for (i32 i = 0; i < n; i++) {
-        i32 r = i / LP_COLS, c = i % LP_COLS;
+    for (i32 i = first; i < end; i++) {
+        i32 slot = i - first;
+        i32 r = slot / LP_COLS, c = slot % LP_COLS;
         i32 cx = grid_x + c * (tile_base + gap) + tile_base / 2;
         i32 cy = grid_y + r * (tile_base + gap) + tile_base / 2;
 

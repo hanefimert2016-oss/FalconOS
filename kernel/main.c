@@ -474,6 +474,7 @@ void long_start(u64 magic, u64 info_ptr)
      * see attached disks and try to restore SET from LBA0 superblock.     */
     linux_compat_init();
     settings_init();
+    market_init();
     apps_pkg_sync_receipts_from_state();   /* mirror prg install flags → shfs     */
 
     pic_unmask(0);   /* PIT      */
@@ -499,6 +500,7 @@ void long_start(u64 magic, u64 info_ptr)
 
     /* Same for the lockscreen → desktop handoff.                          */
     kbd_drain(); mouse_drain();
+    outb(0xE9, 'H'); /* QEMU: user authenticated and desktop entered */
 
     /* First time the user reaches the desktop, slide the Help drawer
      * open automatically so they discover the F1/F2/F12 shortcuts and
@@ -509,6 +511,7 @@ void long_start(u64 magic, u64 info_ptr)
     /* main loop: paced to PIT — wait for at least 1 tick before next frame */
     u32 last = g_ticks;
     for (;;) {
+        market_poll(); /* bounded COM1 input: no blocking network I/O */
         if (g_panic) { render_panic_overlay(); gfx_present();
                        for (;;) __asm__ volatile ("hlt"); }
 
@@ -533,11 +536,11 @@ void long_start(u64 magic, u64 info_ptr)
             if (helppanel_is_open() && k != KEY_F1 && k != KEY_F2 && k != KEY_F12) {
                 helppanel_handle_key(k); continue;
             }
-            /* F1 kernel switching disabled in FalconOS 1.1 release */
+            /* F1: switch between Personal and Developer shells. */
             if (k == KEY_F1) {
-                /* Kernel mode switching is now disabled for stability.
-                 * Users stay in Personal mode for the best experience.
-                 * Developer mode can be enabled via Settings app.       */
+                if (apps_active() >= 0) apps_close();
+                if (launchpad_is_open()) launchpad_close();
+                g_mode = (g_mode == MODE_PERSONAL) ? MODE_DEVELOPER : MODE_PERSONAL;
                 continue;
             }
             if (k == KEY_F2 && g_mode == MODE_PERSONAL) {

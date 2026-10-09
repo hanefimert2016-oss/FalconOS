@@ -116,6 +116,14 @@ static void mask_password(char *out, i32 n)
 /* --------------------------------------------------------------------------- */
 void installer_render(u32 frame)
 {
+    /* One diagnostic marker per actual first-boot wizard transition.
+     * QEMU debugcon 0xE9 is harmless without the emulator device. */
+    static i32 last_reported = -1;
+    if (last_reported != (i32)g_step) {
+        static const char steps[] = "LTAKDUPQOZ";
+        if ((u32)g_step < sizeof steps - 1u) outb(0xE9, (u8)steps[(i32)g_step]);
+        last_reported = (i32)g_step;
+    }
     gfx_gradient_v(PAL_BG_TOP, PAL_BG_BOT);
 
     i32 W = (i32)FB.width;
@@ -234,8 +242,8 @@ void installer_render(u32 frame)
         case INST_DISK: {
             headline = T("Choose where to install FalconOS 1",
                           "FalconOS 1'i nereye kuralım?");
-            helptext = T("User database + settings will be written to this disk.",
-                          "Kullanıcı + ayarlar bu diske yazılacak.");
+            helptext = T("Only dedicated FalconOS (MBR type FA) partitions are writable.",
+                          "Yalnizca FalconOS'a ayrilmis (MBR FA) bolumlere yazilir.");
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
 
             /* Each ATA drive + “güvenli çalıştırma” (no FalconFS persistence). */
@@ -292,7 +300,9 @@ void installer_render(u32 frame)
                         char b[8]; k_itoa(mib, b, 10);
                         k_strcpy(sub, b); k_strcat(sub, " MiB");
                     }
-                    k_strcat(sub, T("   primary IDE", "   birincil IDE"));
+                    k_strcat(sub, diskdb_target_available(i)
+                        ? T(" | FalconOS partition: READY", " | FalconOS bolumu: HAZIR")
+                        : T(" | NO dedicated partition", " | FalconOS bolumu YOK"));
                     gfx_text(rx + 56, yy + 14, title, title_c);
                     gfx_text(rx + 56, yy + 36, sub,   sub_c);
                 } else {
@@ -519,13 +529,14 @@ void installer_input(i32 key)
                 case INST_KBD:
                     SET.kbd_layout = (kbd_layout_t)g_choice;
                     g_step = INST_DISK;
-                    /* default-pick: first detected disk if any, else
-                     * the güvenli sentinel (last index).         */
-                    g_choice = (ata_probe_count() > 0) ? 0
-                                                       : ata_probe_count();
+                    /* Secure session is the default: no writes without explicit choice. */
+                    g_choice = ata_probe_count();
                     return;
                 case INST_DISK: {
                     i32 n_ata = ata_probe_count();
+                    /* Never select an ordinary Windows/Linux disk or a missing partition. */
+                    if (g_choice < n_ata && !diskdb_target_available(g_choice))
+                        return;
                     SET.install_disk = (g_choice < n_ata) ? g_choice : -1;
                     g_step = INST_USER_NAME; g_choice = 0;
                     return;
