@@ -35,9 +35,12 @@ static bool valid_record(void)
     u32 n = len_from_record(REC);
     if (n < 70 || n >= SHFS_FBYTES || n > RECORD_BYTES - PACKAGE_OFFSET)
         return false;
-    if (REC[8] < 'a' || REC[8] > 'z' || REC[40] == 0) {
-        /* digest may start with zero in raw bytes; do not require nonzero */
-        if (REC[8] < 'a' || REC[8] > 'z') return false;
+    if (REC[8] < 'a' || REC[8] > 'z') return false;
+    /* Reserved byte at index 40 terminates the stored identifier. */
+    if (REC[40] != 0) return false;
+    for (u32 i = 0; i < n; i++) {
+        u8 b = REC[PACKAGE_OFFSET + i];
+        if (b == 0 || b == '\r' || b > 127) return false;
     }
     char id[33];
     for (i32 i = 0; i < 33; i++) id[i] = (char)REC[8 + i];
@@ -112,8 +115,12 @@ bool market_disk_save(const char *id, const char *pkg, u32 length)
                              SLOT_SECTORS, false)) return false;
         if (REC[0] == 'F' && REC[1] == 'P' && REC[2] == 'K' &&
             REC[3] == '1') {
-            const char *saved = (const char *)(REC + 8);
-            if (k_strcmp(saved, id) == 0) { free_slot = i; break; }
+            char saved[33];
+            k_memcpy(saved, REC + 8, 32);
+            saved[32] = 0; /* bounded comparison even on corrupt disk */
+            if (id_ok(saved) && k_strcmp(saved, id) == 0) {
+                free_slot = i; break;
+            }
         } else if (free_slot == MARKET_SLOTS) {
             free_slot = i;
         }
