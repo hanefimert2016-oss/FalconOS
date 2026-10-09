@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 import subprocess
 import time
+import struct
 
 def main():
     p=argparse.ArgumentParser()
@@ -14,11 +15,30 @@ def main():
     p.add_argument("--timeout",type=float,default=40)
     args=p.parse_args()
     debug=Path("build/net-smoke-debug.log")
+    pcap=Path("build/net-smoke.pcap")
+    if pcap.exists(): pcap.unlink()
+    def summary():
+        try:
+            data=pcap.read_bytes()
+            if len(data)<24:return "pcap missing"
+            off=24;counts={}
+            while off+16<=len(data):
+                captured=struct.unpack_from('<I',data,off+8)[0]
+                off+=16
+                if captured<14 or off+captured>len(data):break
+                typ=int.from_bytes(data[off+12:off+14],'big')
+                name={0x0800:'IPv4',0x0806:'ARP'}.get(typ,'other')
+                counts[name]=counts.get(name,0)+1
+                off+=captured
+            return f'captured Ethernet frames: {counts}'
+        except OSError as e:return str(e)
+
     debug.parent.mkdir(exist_ok=True)
     if debug.exists(): debug.unlink()
     cmd=["qemu-system-x86_64","-accel","tcg","-m","1024","-smp","1",
          "-cdrom",args.iso,"-display","none","-vga","std",
          "-netdev","user,id=net0","-device","rtl8139,netdev=net0",
+         "-object",f"filter-dump,id=trace,netdev=net0,file={pcap}",
          "-serial","none","-monitor","none",
          "-debugcon",f"file:{debug}","-global","isa-debugcon.iobase=0xe9",
          "-no-reboot"]
@@ -33,9 +53,9 @@ def main():
                 print("PASS native RTL8139 -> ARP -> IPv4 -> ICMP echo reply")
                 return
             if b"n" in data:
-                raise RuntimeError("Guest NIC probe did not receive ICMP reply; debug "+repr(data))
+                raise RuntimeError("Guest NIC probe did not receive ICMP reply; debug "+repr(data)+"; "+summary())
             time.sleep(.2)
-        raise TimeoutError("Guest network probe timed out; debug "+repr(debug.read_bytes() if debug.exists() else b""))
+        raise TimeoutError("Guest network probe timed out; debug "+repr(debug.read_bytes() if debug.exists() else b"")+"; "+summary())
     finally:
         proc.terminate()
         try: proc.communicate(timeout=4)
