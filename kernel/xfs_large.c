@@ -40,7 +40,7 @@ static bool filename_ok(const char *name){
     if(!name||!name[0])return false;
     for(u32 i=0;name[i];i++){
         u8 c=(u8)name[i];
-        if(i>=XFS_NAME-1 || c=='.' && name[i+1]=='.')return false;
+        if(i>=XFS_NAME-1 || (c=='.' && name[i+1]=='.'))return false;
         if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
              (c>='0'&&c<='9')||c=='-'||c=='_'||c=='.'))return false;
     }
