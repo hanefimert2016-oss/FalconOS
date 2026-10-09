@@ -3,7 +3,7 @@
 #include "shfs.h"
 #include <stdio.h>
 #include <string.h>
-#define DISK_SECTORS 160u
+#define DISK_SECTORS 192u
 static u8 disk[DISK_SECTORS * 512u];
 settings_t SET;
 i32 k_strlen(const char *s) { return (i32)strlen(s); }
@@ -50,6 +50,16 @@ int main(void) {
     if (shfs_lookup("/home/falcon/apps/hello-world.pkg")) return 5;
     SET.install_disk = -1;
     if (market_disk_save("hello-world", package, (u32)strlen(package))) return 6;
+    SET.install_disk = 0;
+    const char *project = "echo persistent workspace\n";
+    if (!codedium_project_save(project, (u32)strlen(project))) return 10;
+    char restored[120];
+    if (codedium_project_load(restored, sizeof restored) != (i32)strlen(project)) return 11;
+    if (strcmp(restored, project)) return 12;
+    disk[160u * 512u + 48] ^= 7; /* simulate corrupted workspace */
+    if (codedium_project_load(restored, sizeof restored) != 0) return 13;
+    SET.install_disk = -1;
+    if (codedium_project_save(project, (u32)strlen(project))) return 14;
     puts("PASS marketplace save, load, delete, tamper rejection, secure mode");
     return 0;
 }

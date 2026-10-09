@@ -155,3 +155,45 @@ bool market_disk_delete(const char *id)
     }
     return false;
 }
+
+
+/* CodeDium workspace: single durable 4 KiB source slot, relative LBA 160.
+ * Never uses unpartitioned media; diskdb_store_io bounds-checks partition.
+ * Write-then-read validation rejects corrupt projects on subsequent boots.
+ */
+#define WORKSPACE_BASE 160u
+#define WORKSPACE_HEADER 48u
+bool codedium_project_save(const char *source, u32 size)
+{
+    if (!source || !size || size >= 2048u ||
+        size + WORKSPACE_HEADER > RECORD_BYTES ||
+        SET.install_disk < 0) return false;
+    k_memset(REC, 0, sizeof REC);
+    REC[0] = 'C'; REC[1] = 'D'; REC[2] = 'M'; REC[3] = '1';
+    for (u32 i = 0; i < 4; i++) REC[4+i] = (u8)(size >> (8 * i));
+    sha256_hash((const u8 *)source, size, REC + 8);
+    k_memcpy(REC + WORKSPACE_HEADER, source, size);
+    return diskdb_store_io(WORKSPACE_BASE, REC, SLOT_SECTORS, true);
+}
+i32 codedium_project_load(char *dest, u32 capacity)
+{
+    if (!dest || capacity < 2 || SET.install_disk < 0) return 0;
+    if (!diskdb_store_io(WORKSPACE_BASE, REC, SLOT_SECTORS, false)) return 0;
+    if (REC[0] != 'C' || REC[1] != 'D' || REC[2] != 'M' ||
+        REC[3] != '1') return 0;
+    u32 len = len_from_record(REC);
+    if (!len || len >= capacity || len >= 2048u ||
+        len + WORKSPACE_HEADER > RECORD_BYTES) return 0;
+    u8 expected[32];
+    sha256_hash(REC + WORKSPACE_HEADER, len, expected);
+    u8 mismatch = 0;
+    for (u32 i = 0; i < 32; i++) mismatch |= expected[i] ^ REC[i + 8];
+    if (mismatch) return 0;
+    for (u32 i = 0; i < len; i++) {
+        u8 c = REC[WORKSPACE_HEADER + i];
+        if (c != '\n' && (c < 32 || c > 126)) return 0;
+    }
+    k_memcpy(dest, REC + WORKSPACE_HEADER, len);
+    dest[len] = 0;
+    return (i32)len;
+}

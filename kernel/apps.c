@@ -3259,6 +3259,8 @@ static void code_init(void)
     shfs_ent_t *file = shfs_lookup("/home/falcon/Desktop/project.fsh");
     const char *sample = "# CodeDium Studio\nclear\necho Hello from CodeDium\nuname\n";
     const char *source = (file && !file->is_dir) ? file->data : sample;
+    i32 disklen = codedium_project_load(code_text, CODE_CAP);
+    if (disklen > 0) source = code_text;
     i32 n = k_strlen(source);
     if (n >= CODE_CAP) n = CODE_CAP - 1;
     k_memcpy(code_text, source, n);
@@ -3271,7 +3273,9 @@ static void code_save(void)
     if (!file) { code_status = "Save error: RAM file system is full"; return; }
     k_memcpy(file->data, code_text, code_len + 1);
     file->len = code_len;
-    code_status = "Saved: /home/falcon/Desktop/project.fsh (RAM)";
+    code_status = codedium_project_save(code_text, code_len)
+        ? "Saved project to RAM and safe FalconOS disk"
+        : "Saved in RAM only (no safe disk selected)";
 }
 static void code_run(void)
 {

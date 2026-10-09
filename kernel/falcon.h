@@ -555,6 +555,8 @@ bool diskdb_store_io(u32 rel_sector, u8 *buffer, u32 sectors, bool write);
 void market_disk_restore(void);
 bool market_disk_save(const char *id, const char *pkg, u32 length);
 bool market_disk_delete(const char *id);
+bool codedium_project_save(const char *source, u32 size);
+i32 codedium_project_load(char *dest, u32 capacity);
 void market_uninstall(i32 index);
 
 /* ---- ATA PIO (linux/ata_pio.c) ------------------------------------------- */
