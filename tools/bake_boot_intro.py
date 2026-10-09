@@ -29,7 +29,7 @@ def bake(src,out,count):
     def accessor(number):
         a=j["accessors"][number];v=j["bufferViews"][a["bufferView"]]
         offset=v.get("byteOffset",0)+a.get("byteOffset",0)
-        width={"SCALAR":1,"VEC3":3,"VEC4":4}[a["type"]]
+        width={"SCALAR":1,"VEC2":2,"VEC3":3,"VEC4":4}[a["type"]]
         return np.frombuffer(binary,dtype="<f4",count=a["count"]*width,
                              offset=offset).reshape(-1,width).copy()
     channels={}
