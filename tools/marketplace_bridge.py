@@ -74,22 +74,28 @@ def validate_package(raw, app_id):
 
 def releases():
     result = {}
-    for release in request_json(API):
-        if release.get("draft") or release.get("prerelease"):
-            continue
-        for a in release.get("assets", []):
-            filename = a.get("name", "")
-            m = re.fullmatch(r"([a-z][a-z0-9-]{1,31})-v([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?)\.app\.pkg", filename)
-            if not m or m.group(1) in result or a.get("size", MAX_BYTES + 1) > MAX_BYTES:
+    for page in range(1, 6):
+        batch = request_json(API + f"&page={page}")
+        if not batch:
+            break
+        for release in batch:
+            if release.get("draft") or release.get("prerelease"):
                 continue
-            if release.get("tag_name") != f"app-{m.group(1)}-v{m.group(2)}":
-                continue
-            sha_asset = next((x for x in release.get("assets", [])
-                              if x.get("name") == filename + ".sha256"), None)
-            if not sha_asset:
-                continue
-            result[m.group(1)] = {"asset": a, "checksum_asset": sha_asset,
-                                   "version": m.group(2), "release": release}
+            for a in release.get("assets", []):
+                filename = a.get("name", "")
+                m = re.fullmatch(r"([a-z][a-z0-9-]{1,31})-v([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?)\.app\.pkg", filename)
+                if not m or m.group(1) in result or a.get("size", MAX_BYTES + 1) > MAX_BYTES:
+                    continue
+                if release.get("tag_name") != f"app-{m.group(1)}-v{m.group(2)}":
+                    continue
+                sha_asset = next((x for x in release.get("assets", [])
+                                  if x.get("name") == filename + ".sha256"), None)
+                if not sha_asset:
+                    continue
+                result[m.group(1)] = {"asset": a, "checksum_asset": sha_asset,
+                                       "version": m.group(2), "release": release}
+            if len(result) >= 48:
+                return result
     return result
 
 def send(sock, message):
