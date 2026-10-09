@@ -61,7 +61,7 @@ int main(void) {
     if (!diskdb_save() || writes != 1 || last_lba != 2048) return 9;
     if (disk[510] != 0x55 || disk[511] != 0xAA || disk[450] != 0xFA) return 10;
     SET.installed = false;
-    SET.theme = THEME_NOX;
+    SET.theme = THEME_DARK;
     diskdb_load();
     if (!diskdb_present() || !SET.installed ||
         SET.theme != THEME_LIQUID || SET.install_disk != 0) return 11;
