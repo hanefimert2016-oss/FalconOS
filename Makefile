@@ -81,11 +81,20 @@ else
 RING3_DEFS :=
 endif
 
+# Build-time baked glTF boot sprites are generated into build/ only.
+# Use ENABLE_BOOT_GLB=1 after tools/bake_boot_intro.py is run.
+ENABLE_BOOT_GLB ?= 0
+ifeq ($(ENABLE_BOOT_GLB),1)
+BOOT_GLB_FLAGS := -DFALCON_BOOT_GLB -I$(BUILD)
+else
+BOOT_GLB_FLAGS :=
+endif
+
 CFLAGS      := $(CFLAGS_ARCH) -ffreestanding -fno-pic -fno-stack-protector \
                -fno-builtin -nostdlib -nostdinc \
                -Wall -Wextra -Wno-unused-parameter \
                -O2 -Ikernel -Ilinux \
-               -DFB_W=$(FB_W) -DFB_H=$(FB_H) -DARCH_$(ARCH)=1 $(EXTRA_CFLAGS) $(TLS_FLAGS) $(NATIVE_MARKET_FLAGS) $(RING3_DEFS)
+               -DFB_W=$(FB_W) -DFB_H=$(FB_H) -DARCH_$(ARCH)=1 $(EXTRA_CFLAGS) $(TLS_FLAGS) $(NATIVE_MARKET_FLAGS) $(RING3_DEFS) $(BOOT_GLB_FLAGS)
 LDFLAGS     := $(LDFLAGS_ARCH) -T linker.ld -nostdlib -z noexecstack
 NASMFLAGS   := -f $(NASMFMT) -DFB_W=$(FB_W) -DFB_H=$(FB_H) $(RING3_DEFS)
 
@@ -153,6 +162,10 @@ $(BUILD)/kernel/https_bearssl.o: kernel/https_bearssl.c kernel/falcon.h $(TLS_LI
 endif
 
 # ---- link kernel --------------------------------------------------------------
+ifeq ($(ENABLE_BOOT_GLB),1)
+$(BUILD)/kernel/boot_glb_animation.o: $(BUILD)/boot_model_frames.inc
+endif
+
 $(KERNEL): $(ASM_OBJS) $(C_OBJS) $(TLS_OBJECTS) $(TLS_LIBRARY) linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(ASM_OBJS) $(C_OBJS) $(TLS_OBJECTS) $(TLS_LIBRARY)
 	@echo "[OK] linked $@  ($$(wc -c < $@) bytes, ARCH=$(ARCH), back-buffer $(FB_W)×$(FB_H))"
