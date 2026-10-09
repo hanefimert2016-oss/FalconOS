@@ -128,7 +128,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools python3-cryptography ca-certificates
       - name: Compile BearSSL HTTPS-enabled FalconOS ISO (no insecure fallback)
-        run: make iso ENABLE_BEARSSL=1
+        run: make iso ENABLE_BEARSSL=1 ENABLE_NATIVE_MARKET=1
       - name: Check BearSSL kernel has valid Multiboot2 header
         run: grub-file --is-x86-multiboot2 build/falcon.elf
       - name: Upload experimental TLS ISO
@@ -159,7 +159,7 @@ jobs:
           printf 'subjectAltName=DNS:wrong.test\nbasicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\nkeyUsage=digitalSignature,keyEncipherment\n' > bad.ext
           openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out bad.pem -days 2 -extfile bad.ext
       - name: Compile test-only native HTTPS-enabled ISO with CI CA root
-        run: make iso ENABLE_BEARSSL=1 TLS_CA_BUNDLE=build/tls-test/ca.pem EXTRA_CFLAGS=-DFALCON_QEMU_TLS_TEST
+        run: make iso ENABLE_BEARSSL=1 TLS_CA_BUNDLE=build/tls-test/ca.pem ENABLE_NATIVE_MARKET=1 EXTRA_CFLAGS=-DFALCON_QEMU_TLS_TEST
       - name: Verify real TLS 1.2 HTTP and certificate hostname
         run: python3 tools/qemu_tls_e2e.py --certificate build/tls-test/server.pem --key build/tls-test/server.key
       - name: Verify invalid certificate hostname is rejected
