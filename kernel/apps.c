@@ -27,6 +27,7 @@ static u32 open_at_ms = 0;     /* used for slide-in animation */
 static i32 minimized_app = -1; /* last app sent to dock by yellow light */
 static void falco_set_query(const char *q);
 static void falco_open_site(const char *address);
+static void falco_open_site_host(const char *address);
 static void chrome_input_key(i32 key);
 static void render_browser(i32 x,i32 y,i32 w,i32 h,u32 frame);
 static void market_launch(i32 i);
@@ -3216,6 +3217,7 @@ static void falco_input_key(i32 key){
         chrome_input_key(key);return;
     }
     if(key==KEY_F6){falco_open_site("https://falconos.tech/");return;}
+    if(key==KEY_F7){falco_open_site_host("https://falconos.tech/");return;}
     if(key==KEY_F4){
         falco_query[0]=0;falco_query_len=0;
         falco_has_results=false;falco_sel=0;return;
@@ -3277,7 +3279,7 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
     }
     gfx_text(x+5,wy+wh-36,
-        "F4 clear | Enter: search/URL | F6: falconos.tech | F3: back from web",
+        "F4 search | F6 native site | F7 host-verified site | F3 web back",
         PAL_TEXT_FAINT);
 }
 
@@ -3410,7 +3412,7 @@ static void browser_load(void){
 /* Native text-web view is shared by Falco and the Browser, not simulated.
  * F6 in Falco loads the requested site with the same certificate checks.
  * Only HTTPS URLs are allowed; no HTTP downgrade. */
-static void falco_open_site(const char *address){
+static void falco_navigate(const char *address,bool use_host){
     const char *prefix="https://";
     const char *url=address;
     char normalized[224];
@@ -3431,10 +3433,18 @@ static void falco_open_site(const char *address){
     k_strcpy(browser_address,url);
     browser_address_len=k_strlen(browser_address);
     browser_address_focus=true;
-    browser_host_gateway=false; /* explicit opt-in only; never silently proxy */
+    browser_host_gateway=use_host; /* F7: explicit local host-verified HTTPS. */
     browser_load();
     falco_web_view=true;
+#ifdef FALCON_QEMU_BROWSER_TEST
+    /* A unique Falco navigation result: 'fY' means an actually loaded
+     * verified response, 'fN' means an error. Browser 'bY' alone is
+     * not enough to attest that this site was loaded. */
+    outb(0xE9,'f');outb(0xE9,browser_loaded?'Y':'N');
+#endif
 }
+static void falco_open_site(const char *address){falco_navigate(address,false);}
+static void falco_open_site_host(const char *address){falco_navigate(address,true);}
 static void chrome_input_key(i32 key){
     if(key==KEY_F4){
         browser_address[0]=0;
