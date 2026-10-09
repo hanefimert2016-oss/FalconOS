@@ -531,11 +531,12 @@ void hex_encode(const u8 *in, u32 n, char *out);   /* out >= n*2+1 chars   */
 /* ---- disk persistence: FalconFS superblock (kernel/diskdb.c) ------------- */
 #define FALCONFS_MAGIC      0x46414C43   /* 'FALC' */
 #define FALCONFS_VERSION    3            /* FalconOS 1.1: prg install state  */
-#define FALCONFS_SECTOR     0            /* LBA0 of master ATA device      */
+#define FALCONFS_PARTITION_TYPE 0xFA     /* dedicated MBR partition ONLY   */
 
-void diskdb_load(void);          /* called from settings_init()             */
-bool diskdb_save(void);          /* writes SET into LBA0                    */
-bool diskdb_present(void);       /* true if last load found a magic block   */
+void diskdb_load(void);          /* searches only valid FalconOS partitions */
+bool diskdb_save(void);          /* refuses to write unpartitioned disks    */
+bool diskdb_present(void);       /* true if valid saved settings were read  */
+bool diskdb_target_available(i32 disk); /* true for a safe MBR target */
 
 /* ---- ATA PIO (linux/ata_pio.c) ------------------------------------------- */
 void ata_init(void);
