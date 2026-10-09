@@ -565,6 +565,14 @@ void long_start(u64 magic, u64 info_ptr)
     }
 #endif
 
+#ifdef FALCON_QEMU_ELF_TEST
+    {
+        extern bool ring3_elf_demo(void);
+        outb(0xE9,'e');
+        outb(0xE9,ring3_elf_demo()?'L':'l');
+    }
+#endif
+
     boot_splash();
 
     /* installer: only on the very first boot                                */
