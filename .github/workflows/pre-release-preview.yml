@@ -30,7 +30,7 @@ jobs:
           grub-file --is-x86-multiboot2 build/falcon.elf
           cp build/FalconOS.iso build/FalconOS-preview-QEMU.iso
       - name: Verify bootable safe preview
-        run: python3 tools/qemu_smoke.py --iso build/FalconOS.iso --timeout 40
+        run: python3 tools/qemu_smoke.py --iso build/FalconOS.iso --boot-seconds 16
       - name: Upload unlisted preview ISO (no GitHub Release)
         uses: actions/upload-artifact@v4
         with:
