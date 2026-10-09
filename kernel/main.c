@@ -511,7 +511,13 @@ void long_start(u64 magic, u64 info_ptr)
         char webpage[4096];
         outb(0xE9,'p');
         bool ok=native_https_get("example.com","/",webpage,sizeof webpage);
-        outb(0xE9,ok&&sh_contains_ci(webpage,"Example Domain")?'Y':'N');
+        bool has_page=false;
+        if(ok)for(u32 i=0;i+14u<sizeof webpage && webpage[i];i++){
+            if(k_strncmp(webpage+i,"Example Domain",14)==0){
+                has_page=true;break;
+            }
+        }
+        outb(0xE9,ok&&has_page?'Y':'N');
     }
 #endif
 
