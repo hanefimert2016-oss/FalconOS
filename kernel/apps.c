@@ -3080,6 +3080,8 @@ static void render_falco(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static char browser_address[224]="https://example.com/";
 static i32 browser_address_len=20;
 static bool browser_address_focus=true;
+/* F6 enables a clearly labeled host-validated TLS proxy, never automatic. */
+static bool browser_host_gateway=false;
 static char browser_result[4096];
 static char browser_text[4096];
 static char browser_status[120]="Type an HTTPS address, then press Enter to load.";
@@ -3147,14 +3149,46 @@ static void browser_load(void){
     k_strcpy(browser_status,"Connecting: DNS / TCP / TLS / CA certificate...");
     /* User-triggered and synchronous; slow networks can delay this UI.
      * Never execute a network operation while rendering each frame. */
-    if(!native_https_get(hostname,path,browser_result,sizeof browser_result)){
-        k_strcpy(browser_status,
-            "HTTPS failed: TLS certificate, network, timeout or size limit.");
-        return;
+    bool verified=false;
+    if(browser_host_gateway){
+        char local_path[480];
+        u32 used=0;
+        const char *prefix="/fetch/";
+        for(u32 i=0;prefix[i];i++)local_path[used++]=prefix[i];
+        for(u32 i=0;hostname[i]&&used<300u;i++)local_path[used++]=hostname[i];
+        for(u32 i=0;path[i]&&used+1<sizeof local_path;i++)
+            local_path[used++]=path[i];
+        local_path[used]=0;
+        verified=native_http_get_port(net_gateway(),18444u,local_path,
+                                      browser_result,sizeof browser_result);
+        if(!verified || !sh_contains_ci(browser_result,"X-Falcon-Host-HTTPS-Verified: yes")){
+            k_strcpy(browser_status,
+                "Host HTTPS gateway unavailable/unverified; run companion script.");
+            return;
+        }
+    }else{
+        verified=native_https_get(hostname,path,browser_result,sizeof browser_result);
+        if(!verified){
+            k_strcpy(browser_status,
+                "Native HTTPS failed: TLS/CA, DNS, size limit or timeout.");
+            return;
+        }
     }
     browser_page_from_http();
+    if(browser_loaded && browser_host_gateway)
+        k_strcpy(browser_status,
+            "HOST-verified HTTPS | local VM link plaintext | read-only");
+
 }
 static void chrome_input_key(i32 key){
+    if(key==KEY_F6){
+        browser_host_gateway=!browser_host_gateway;
+        browser_loaded=false;browser_result[0]=0;
+        k_strcpy(browser_status,browser_host_gateway?
+            "HOST HTTPS enabled (no guest TLS). Start host gateway first.":
+            "NATIVE HTTPS mode - BearSSL checks CA and hostname.");
+        return;
+    }
     if(key==KEY_UP){if(browser_scroll>0)browser_scroll--;return;}
     if(key==KEY_DOWN){if(browser_scroll<190)browser_scroll++;return;}
     if(key==KEY_TAB){browser_address_focus=!browser_address_focus;return;}
@@ -3174,7 +3208,8 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_rect(wx,wy,ww,44,PAL_PANEL_DEEP);
     gfx_round_rect_a(wx+margin,wy+7,170,32,9,PAL_PANEL,255);
     gfx_text(wx+margin+12,wy+15,"Falcon Browser",PAL_ACCENT);
-    gfx_text(wx+205,wy+16,"HTTPS  /  LIVE  /  TEXT",PAL_TEXT_DIM);
+    gfx_text(wx+205,wy+16,
+        browser_host_gateway?"HOST HTTPS / LOCAL LINK":"NATIVE HTTPS / BEARSSL",PAL_TEXT_DIM);
     gfx_rect(wx,wy+45,ww,56,PAL_PANEL_HI);
     i32 sx=wx+margin,sy=bar,sw=ww-margin*2;
     gfx_round_rect_a(sx,sy,sw,34,10,PAL_PANEL,255);
@@ -3224,7 +3259,7 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
     }
     gfx_text(wx+margin,wy+wh-26,
-        "Enter: load  |  Tab: address focus  |  F5: reload  |  Up/Down: scroll",
+        "Enter load | Tab address | F5 reload | F6 HTTPS mode | Up/Down scroll",
         PAL_TEXT_FAINT);
 }
 
