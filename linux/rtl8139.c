@@ -49,7 +49,9 @@ bool rtl8139_init(void){
         outl32(io_base+0x44,0x0000008Fu); /* accept-all + WRAP, QEMU RTL8139 RX baseline */
         outl32(io_base+0x40,0x03000700u); /* recommended TX DMA threshold */
         outb(io_base+0x37,0x0Cu); /* RX + TX enable */
-        outw(io_base+0x38,0);
+        /* RTL8139 CAPR must initially lag the producer by 16 bytes.
+         * After device reset QEMU already provides the empty ring state;
+         * writing CAPR=0 can make it appear nearly full and drop RX. */
         ready=true;
         return true;
     }
