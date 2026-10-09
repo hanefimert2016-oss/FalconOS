@@ -3,7 +3,29 @@
 
 char shfs_cwd[SHFS_PATH] = "/home/falcon";
 
+static bool shfs_path_ok(const char *s);
 static shfs_ent_t G[SHFS_MAX_ENTRIES];
+static u32 G_REV[SHFS_MAX_ENTRIES];
+static void touch_slot(shfs_ent_t *e) { if (e) G_REV[e - G]++; }
+shfs_ent_t *shfs_slot(i32 i) { return (i >= 0 && i < SHFS_MAX_ENTRIES) ? &G[i] : NULL; }
+u32 shfs_slot_revision(i32 i) { return (i >= 0 && i < SHFS_MAX_ENTRIES) ? G_REV[i] : 0; }
+/* Disk replay does not mark records dirty or trigger recursive writes. */
+bool shfs_replay_slot(i32 i, const char *path, bool is_dir, const char *data, u32 len) {
+    if (i < 0 || i >= SHFS_MAX_ENTRIES || !path || !path[0]) return false;
+    if (!shfs_path_ok(path) || len >= SHFS_FBYTES || (is_dir && len)) return false;
+    shfs_ent_t *e = &G[i];
+    e->used = true; e->is_dir = is_dir; e->len = len;
+    k_strcpy(e->path, path);
+    if (len && data) k_memcpy(e->data, data, len);
+    e->data[len] = 0;
+    G_REV[i] = 0;
+    return true;
+}
+void shfs_replay_deleted(i32 i) {
+    if (i < 0 || i >= SHFS_MAX_ENTRIES) return;
+    G[i].used = false; G[i].path[0] = 0; G[i].len = 0;
+    G[i].data[0] = 0; G_REV[i] = 0;
+}
 
 static i32 shfs_path_len(const char *p)
 {
@@ -49,6 +71,7 @@ void shfs_init(void)
     if (g_shfs_initialized) return;
     g_shfs_initialized = true;
     for (i32 i = 0; i < SHFS_MAX_ENTRIES; i++) {
+        G_REV[i]  = 0;
         G[i].used   = false;
         G[i].is_dir = false;
         G[i].path[0] = 0;
@@ -148,6 +171,7 @@ bool shfs_mkdir_abs(const char *abs_path)
     e->data[0] = 0;
     e->is_dir  = true;
     e->used    = true;
+    touch_slot(e);
     return true;
 }
 
@@ -166,6 +190,7 @@ bool shfs_touch_abs(const char *abs_path)
     e->data[0] = 0;
     e->is_dir  = false;
     e->used    = true;
+    touch_slot(e);
     return true;
 }
 
@@ -184,6 +209,7 @@ shfs_ent_t *shfs_open_w_abs(const char *abs_path, bool append)
     } else if (f->is_dir) {
         return NULL;
     }
+    touch_slot(f);
     if (!append) {
         f->len = 0;
         f->data[0] = 0;
@@ -208,6 +234,7 @@ bool shfs_rm_abs(const char *abs_path)
             return false;
         }
     }
+    touch_slot(e);
     e->used = false;
     e->path[0] = 0;
     e->len = 0;
@@ -230,6 +257,7 @@ bool shfs_rename_abs(const char *from_abs, const char *to_abs)
             if (newn + shfs_path_len(G[i].path + oldn) >= SHFS_PATH) return false;
         }
     }
+    touch_slot(e);
     k_strcpy(e->path, to_abs);
     /* rename children prefixes if directory */
     if (e->is_dir) {
@@ -242,6 +270,7 @@ bool shfs_rename_abs(const char *from_abs, const char *to_abs)
             k_strcpy(tmp, to_abs);
             k_strcat(tmp, G[i].path + oldl);
             k_strcpy(G[i].path, tmp);
+            touch_slot(&G[i]);
         }
     }
     return true;
