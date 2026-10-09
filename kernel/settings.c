@@ -98,12 +98,9 @@ u32 PAL(u8 role)
     if (role > 12) return 0xFF00FF;
     theme_t t = SET.theme;
     if ((u32)t >= THEME_COUNT) t = THEME_LIGHT;
-    /* Role 9 (PAL_ACCENT) is mostly user-tunable, but Liquid and
-     * Rose-Gold pin it for visual identity. */
-    if (role == 9) {
-        if (t == THEME_LIQUID || t == THEME_ROSEGOLD) return THEMES[t].c[9];
-        return ACCENTS[SET.accent];
-    }
+    /* All themes honor the selected user accent, including Liquid and Rose.
+     * Otherwise changing Accent has no effect in the default theme. */
+    if (role == 9) return ACCENTS[SET.accent];
     return THEMES[t].c[role];
 }
 
