@@ -128,7 +128,8 @@ static bool secure_response_complete(const char *response,u32 n){
     if(!found || expected>4096u || (u64)header+expected!=(u64)n)return false;
     return true;
 }
-bool native_https_get(const char *host,const char *path,char *result,u32 cap){
+static bool https_request(const char *host,const char *path,char *result,u32 cap,
+                          const u8 *override_addr,u16 dest_port){
     if(result && cap)result[0]=0;
     if(!result||cap<128||cap>4096||!valid_host(host)||!valid_path(path) ||
        falcon_tls_anchor_count==0)return false;
@@ -136,8 +137,9 @@ bool native_https_get(const char *host,const char *path,char *result,u32 cap){
     u32 days=0,seconds=0;
     if(!cpu_random(entropy) || !cert_time(&days,&seconds))return false;
     u8 addr[4];
-    if(!native_net_dns_query(host,addr))return false;
-    if(!native_tcp_connect(addr,443))return false;
+    if(override_addr)k_memcpy(addr,override_addr,4);
+    else if(!native_net_dns_query(host,addr))return false;
+    if(!native_tcp_connect(addr,dest_port))return false;
     bool result_ok=false;
     br_ssl_client_init_full(&CLIENT,&X509,falcon_tls_anchors,falcon_tls_anchor_count);
     br_x509_minimal_set_time(&X509,days,seconds);
@@ -179,4 +181,18 @@ end:
     native_tcp_close();
     return result_ok;
 }
+bool native_https_get(const char *host,const char *path,char *response,u32 capacity){
+    return https_request(host,path,response,capacity,NULL,443);
+}
+#ifdef FALCON_QEMU_TLS_TEST
+bool native_https_ci_smoke(void){
+    /* Override ONLY transport destination in CI. TLS SNI + X.509 hostname
+     * validation still requires the leaf certificate for falcon.test. */
+    const u8 qemu_host[4]={10,0,2,2};
+    char response[256];
+    bool ok=https_request("falcon.test","/falcon-test",response,sizeof response,
+                          qemu_host,18443);
+    return ok;
+}
+#endif
 #endif /* FALCON_BEARSSL */
