@@ -1,0 +1,53 @@
+name: FalconOS private preview ISO
+on:
+  push:
+    branches:
+      - feature/core-storage-net-usermode
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: falcon-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install x86_64 kernel and QEMU test toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Test interrupted dynamic filesystem journal
+        run: |
+          mkdir -p build
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/jfs_dynamic_test.c kernel/jfs_dynamic.c -o build/jfs-test
+          ./build/jfs-test
+      - name: Build safe pre-release preview ISO
+        run: |
+          make iso
+          grub-file --is-x86-multiboot2 build/falcon.elf
+          cp build/FalconOS.iso build/FalconOS-preview-QEMU.iso
+      - name: Verify bootable safe preview
+        run: python3 tools/qemu_smoke.py --iso build/FalconOS.iso --timeout 40
+      - name: Upload unlisted preview ISO (no GitHub Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-PREVIEW-before-Release-QEMU-only
+          path: build/FalconOS-preview-QEMU.iso
+          if-no-files-found: error
+          retention-days: 14
+      - name: Build and exercise Ring3 ELF64 developer preview
+        run: |
+          make clean
+          make iso ENABLE_RING3_TEST=1 EXTRA_CFLAGS=-DFALCON_QEMU_ELF_TEST
+          python3 tools/qemu_elf_ring3_e2e.py
+          cp build/FalconOS.iso build/FalconOS-preview-Ring3-ELF64.iso
+      - name: Upload experimental Ring3 preview (no Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-PREVIEW-ELF64-Ring3-QEMU-only
+          path: build/FalconOS-preview-Ring3-ELF64.iso
+          if-no-files-found: error
+          retention-days: 14
