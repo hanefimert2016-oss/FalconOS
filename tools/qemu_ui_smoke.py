@@ -129,6 +129,26 @@ def main():
                     raise AssertionError("No visual change after launching "+name)
                 ppm_to_png(ppm,root/("FalconOS-Aura-"+name+".png"))
                 print("PASS: QEMU rendered actual app window",name)
+            # Native Contour WM regression: keep Settings open, launch Files,
+            # then Browser. Both older windows must remain visibly present.
+            # This tests genuine guest framebuffer composition, not web CSS.
+            command(sock,"sendkey f2",.45)
+            for _ in range(5):command(sock,"sendkey left",.045)
+            command(sock,"sendkey ret",.6)  # Files while Settings remains
+            multi2=root/"FalconOS-Aura-MultiWindow-2.ppm"
+            shot2=screenshot(sock,multi2)
+            if picture_difference(shot,shot2)<40:
+                raise AssertionError("Native WM did not composite second window")
+            ppm_to_png(multi2,root/"FalconOS-Aura-MultiWindow-2.png")
+            command(sock,"sendkey f2",.45)
+            command(sock,"sendkey right",.09)
+            command(sock,"sendkey ret",.65) # Browser, 3 visible windows
+            multi3=root/"FalconOS-Aura-MultiWindow-3.ppm"
+            shot3=screenshot(sock,multi3)
+            if picture_difference(shot2,shot3)<40:
+                raise AssertionError("Native WM did not composite third window")
+            ppm_to_png(multi3,root/"FalconOS-Aura-MultiWindow-3.png")
+            print("PASS: native QEMU multiwindow 2 and 3 different apps")
         score = picture_difference(before, after)
         ppm_to_png(last, args.output)
         events = debug.read_bytes() if debug.exists() else b""
