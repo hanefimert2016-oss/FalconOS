@@ -3212,12 +3212,18 @@ static void browser_load(void){
             return;
         }
     }else{
+#ifdef FALCON_BEARSSL
         verified=native_https_get_preview(hostname,path,browser_result,sizeof browser_result);
         if(!verified){
             k_strcpy(browser_status,
                 "Native TLS failed: check CA, DNS, network or response size.");
             return;
         }
+#else
+        k_strcpy(browser_status,
+            "Native TLS not included in this build. Use TLS-enabled preview.");
+        return;
+#endif
     }
     browser_page_from_http();
 #ifdef FALCON_QEMU_BROWSER_TEST
