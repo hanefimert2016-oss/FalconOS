@@ -32,15 +32,23 @@ static bool parse_semver(const char *s, u32 parts[3], const char **pre)
     if (!*p) { *pre = NULL; return true; }
     if (*p++ != '-' || !*p) return false;
     *pre = p;
-    bool start = true;
+    const char *begin = p;
+    bool numeric = true;
     while (*p) {
-        char c = *p++;
-        if (c == '.') { if (start || !*p) return false; start = true; continue; }
+        char c = *p;
+        if (c == '.') {
+            if (p == begin || (numeric && p - begin > 1 && begin[0] == '0'))
+                return false;
+            p++; begin = p; numeric = true;
+            if (!*p) return false;
+            continue;
+        }
         if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-'))
             return false;
-        start = false;
+        if (c < '0' || c > '9') numeric = false;
+        p++;
     }
-    return !start;
+    return p > begin && !(numeric && p - begin > 1 && begin[0] == '0');
 }
 static i32 pre_ident_compare(const char *a, u32 al, const char *b, u32 bl)
 {

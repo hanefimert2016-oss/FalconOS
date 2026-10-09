@@ -11,7 +11,8 @@ static struct case_entry cases[] = {
   {"1.0.0-rc.2","1.0.0-rc.1",1},
   {"1.0.0-rc","1.0.0-rc.1",-1},
   {"bad","1.0.0",-1}, {"1.0.0","bad",1},
-  {"01.0.0","1.0.0",-1}, {"1.0.0-rc.","1.0.0-rc.1",-1}
+  {"01.0.0","1.0.0",-1}, {"1.0.0-rc.","1.0.0-rc.1",-1},
+  {"1.0.0-alpha.01","1.0.0-alpha.1",-1}
 };
 int main(void) {
   u32 total=sizeof cases/sizeof cases[0];
@@ -23,6 +24,9 @@ int main(void) {
       return 1;
     }
   }
-  printf("PASS %u SemVer cases\n",total);
+  if (market_version_valid("1.0.0-alpha.01") ||
+      market_version_valid("1.0.0-rc.") ||
+      !market_version_valid("1.0.0-beta.2")) return 2;
+  printf("PASS %u SemVer cases + validation\n",total);
   return 0;
 }

@@ -62,8 +62,7 @@ jobs:
           path: build/FalconOS-Store-screen.png
           if-no-files-found: ignore
       - name: End-to-end Marketplace COM1 download and launch (simulated Release)
-        continue-on-error: true
-        run: timeout 120s python3 tools/qemu_market_e2e.py
+        run: timeout 150s python3 tools/qemu_market_e2e.py
       - name: Upload Marketplace end-to-end screenshot
         if: always()
         uses: actions/upload-artifact@v4

@@ -46,3 +46,28 @@ The old compile-time prg catalog is retained as internal metadata, but
 unavailable non-built-in entries are no longer permitted to claim successful
 installation. The graphical Store is exclusively Release-backed. Package
 publication means reviewed FAPP/1 sources followed by an immutable Release.
+
+## Native CodeDium custom app identity
+Create or edit a project in CodeDium. At the top of `project.fsh` add
+these exact ASCII source comments (edit them for each application):
+
+    # app-id: my-app
+    # app-name: My App
+    # app-version: 1.0.0
+    # app-summary: A small and safe FalconOS script
+    clear
+    echo Hello from my app
+
+Press F5 to save, F6 to run and F7 to package into
+`/home/falcon/Desktop/code.app.pkg`. Packages are limited to 4096 bytes
+and only the allowlisted built-in commands can execute. This is not an
+ELF/native binary compiler. For publishing, move the package to a host,
+import it into the web CodeDium source editor, fork the Marketplace repo,
+and submit a reviewed PR. Device-to-host file transfer is not yet built in.
+
+## Tests
+GitHub Actions builds the ISO, executes native mocked-storage and parser tests,
+boots QEMU, and runs a **gating** GUI + COM1 integration test that simulates a
+GitHub Release from a local fixture and verifies guest catalog, installation,
+and Terminal launch. This does NOT verify guest-native TCP/HTTPS or an actual
+GitHub download. Do not pass real physical disks to QEMU.
