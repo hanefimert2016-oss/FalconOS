@@ -74,13 +74,20 @@ TLS_OBJECTS :=
 TLS_LIBRARY :=
 endif
 
+ENABLE_RING3_TEST ?= 0
+ifeq ($(ENABLE_RING3_TEST),1)
+RING3_DEFS := -DFALCON_RING3_TEST
+else
+RING3_DEFS :=
+endif
+
 CFLAGS      := $(CFLAGS_ARCH) -ffreestanding -fno-pic -fno-stack-protector \
                -fno-builtin -nostdlib -nostdinc \
                -Wall -Wextra -Wno-unused-parameter \
                -O2 -Ikernel -Ilinux \
-               -DFB_W=$(FB_W) -DFB_H=$(FB_H) -DARCH_$(ARCH)=1 $(EXTRA_CFLAGS) $(TLS_FLAGS) $(NATIVE_MARKET_FLAGS)
+               -DFB_W=$(FB_W) -DFB_H=$(FB_H) -DARCH_$(ARCH)=1 $(EXTRA_CFLAGS) $(TLS_FLAGS) $(NATIVE_MARKET_FLAGS) $(RING3_DEFS)
 LDFLAGS     := $(LDFLAGS_ARCH) -T linker.ld -nostdlib -z noexecstack
-NASMFLAGS   := -f $(NASMFMT) -DFB_W=$(FB_W) -DFB_H=$(FB_H)
+NASMFLAGS   := -f $(NASMFMT) -DFB_W=$(FB_W) -DFB_H=$(FB_H) $(RING3_DEFS)
 
 C_SRCS      := $(wildcard kernel/*.c) $(wildcard linux/*.c)
 C_OBJS      := $(C_SRCS:%.c=$(BUILD)/%.o)
