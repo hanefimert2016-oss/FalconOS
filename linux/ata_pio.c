@@ -145,7 +145,10 @@ static bool ata_dev_pio28(i32 idx, u32 lba, u8 *buf, u32 sectors, bool is_write)
     if (is_write) {
         /* flush write cache; many emulators (incl. QEMU) require this */
         outb(ATA_PRI_IO + ATA_REG_COMMAND, ATA_CMD_CACHE_FLUSH);
-        ata_wait_not_busy(400000);
+        if (!ata_wait_not_busy(400000)) return false;
+        u8 completion = inb(ATA_PRI_IO + ATA_REG_STATUS);
+        if (completion & (ATA_SR_ERR | 0x20u)) return false; /* ERR|DF */
+
     }
     return true;
 }
