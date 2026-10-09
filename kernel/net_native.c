@@ -115,7 +115,13 @@ bool native_net_ping(const u8 ip[4]){
 #endif
         u32 start=g_ticks;
         while(!peer_known && g_ticks-start<150u)native_net_poll();
-        if(!peer_known)return false;
+        if(!peer_known){
+#ifdef FALCON_QEMU_NET_TEST
+            extern void rtl8139_debug_dump(void);
+            rtl8139_debug_dump();
+#endif
+            return false;
+        }
 #ifdef FALCON_QEMU_NET_TEST
         outb(0xE9,'A');
 #endif
