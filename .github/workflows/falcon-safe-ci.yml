@@ -117,3 +117,22 @@ jobs:
             build/net-smoke-debug.log
             build/tcp-smoke-debug.log
           if-no-files-found: ignore
+
+  tls-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install TLS and bare-metal build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools python3-cryptography ca-certificates
+      - name: Compile BearSSL HTTPS-enabled FalconOS ISO (no insecure fallback)
+        run: make iso ENABLE_BEARSSL=1
+      - name: Check BearSSL kernel has valid Multiboot2 header
+        run: grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Upload experimental TLS ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-BearSSL-experimental-ISO
+          path: build/FalconOS.iso
