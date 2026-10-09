@@ -3736,8 +3736,8 @@ static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
  * USB UVC camera is not yet implemented and is never faked.
  */
 static const i32 LAUNCH_FAVORITES[] = {1,14,13,6,7,3,5,2,8};
-static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,10,18,5};
-static const i32 LAUNCH_ALL[] = {1,14,13,6,7,3,5,2,8,9,4,17,10,18};
+static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,18,5};
+static const i32 LAUNCH_ALL[] = {1,14,13,6,7,3,5,2,8,9,4,17,18};
 i32 apps_launcher_count(i32 group) {
     if(group==0) return (i32)(sizeof LAUNCH_FAVORITES/sizeof *LAUNCH_FAVORITES);
     if(group==1) return (i32)(sizeof LAUNCH_SYSTEM/sizeof *LAUNCH_SYSTEM);
@@ -3936,8 +3936,8 @@ static bool wm_window_rect(i32 *out_x, i32 *out_y, i32 *out_w, i32 *out_h)
     if (active_app < 0) return false;
     i32 W = (i32)FB.width, H = (i32)FB.height;
     if (wm_max) {
-        *out_x = 8; *out_y = 36;                   /* below the menu bar */
-        *out_w = W - 16; *out_h = H - 76;          /* leave dock visible */
+        *out_x=24;*out_y=48;
+        *out_w=W-48;*out_h=H-164; /* floating Shelf remains visible */
         return true;
     }
     i32 ww = W - 280; if (ww > 920) ww = 920; if (ww < 600) ww = 600;
@@ -3989,17 +3989,14 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
      *   red    → close (×)
      *   yellow → minimise to dock
      *   green  → toggle maximised (+)                                  */
-    i32 ty = wy + 18;
-    if (my >= ty - 10 && my <= ty + 10) {
-        if (mx >= wx + 9  && mx <= wx + 27) { apps_close(); return true; }
-        if (mx >= wx + 29 && mx <= wx + 47) {
-            minimized_app = active_app;
-            active_app = -1;
-            wm_dragging = false;
-            wm_resizing = false;
-            return true;
+    i32 ty=wy+20;
+    if(my>=ty-15&&my<=ty+15){
+        if(mx>=wx+ww-44&&mx<wx+ww-9){apps_close();return true;}
+        if(mx>=wx+ww-84&&mx<wx+ww-46){wm_max=!wm_max;return true;}
+        if(mx>=wx+ww-124&&mx<wx+ww-86){
+            minimized_app=active_app;active_app=-1;
+            wm_dragging=false;wm_resizing=false;return true;
         }
-        if (mx >= wx + 49 && mx <= wx + 67) { wm_max = !wm_max; return true; }
     }
 
     /* resize handle: 18×18 square at the bottom-right, only visible
@@ -4037,9 +4034,9 @@ void apps_render_active(u32 frame)
     if (SET.aero_enabled) {
         i32 hx = wx - 24, hy = wy - 24, hw = ww + 48, hh = wh + 48;
         if (SET.theme == THEME_LIQUID) gfx_blur_rect(hx, hy, hw, hh, 4);
-        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 68);
+        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 24);
     } else {
-        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 60);
+        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 22);
     }
 
     /* slide-in: 200 ms — only on first open, not while dragging */
@@ -4053,47 +4050,20 @@ void apps_render_active(u32 frame)
     /* card — Aero dims the desktop / dock / widgets behind the window  
      * so the chrome feels lifted. Window body remains solid because most
      * apps render their own opaque content into it.                      */
-    gfx_round_rect_a(wx + 4, wy + 12, ww, wh, 18, COL_SHADOW, 70);   /* shadow */
-    gfx_round_rect_a(wx, wy, ww, wh, 18, PAL_PANEL, SET.aero_enabled ? 230 : 245);
-    gfx_round_outline(wx, wy, ww, wh, 18, PAL_HAIRLINE);
+    gfx_round_rect_a(wx + 4, wy + 12, ww, wh, 24, COL_SHADOW, 60);   /* shadow */
+    gfx_round_rect_a(wx, wy, ww, wh, 24, PAL_PANEL, SET.aero_enabled ? 246 : 255);
+    gfx_round_outline(wx, wy, ww, wh, 24, PAL_HAIRLINE);
 
-    /* title bar — macOS-spec traffic lights on the left.
-     *   x+18  red    close       (#FF5F57)
-     *   x+38  yellow minimise    (#FEBC2E)
-     *   x+58  green  maximise    (#28C840)
-     *
-     * Each light is rendered as a sphere: inner disc + soft top
-     * highlight + thin dark outline.  When the cursor is over the
-     * traffic-light cluster, the hover glyph (× / − / +) is drawn
-     * inside its circle — same as Big Sur.                          */
-    {
-        i32 mx, my; bool ml;
-        mouse_get(&mx, &my, &ml);
-        bool hover_cluster =
-            (my >= wy +  8 && my <= wy + 28 &&
-             mx >= wx +  8 && mx <= wx + 68);
-
-        const i32   LX[3]   = { wx + 18, wx + 38, wx + 58 };
-        const u32   FILL[3] = { 0xFF5F57u, 0xFEBC2Eu, 0x28C840u };
-        const u32   RIM[3]  = { 0xCB4B43u, 0xC79624u, 0x21A434u };
-        const char *GLYPH[3]= { "x", "-", "+" };
-
-        for (i32 b = 0; b < 3; b++) {
-            gfx_circle(LX[b], wy + 18, 7, FILL[b]);
-            /* faint inner highlight on top half so the disc reads as
-             * a sphere lit from above (the macOS look).              */
-            gfx_circle_a(LX[b], wy + 16, 4, 0xFFFFFFu, 90);
-            /* 1-px outer rim — slightly darker than the fill         */
-            gfx_circle_outline(LX[b], wy + 18, 7, RIM[b]);
-
-            if (hover_cluster) {
-                gfx_text_centered(LX[b], wy + 12, GLYPH[b], 0x202020u);
-            }
-        }
-    }
-    /* app-tint pip on the right keeps the chrome symmetric */
-    gfx_circle(wx + ww - 26, wy + 18, 8, a->tint);
-    gfx_text_centered(wx + ww / 2, wy + 12, apps_display_name(active_app), PAL_TEXT_DIM);
+    /* Unified Aura title strip: app symbol left, ChromeOS window actions
+     * on the right; no macOS traffic-light clone. */
+    gfx_round_rect(wx+14,wy+8,28,28,10,a->tint);
+    apps_draw_icon(active_app,wx+28,wy+22);
+    gfx_text(wx+54,wy+13,apps_display_name(active_app),PAL_TEXT);
+    gfx_text(wx+ww-115,wy+14,"-",PAL_TEXT_DIM);
+    gfx_text(wx+ww-77,wy+14,"[]",PAL_TEXT_DIM);
+    gfx_round_rect(wx+ww-40,wy+7,31,30,11,0xFBE6E8u);
+    gfx_text_centered(wx+ww-24,wy+14,"x",0xAE3E4Bu);
+    gfx_rect_a(wx+13,wy+42,ww-26,1,PAL_HAIRLINE,255);
 
     /* body offset by 44 px for title strip */
     a->render(wx, wy + 44, ww, wh - 44, frame);
@@ -4108,7 +4078,7 @@ void apps_render_active(u32 frame)
 
     /* hint */
     gfx_text_centered(wx + ww / 2, wy + wh - 24,
-        T("drag title-bar  ·  resize corner  ·  yellow=minimize  ·  green=max",
-          "başlık çubuğunu sürükleyin · sağ alttan yeniden boyutlandırın"),
+        T("Move window by title | resize corner | Esc to close",
+          "Basliktan tasi | koseden boyutlandir | Esc kapat"),
         PAL_TEXT_FAINT);
 }
