@@ -701,6 +701,8 @@ u32 native_tcp_socket_capacity(void);
 bool native_http_get(const char *hostname,const char *path,char *result,u32 cap);
 bool native_http_get_port(const char *hostname,u16 port,const char *path,char *result,u32 cap);
 bool native_https_get(const char *hostname,const char *path,char *result,u32 cap);
+/* TLS verified, HTTP body may be incomplete. Only render as inert text. */
+bool native_https_get_preview(const char *hostname,const char *path,char *result,u32 cap);
 
 bool native_net_ping(const u8 ip[4]);
 bool native_net_parse_ipv4(const char *text, u8 out[4]);
