@@ -207,6 +207,29 @@ jobs:
             build/native-public-https.pcap
           if-no-files-found: ignore
 
+  native-browser-internet-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install x86 QEMU, bootloader and Mozilla root tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 ca-certificates
+      - name: Build real HTTPS native Browser GUI image
+        run: make iso ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_BROWSER_TEST
+      - name: QEMU interactive Browser HTTPS from live Internet and screenshot
+        run: python3 tools/qemu_tls_browser_gui_e2e.py --timeout 105
+      - name: Upload verified HTTPS website framebuffer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Native-HTTPS-Internet-Browser-Screenshot
+          path: |
+            build/FalconOS-Native-HTTPS-Internet-Browser.png
+            build/native-browser.log
+          if-no-files-found: ignore
+
   hardware-probe:
     runs-on: ubuntu-24.04
     timeout-minutes: 9
