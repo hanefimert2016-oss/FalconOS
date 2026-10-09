@@ -175,3 +175,24 @@ jobs:
           name: FalconOS-native-HTTPS-test
           path: build/tls-smoke-debug.log
           if-no-files-found: ignore
+
+  hardware-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU NVMe/xHCI PCI probe toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build PCI instrumented FalconOS ISO
+        run: make iso EXTRA_CFLAGS=-DFALCON_QEMU_PCI_TEST
+      - name: Verify NVMe, xHCI and VGA actual QEMU PCI controllers
+        run: python3 tools/qemu_pci_e2e.py
+      - name: Save PCI debug trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-PCI-NVMe-xHCI-VGA
+          path: build/pci-probe-debug.log
+          if-no-files-found: ignore
