@@ -28,6 +28,17 @@ jobs:
         run: make iso
       - name: Validate Multiboot2 kernel
         run: grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Install QEMU for graphical boot smoke
+        run: sudo apt-get install -y qemu-system-x86
+      - name: Boot QEMU and verify graphical framebuffer
+        run: timeout 75s python3 tools/qemu_smoke.py --boot-seconds 20
+      - name: Upload graphical smoke screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-boot-screenshot
+          path: build/falcon-boot-smoke.png
+          if-no-files-found: ignore
       - name: Upload FalconOS ISO
         uses: actions/upload-artifact@v4
         with:
