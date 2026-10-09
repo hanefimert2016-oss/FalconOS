@@ -483,6 +483,14 @@ void long_start(u64 magic, u64 info_ptr)
     pic_unmask(12);  /* mouse    */
     __asm__ volatile ("sti");
 
+#ifdef FALCON_QEMU_NET_TEST
+    /* CI-only: a real packet exchange, not a mocked socket or fake ping. */
+    {
+        const u8 gateway[4] = {10,0,2,2};
+        outb(0xE9, native_net_ping(gateway) ? 'N' : 'n');
+    }
+#endif
+
     boot_splash();
 
     /* installer: only on the very first boot                                */
