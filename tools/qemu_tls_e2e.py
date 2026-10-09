@@ -75,10 +75,10 @@ def main():
                 con.connect(str(monitor))
                 f=con.makefile("rwb",buffering=0)
                 _=json.loads(f.readline())
-                f.write(b'{"execute":"qmp_capabilities"}\\n')
+                f.write(b'{"execute":"qmp_capabilities"}\n')
                 _=json.loads(f.readline())
                 f.write(b'{"execute":"human-monitor-command",'
-                        b'"arguments":{"command-line":"info registers"}}\\n')
+                        b'"arguments":{"command-line":"info registers"}}\n')
                 result=json.loads(f.readline())
             response=result.get("return","")
             match=re.search(r"RIP=([0-9a-fA-F]+)",response)
