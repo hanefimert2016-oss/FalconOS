@@ -46,8 +46,19 @@ static void to_hex(const char *s, char *out, unsigned len) {
 static void expect(bool yes, int code){if(!yes){fprintf(stderr,"market protocol failed %d\n",code);exit(code);}}
 int main(void){
     shfs_init();
-    inject("CAT|hello-world|1.0.0|Hello World\n");
+    (void)shfs_mkdir_abs("/home/falcon/apps");
+    const char *cached =
+        "FAPP/1\nid=hello-world\nname=Hello World\nversion=1.0.0\n"
+        "summary=Previously downloaded app\n\necho cached\n";
+    shfs_ent_t *preloaded = shfs_open_w_abs("/home/falcon/apps/hello-world.pkg", false);
+    expect(preloaded != NULL, 20);
+    memcpy(preloaded->data, cached, strlen(cached) + 1);
+    preloaded->len = (u32)strlen(cached);
+    market_init();
+    expect(market_count() == 1 && market_installed(0), 21);
+    inject("CAT|hello-world|1.0.1|Hello World\n");
     expect(market_count()==1,1);
+    expect(market_has_update(0),22);
     expect(!market_line_allowed("echo unsafe & reboot",20),2);
     market_download(0);
     expect(nsent>0,3);

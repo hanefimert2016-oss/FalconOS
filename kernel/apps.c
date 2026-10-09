@@ -3231,12 +3231,16 @@ static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         gfx_circle(wx + 40, y + 14, 6, selected ? PAL_ACCENT : COL_OK);
         gfx_text(wx + 57, y + 6, market_name(i), PAL_TEXT);
         gfx_text(wx + ww / 2, y + 6, market_version(i), PAL_TEXT_FAINT);
+        bool installed = market_installed(i);
+        bool outdated = installed && market_has_update(i);
         gfx_text(wx + ww - 140, y + 6,
-                 market_installed(i) ? "RUN" : "GET", market_installed(i) ? COL_OK : PAL_ACCENT);
+                 outdated ? "UPDATE" : (installed ? "RUN" : "GET"),
+                 outdated ? COL_WARN : (installed ? COL_OK : PAL_ACCENT));
         if (clicked && mx >= wx + 24 && mx < wx + ww - 24 &&
             my >= y && my <= y + 29) {
             market_cursor = i;
-            if (market_installed(i)) market_launch(i);
+            if (market_has_update(i)) market_download(i);
+            else if (market_installed(i)) market_launch(i);
             else market_download(i);
             (void)mouse_consume_click(); clicked = false;
         }
