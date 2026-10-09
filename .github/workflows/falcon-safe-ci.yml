@@ -55,6 +55,10 @@ jobs:
         run: |
           gcc -std=gnu11 -Wall -Wextra -Ikernel tests/native_net_test.c kernel/net_native.c -o build/test-net-native
           ./build/test-net-native
+      - name: Validate ELF64 binary safety and W^X
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/elf64_stage_test.c kernel/elf64_stage.c -o build/test-elf
+          ./build/test-elf
       - name: Compile ISO
         run: make iso
       - name: Validate Multiboot2 kernel
