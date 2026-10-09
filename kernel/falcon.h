@@ -646,6 +646,7 @@ i32 native_tcp_read(u8 *out,u32 cap,u32 timeout_ticks);
 void native_tcp_close(void);
 i32 native_tcp_state(void);
 bool native_http_get(const char *hostname,const char *path,char *result,u32 cap);
+bool native_http_get_port(const char *hostname,u16 port,const char *path,char *result,u32 cap);
 bool native_https_get(const char *hostname,const char *path,char *result,u32 cap);
 
 bool native_net_ping(const u8 ip[4]);
