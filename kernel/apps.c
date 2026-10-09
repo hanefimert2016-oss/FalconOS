@@ -3305,9 +3305,10 @@ static void code_export(void)
     if (!file) { code_status = "Export failed: RAM file system full"; return; }
     k_memcpy(file->data, header, n);
     k_memcpy(file->data + n, code_text, code_len);
+    i32 exported_len = code_len;
     if (!code_len || code_text[code_len - 1] != '\n')
-        file->data[n + code_len++] = '\n';
-    file->len = n + code_len;
+        file->data[n + exported_len++] = '\n';
+    file->len = n + exported_len;
     file->data[file->len] = 0;
     code_status = "Exported code.app.pkg to Desktop (guest RAM)";
 }
@@ -3319,6 +3320,29 @@ static void code_input_key(i32 key)
     if (key == KEY_F7) { code_export(); return; }
     if ((kbd_mod_state() & KMOD_CTRL) && (key == 's' || key == 'S')) {
         code_save(); return;
+    }
+    if (key == KEY_UP || key == KEY_DOWN) {
+        i32 start = code_cursor;
+        while (start > 0 && code_text[start - 1] != '\n') start--;
+        i32 column = code_cursor - start;
+        if (key == KEY_UP && start > 0) {
+            i32 previous_end = start - 1;
+            i32 previous_start = previous_end;
+            while (previous_start > 0 && code_text[previous_start - 1] != '\n')
+                previous_start--;
+            i32 width = previous_end - previous_start;
+            code_cursor = previous_start + (column < width ? column : width);
+        } else if (key == KEY_DOWN) {
+            i32 end = code_cursor;
+            while (end < code_len && code_text[end] != '\n') end++;
+            if (end < code_len) {
+                i32 next_start = end + 1, next_end = next_start;
+                while (next_end < code_len && code_text[next_end] != '\n') next_end++;
+                i32 width = next_end - next_start;
+                code_cursor = next_start + (column < width ? column : width);
+            }
+        }
+        return;
     }
     if (key == KEY_LEFT && code_cursor > 0) { code_cursor--; return; }
     if (key == KEY_RIGHT && code_cursor < code_len) { code_cursor++; return; }
@@ -3367,7 +3391,9 @@ static void render_codedium(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     i32 bi = 0;
     for (i32 pos = 0; pos <= code_len; pos++) {
         char ch = code_text[pos];
-        if (ch != '\n' && ch != 0 && bi < (i32)sizeof buf - 1) {
+        i32 max_chars = (ww - 102) / 8;
+        if (max_chars >= (i32)sizeof buf) max_chars = (i32)sizeof buf - 1;
+        if (ch != '\n' && ch != 0 && bi < max_chars) {
             buf[bi++] = ch; continue;
         }
         buf[bi] = 0;
