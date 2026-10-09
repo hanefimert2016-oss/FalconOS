@@ -2663,7 +2663,19 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         settings_scroll=set_row-visible+1;
     if(set_row<settings_scroll)settings_scroll=set_row;
     gfx_text(wx+ww-192,wy+112,
-      "Up/Down   Left/Right",PAL_TEXT_DIM);     /* row vertical pitch                            */
+      "Up/Down   Left/Right",PAL_TEXT_DIM);
+    if(mouse_peek_click()){
+        i32 mx,my;bool pressed;mouse_get(&mx,&my,&pressed);(void)pressed;
+        if(mx>=sx&&mx<sx+sw&&my>=settings_view_min &&
+           my<settings_view_max){
+            i32 picked=settings_scroll+(my-settings_view_min)/step;
+            if(picked>=0&&picked<SR_COUNT){
+                (void)mouse_consume_click();
+                set_row=picked;
+                set_input_key(KEY_RIGHT);
+            }
+        }
+    }     /* row vertical pitch                            */
     char val[40];
 
     /* Theme ------------------------------------------------------------ */
@@ -3034,6 +3046,10 @@ static void falco_search(void){
          "Live Wikipedia results - host certificate verified");
 }
 static void falco_input_key(i32 key){
+    if(key==KEY_F4){
+        falco_query[0]=0;falco_query_len=0;
+        falco_has_results=false;falco_sel=0;return;
+    }
     if(key==KEY_ENTER||key==KEY_F5){falco_search();return;}
     if(key==KEY_UP){if(falco_sel>0)falco_sel--;return;}
     if(key==KEY_DOWN){if(falco_sel<40)falco_sel++;return;}
@@ -3089,7 +3105,7 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             gfx_text(x+22,wy+225+row*21,line,PAL_TEXT);
         }
     }
-    gfx_text(x+5,wy+wh-36,"Enter search | Up/Down scroll | Host HTTPS only",PAL_TEXT_FAINT);
+    gfx_text(x+5,wy+wh-36,"F4 clear | Enter search | Up/Down scroll | Verified Host HTTPS",PAL_TEXT_FAINT);
 }
 
 /* --- Falcon Browser: actual guest TCP + authenticated HTTPS only ---------
@@ -3207,6 +3223,13 @@ static void browser_load(void){
 
 }
 static void chrome_input_key(i32 key){
+    if(key==KEY_F4){
+        browser_address[0]=0;
+        browser_address_len=0;
+        browser_address_focus=true;
+        k_strcpy(browser_status,"Address cleared. Type https://... and press Enter.");
+        return;
+    }
     if(key==KEY_F6){
         browser_host_gateway=!browser_host_gateway;
         browser_loaded=false;browser_result[0]=0;
@@ -3285,7 +3308,7 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
     }
     gfx_text(wx+margin,wy+wh-26,
-        "Enter load | Tab address | F5 reload | F6 HTTPS mode | Up/Down scroll",
+        "F4 new URL | Enter load | F5 reload | F6 HTTPS mode | Up/Down scroll",
         PAL_TEXT_FAINT);
 }
 
