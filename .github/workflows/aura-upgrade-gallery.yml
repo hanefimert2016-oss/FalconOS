@@ -24,19 +24,19 @@ jobs:
       - name: Bake original dragon GLB and compile Aura ISO with native TLS
         run: |
           python3 tools/bake_boot_intro.py --frames 48
-          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
           grub-file --is-x86-multiboot2 build/falcon.elf
       - name: Verify graphical FalconOS boot in QEMU
         run: python3 tools/qemu_smoke.py --iso build/FalconOS.iso --boot-seconds 16
       - name: Capture desktop, launchpad, apps, CodeDium and native multiwindows
         id: ui
-        run: timeout 170s python3 tools/qemu_ui_smoke.py --iso build/FalconOS.iso
+        run: timeout 225s python3 tools/qemu_ui_smoke.py --iso build/FalconOS.iso
       - name: Open falconos.tech in Falco with explicit host-verified HTTPS and capture PNG
         id: falco
         continue-on-error: true
         run: |
           make clean
-          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_BROWSER_TEST
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
           timeout 170s python3 tools/qemu_falco_website.py --iso build/FalconOS.iso --via-host
       - name: Upload actual guest screenshots
         if: always()
