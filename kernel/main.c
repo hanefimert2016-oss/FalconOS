@@ -503,6 +503,18 @@ void long_start(u64 magic, u64 info_ptr)
     }
 #endif
 
+#ifdef FALCON_QEMU_TLS_PUBLIC_TEST
+    /* Real outgoing IPv4/DNS/TCP/TLS from QEMU slirp over GitHub runner
+     * internet, NOT any local host TLS proxy. CA and hostname verified by
+     * BearSSL. Success means an authenticated, complete HTTPS 200 payload. */
+    {
+        char webpage[4096];
+        outb(0xE9,'p');
+        bool ok=native_https_get("example.com","/",webpage,sizeof webpage);
+        outb(0xE9,ok&&sh_contains_ci(webpage,"Example Domain")?'Y':'N');
+    }
+#endif
+
 #ifdef FALCON_QEMU_TCP_MULTI_TEST
     {
         const u8 gateway[4]={10,0,2,2};
