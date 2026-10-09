@@ -25,4 +25,28 @@ int memcmp(const void *a,const void *b,size_t n){
     return 0;
 }
 size_t strlen(const char *s){size_t n=0;while(s[n])n++;return n;}
+/* Glibc FORTIFY entry points referenced by upstream BearSSL despite a
+ * freestanding build; enforce destination capacity rather than bypassing it.
+ */
+static void bound_failure(void){
+    for(;;)__asm__ volatile("cli; hlt");
+}
+void *__memcpy_chk(void *dst,const void *src,size_t n,size_t bound){
+    if(n>bound)bound_failure();
+    return memcpy(dst,src,n);
+}
+void *__memset_chk(void *dst,int val,size_t n,size_t bound){
+    if(n>bound)bound_failure();
+    return memset(dst,val,n);
+}
+void *__memmove_chk(void *dst,const void *src,size_t n,size_t bound){
+    if(n>bound)bound_failure();
+    return memmove(dst,src,n);
+}
+/* This is only the BearSSL fallback; caller must explicitly set X509 time.
+ * 1970 cannot silently validate modern certificates. */
+long time(long *timestamp){
+    if(timestamp)*timestamp=0;
+    return 0;
+}
 #endif
