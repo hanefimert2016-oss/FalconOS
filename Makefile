@@ -53,13 +53,50 @@ FB_H := 1440
 BUILD       := build
 ISO_DIR     := $(BUILD)/iso
 
+# BearSSL is opt-in: releases keep HTTPS FAIL-CLOSED until real TLS CI passes.
+ENABLE_BEARSSL ?= 0
+ENABLE_NATIVE_MARKET ?= 0
+ifeq ($(ENABLE_NATIVE_MARKET),1)
+ifneq ($(ENABLE_BEARSSL),1)
+$(error Native Marketplace requires ENABLE_BEARSSL=1; insecure fetch is forbidden)
+endif
+NATIVE_MARKET_FLAGS := -DFALCON_NATIVE_MARKET
+endif
+TLS_CA_BUNDLE ?= /etc/ssl/certs/ca-certificates.crt
+TLS_PATH := third_party/bearssl
+ifeq ($(ENABLE_BEARSSL),1)
+TLS_FLAGS := -DFALCON_BEARSSL -I$(TLS_PATH)/inc
+TLS_OBJECTS := $(BUILD)/tls_roots.o
+TLS_LIBRARY := $(TLS_PATH)/build/libbearssl.a
+else
+TLS_FLAGS :=
+TLS_OBJECTS :=
+TLS_LIBRARY :=
+endif
+
+ENABLE_RING3_TEST ?= 0
+ifeq ($(ENABLE_RING3_TEST),1)
+RING3_DEFS := -DFALCON_RING3_TEST
+else
+RING3_DEFS :=
+endif
+
+# Build-time baked glTF boot sprites are generated into build/ only.
+# Use ENABLE_BOOT_GLB=1 after tools/bake_boot_intro.py is run.
+ENABLE_BOOT_GLB ?= 0
+ifeq ($(ENABLE_BOOT_GLB),1)
+BOOT_GLB_FLAGS := -DFALCON_BOOT_GLB -I$(BUILD)
+else
+BOOT_GLB_FLAGS :=
+endif
+
 CFLAGS      := $(CFLAGS_ARCH) -ffreestanding -fno-pic -fno-stack-protector \
                -fno-builtin -nostdlib -nostdinc \
                -Wall -Wextra -Wno-unused-parameter \
                -O2 -Ikernel -Ilinux \
-               -DFB_W=$(FB_W) -DFB_H=$(FB_H) -DARCH_$(ARCH)=1
+               -DFB_W=$(FB_W) -DFB_H=$(FB_H) -DARCH_$(ARCH)=1 $(EXTRA_CFLAGS) $(TLS_FLAGS) $(NATIVE_MARKET_FLAGS) $(RING3_DEFS) $(BOOT_GLB_FLAGS)
 LDFLAGS     := $(LDFLAGS_ARCH) -T linker.ld -nostdlib -z noexecstack
-NASMFLAGS   := -f $(NASMFMT) -DFB_W=$(FB_W) -DFB_H=$(FB_H)
+NASMFLAGS   := -f $(NASMFMT) -DFB_W=$(FB_W) -DFB_H=$(FB_H) $(RING3_DEFS)
 
 C_SRCS      := $(wildcard kernel/*.c) $(wildcard linux/*.c)
 C_OBJS      := $(C_SRCS:%.c=$(BUILD)/%.o)
@@ -76,10 +113,12 @@ VRAM          ?= 256
 DISK_CAPACITY ?= 4G
 
 QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
+                 -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display sdl -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
 HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
+                 -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display none -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
@@ -104,9 +143,31 @@ $(BUILD)/linux/%.o: linux/%.c kernel/falcon.h | $(BUILD)/linux
 $(BUILD)/boot/%.o: boot/%.asm | $(BUILD)/boot
 	$(NASM) $(NASMFLAGS) $< -o $@
 
+# BearSSL TLS library (fixed upstream SHA-256 and audited host PEM roots).
+ifeq ($(ENABLE_BEARSSL),1)
+$(TLS_LIBRARY):
+	python3 tools/bootstrap_bearssl.py
+	$(MAKE) -C $(TLS_PATH) build/libbearssl.a CC=gcc \
+	  "CFLAGS=-O2 -std=c99 -ffreestanding -fno-builtin -fno-pic -fno-stack-protector -m64 -mcmodel=kernel -mno-red-zone -mno-sse -mno-sse2 -Iinc -Isrc"
+
+$(BUILD)/tls_roots.c: $(TLS_CA_BUNDLE) tools/generate_tls_roots.py | $(BUILD)
+	python3 tools/generate_tls_roots.py --bundle $(TLS_CA_BUNDLE) --output $@
+
+$(BUILD)/tls_roots.o: $(BUILD)/tls_roots.c $(TLS_LIBRARY)
+	$(CC) $(filter-out -nostdinc,$(CFLAGS)) -c $< -o $@
+
+# BearSSL header files depend on standard integer types, unlike our kernel.
+$(BUILD)/kernel/https_bearssl.o: kernel/https_bearssl.c kernel/falcon.h $(TLS_LIBRARY) | $(BUILD)/kernel
+	$(CC) $(filter-out -nostdinc,$(CFLAGS)) -c $< -o $@
+endif
+
 # ---- link kernel --------------------------------------------------------------
-$(KERNEL): $(ASM_OBJS) $(C_OBJS) linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(ASM_OBJS) $(C_OBJS)
+ifeq ($(ENABLE_BOOT_GLB),1)
+$(BUILD)/kernel/boot_glb_animation.o: $(BUILD)/boot_model_frames.inc
+endif
+
+$(KERNEL): $(ASM_OBJS) $(C_OBJS) $(TLS_OBJECTS) $(TLS_LIBRARY) linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(ASM_OBJS) $(C_OBJS) $(TLS_OBJECTS) $(TLS_LIBRARY)
 	@echo "[OK] linked $@  ($$(wc -c < $@) bytes, ARCH=$(ARCH), back-buffer $(FB_W)×$(FB_H))"
 
 # ---- ISO ----------------------------------------------------------------------

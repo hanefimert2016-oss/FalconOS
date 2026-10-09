@@ -134,6 +134,9 @@ u32 PAL(u8 role);
 /* ---- gfx primitives ------------------------------------------------------- */
 void gfx_init(void *p, u32 w, u32 h, u32 pitch, u8 bpp);
 void gfx_present(void);
+#ifdef FALCON_BOOT_GLB
+void boot_glb_splash(void);
+#endif
 void gfx_clear(u32 c);
 void gfx_gradient_v(u32 top, u32 bot);
 void gfx_wallpaper(void);
@@ -356,6 +359,9 @@ bool market_line_allowed(const char *line, i32 size);
 
 /* ---- application framework (Personal kernel) ------------------------------ */
 i32          apps_count(void);
+/* Filtered launcher catalog; IDs remain the real app registry indexes. */
+i32          apps_launcher_count(i32 section);
+i32          apps_launcher_id(i32 section,i32 slot);
 const char  *apps_name(i32 i);
 const char  *apps_display_name(i32 i);     /* localized label for LANG_TR UI   */
 const char  *apps_display_subtitle(i32 i);
@@ -624,6 +630,91 @@ void   net_stats(u32 *tx_pkt, u32 *rx_pkt, u32 *tx_by, u32 *rx_by,
                  u32 *tx_err, u32 *rx_err);
 bool   net_dhcp(void);
 const char *net_summary(void);
+
+/* Sandboxed FVM/1 application instances (not native ELF/ring3). */
+i32 fvm_spawn_source(const char *name,const char *data,u32 length);
+i32 fvm_spawn_file(const char *path);
+void fvm_tick(void);
+bool fvm_kill(i32 slot);
+i32 fvm_state(i32 slot);
+i32 fvm_last_print(i32 slot);
+void fvm_status(char *out,i32 capacity);
+
+/* W^X ELF validation and nonexecuting staging; no Ring3 yet. */
+/* Experimental only; available when ENABLE_RING3_TEST=1. */
+#ifdef FALCON_RING3_TEST
+bool ring3_run_elf(const u8 *image,u32 length);
+/* Ring3 preview-only cooperative user ELF scheduler (2 tasks). */
+i32 ring3_spawn_elf(const u8 *image,u32 length);
+bool ring3_schedule_one(void);
+u32 ring3_native_running(void);
+#endif
+bool elf64_inspect(const u8 *image,u32 length,u64 *entry,u32 *segments);
+bool elf64_stage(const u8 *image,u32 length,u8 *arena,u32 arena_len,u64 *entry);
+
+/* PCI NVMe, xHCI and VGA discovery, read-only BAR capability check. */
+void pci_extended_probe(void);
+u32 pci_extended_count(u32 kind);
+bool pci_extended_mmio(u32 kind);
+u32 pci_extended_info(u32 kind,u32 field);
+
+/* JFS2 bounded dynamically allocated append-only transactional journal. */
+bool jfs_mount(void);
+bool jfs_ready(void);
+bool jfs_write(const char *path,const u8 *data,u32 length);
+bool jfs_remove(const char *path);
+i32 jfs_read(const char *path,u8 *out,u32 cap);
+u32 jfs_file_count(void);
+u32 jfs_free_sectors(void);
+u32 jfs_incomplete(void);
+bool jfs_fsck(u32 *files,u32 *incomplete);
+
+/* XFS1 large-object store, partition type 0xFA only; QEMU first. */
+bool xfs_mount(void);
+bool xfs_ready(void);
+u32 xfs_max_size(void);
+u32 xfs_capacity(void);
+u32 xfs_corrupt_copies(void);
+i32 xfs_read(const char *name,u8 *out,u32 capacity);
+bool xfs_write(const char *name,const u8 *data,u32 len);
+bool xfs_remove(const char *name);
+u32 xfs_count(void);
+bool xfs_fsck(u32 *files,u32 *bad_copies);
+
+/* Native IPv4/ICMP packet networking; not a TLS or full TCP stack. */
+void native_net_poll(void);
+/* Guest-native TCP IPv4 client, single connection, QEMU-first. */
+bool native_net_ipv4_send(const u8 remote[4],u8 protocol,const u8 *payload,u16 bytes);
+void native_net_local_ipv4(u8 out[4]);
+void native_tcp_receive(const u8 *ip,u32 total);
+bool native_tcp_connect(const u8 remote[4],u16 port);
+i32 native_tcp_write(const u8 *data,u32 length);
+i32 native_tcp_read(u8 *out,u32 cap,u32 timeout_ticks);
+void native_tcp_close(void);
+i32 native_tcp_state(void);
+/* Multi-client sockets: slot 0 reserved for legacy HTTP/TLS; slots 1..3 for independent clients. */
+i32 native_tcp_socket_open(const u8 remote[4],u16 port);
+i32 native_tcp_socket_write(i32 handle,const u8 *data,u32 len);
+i32 native_tcp_socket_read(i32 handle,u8 *out,u32 cap,u32 timeout);
+bool native_tcp_socket_close(i32 handle);
+u32 native_tcp_socket_capacity(void);
+bool native_http_get(const char *hostname,const char *path,char *result,u32 cap);
+bool native_http_get_port(const char *hostname,u16 port,const char *path,char *result,u32 cap);
+bool native_https_get(const char *hostname,const char *path,char *result,u32 cap);
+/* TLS verified, HTTP body may be incomplete. Only render as inert text. */
+bool native_https_get_preview(const char *hostname,const char *path,char *result,u32 cap);
+
+bool native_net_ping(const u8 ip[4]);
+bool native_net_parse_ipv4(const char *text, u8 out[4]);
+bool native_dhcp_acquire(u8 ip[4],u8 mask[4],u8 router[4],u8 dns[4]);
+void native_dhcp_receive(const u8 *payload,u32 length);
+bool native_net_dhcp_broadcast(const u8 *payload,u16 length);
+void native_net_dns_server(const u8 ip[4]);
+bool native_net_arp_known(void);
+bool native_net_dns_query(const char *hostname,u8 address[4]);
+bool native_net_dns_parse(const u8 *packet,u32 length,u16 expected_id,u8 answer[4]);
+void native_net_arp_mac(u8 out[6]);
+u32 native_net_rx_count(void);
 
 /* ---- network tools (kernel/net_tools.c) ------------------------------------- */
 void   net_tools_dispatch(const char *cmd, char *out);

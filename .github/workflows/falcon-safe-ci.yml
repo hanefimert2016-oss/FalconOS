@@ -1,9 +1,12 @@
 name: FalconOS safe storage and ISO
 on:
   push:
-    branches: [FalconOS-1-release, 'fix/**']
+    branches: [FalconOS-1-release, 'fix/**', 'feature/core-storage-net-usermode']
   pull_request:
     branches: [FalconOS-1-release]
+concurrency:
+  group: core-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
@@ -36,6 +39,30 @@ jobs:
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/codedium_package_test.c kernel/codedium_pkg.c kernel/market_version.c kernel/fapp_policy.c -o build/test-codedium-pkg
           ./build/test-codedium-pkg
+      - name: Test durable SHFS PFS1 records
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/pfs_test.c kernel/shfs.c kernel/pfs.c -o build/test-pfs
+          ./build/test-pfs
+      - name: Test 32KiB large-object filesystem and corruption recovery
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/xfs_large_test.c kernel/xfs_large.c -o build/test-xfs-large
+          ./build/test-xfs-large
+      - name: Verify dynamic journal and replay after interrupted I/O
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/jfs_dynamic_test.c kernel/jfs_dynamic.c -o build/test-jfs-dynamic
+          ./build/test-jfs-dynamic
+      - name: Test independent FVM application scheduler
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/fvm_test.c kernel/fvm.c -o build/test-fvm
+          ./build/test-fvm
+      - name: Test native Ethernet ARP/ICMP framing
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Ikernel tests/native_net_test.c kernel/net_native.c -o build/test-net-native
+          ./build/test-net-native
+      - name: Validate ELF64 binary safety and W^X
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/elf64_stage_test.c kernel/elf64_stage.c -o build/test-elf
+          ./build/test-elf
       - name: Compile ISO
         run: make iso
       - name: Validate Multiboot2 kernel
@@ -77,3 +104,275 @@ jobs:
         with:
           name: FalconOS-safe-ISO
           path: build/FalconOS.iso
+
+  native-network:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU and kernel build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build network-instrumented kernel and ISO
+        run: make iso EXTRA_CFLAGS='-DFALCON_QEMU_NET_TEST -DFALCON_QEMU_TCP_TEST -DFALCON_QEMU_DHCP_TEST'
+      - name: Verify actual guest-to-gateway ICMP exchange
+        run: python3 tools/qemu_net_e2e.py --timeout 75 --require-dns --require-dhcp
+      - name: Verify guest-native TCP and HTTP against live QEMU host
+        run: python3 tools/qemu_tcp_e2e.py --timeout 70
+      - name: Upload network diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-native-net-debug
+          path: |
+            build/net-smoke-debug.log
+            build/tcp-smoke-debug.log
+          if-no-files-found: ignore
+
+  tls-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install TLS and bare-metal build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools python3-cryptography ca-certificates
+      - name: Compile BearSSL HTTPS-enabled FalconOS ISO (no insecure fallback)
+        run: make iso ENABLE_BEARSSL=1 ENABLE_NATIVE_MARKET=1
+      - name: Check BearSSL kernel has valid Multiboot2 header
+        run: grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Upload experimental TLS ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-BearSSL-experimental-ISO
+          path: build/FalconOS.iso
+
+  native-https-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain, TLS compiler and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-cryptography openssl
+      - name: Create test-only local certificate authority and valid/invalid leaves
+        run: |
+          mkdir -p build/tls-test
+          cd build/tls-test
+          openssl ecparam -name prime256v1 -genkey -noout -out ca.key
+          openssl req -x509 -new -sha256 -key ca.key -out ca.pem -days 2 -subj '/CN=FalconOS CI Test CA' -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign'
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out server.key
+          openssl req -new -sha256 -key server.key -out server.csr -subj '/CN=falcon.test'
+          printf 'subjectAltName=DNS:falcon.test\nbasicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\nkeyUsage=digitalSignature,keyEncipherment\n' > good.ext
+          openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out server.pem -days 2 -extfile good.ext
+          printf 'subjectAltName=DNS:wrong.test\nbasicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\nkeyUsage=digitalSignature,keyEncipherment\n' > bad.ext
+          openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out bad.pem -days 2 -extfile bad.ext
+      - name: Compile test-only native HTTPS-enabled ISO with CI CA root
+        run: make iso ENABLE_BEARSSL=1 TLS_CA_BUNDLE=build/tls-test/ca.pem ENABLE_NATIVE_MARKET=1 EXTRA_CFLAGS=-DFALCON_QEMU_TLS_TEST
+      - name: Verify real TLS 1.2 HTTP and certificate hostname
+        run: python3 tools/qemu_tls_e2e.py --certificate build/tls-test/server.pem --key build/tls-test/server.key --timeout 53
+      - name: Verify invalid certificate hostname is rejected
+        run: python3 tools/qemu_tls_e2e.py --certificate build/tls-test/bad.pem --key build/tls-test/server.key --expect-failure
+      - name: Upload HTTPS boot/debug records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-native-HTTPS-test
+          path: build/tls-smoke-debug.log
+          if-no-files-found: ignore
+
+  native-public-https:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU, BearSSL build tools and CA roots
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 ca-certificates
+      - name: Build native HTTPS internet QEMU kernel with real public CA roots
+        run: make iso ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_TLS_PUBLIC_TEST
+      - name: Verify actual Internet DNS TCP BearSSL HTTPS and HTML
+        run: python3 tools/qemu_tls_public_e2e.py --timeout 115
+      - name: Archive public HTTPS guest trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-real-public-HTTPS
+          path: |
+            build/native-public-https.log
+            build/native-public-https.pcap
+          if-no-files-found: ignore
+
+  native-browser-internet-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install x86 QEMU, bootloader and Mozilla root tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 ca-certificates
+      - name: Build real HTTPS native Browser GUI image
+        run: make iso ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_BROWSER_TEST
+      - name: QEMU interactive Browser HTTPS from live Internet and screenshot
+        run: python3 tools/qemu_tls_browser_gui_e2e.py --timeout 105
+      - name: Upload verified HTTPS website framebuffer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Native-HTTPS-Internet-Browser-Screenshot
+          path: |
+            build/FalconOS-Native-HTTPS-Internet-Browser.png
+            build/native-browser.log
+          if-no-files-found: ignore
+
+  hardware-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU NVMe/xHCI PCI probe toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build PCI instrumented FalconOS ISO
+        run: make iso EXTRA_CFLAGS=-DFALCON_QEMU_PCI_TEST
+      - name: Verify NVMe, xHCI and VGA actual QEMU PCI controllers
+        run: python3 tools/qemu_pci_e2e.py
+      - name: Save PCI debug trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-PCI-NVMe-xHCI-VGA
+          path: build/pci-probe-debug.log
+          if-no-files-found: ignore
+
+  ring3-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ring3 Multiboot and QEMU tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build real Ring3 INT80 test kernel
+        run: make iso ENABLE_RING3_TEST=1
+      - name: Test CPL3 user code, syscall and kernel resume in QEMU
+        run: python3 tools/qemu_ring3_e2e.py
+      - name: Upload ring3 trap trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-CPL3-INT80
+          path: build/ring3-debug.log
+          if-no-files-found: ignore
+
+  tcp-multi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU and multiboot toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build concurrent TCP guest kernel
+        run: make iso EXTRA_CFLAGS=-DFALCON_QEMU_TCP_MULTI_TEST
+      - name: Validate two real simultaneous TCP sessions
+        run: python3 tools/qemu_tcp_multi_e2e.py
+      - name: Save TCP multiconnection trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-TCP-multi-socket
+          path: build/tcp-multi-debug.log
+          if-no-files-found: ignore
+
+  nvme-identify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU NVMe + freestanding build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build isolated NVMe admin command ISO
+        run: make iso EXTRA_CFLAGS=-DFALCON_QEMU_NVME_ID_TEST
+      - name: Run real NVMe Admin DMA Identify Controller and Namespace
+        run: python3 tools/qemu_nvme_e2e.py
+      - name: Save NVMe diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-NVMe-Admin-Identify
+          path: build/nvme-admin-debug.log
+          if-no-files-found: ignore
+
+  xhci-command:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU xHCI and kernel tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build isolated USB3 xHCI host test ISO
+        run: make iso EXTRA_CFLAGS=-DFALCON_QEMU_XHCI_CMD_TEST
+      - name: Execute real controller No-op command and event ring
+        run: python3 tools/qemu_xhci_e2e.py
+      - name: Upload controller trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-USB3-xHCI-Command
+          path: build/xhci-command-debug.log
+          if-no-files-found: ignore
+
+  elf64-ring3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native ELF user-mode and QEMU toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build experimental ELF loader and INT80 kernel
+        run: make iso ENABLE_RING3_TEST=1 EXTRA_CFLAGS=-DFALCON_QEMU_ELF_TEST
+      - name: Execute ELF64 checked text in real Ring3
+        run: python3 tools/qemu_elf_ring3_e2e.py
+      - name: Store ELF/CPL3 trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-ELF64-CPL3-proof
+          path: build/elf-ring3-debug.log
+          if-no-files-found: ignore
+
+  elf-ring3-scheduler:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native Ring3 scheduling test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build opt-in two-process ELF scheduler test
+        run: make iso ENABLE_RING3_TEST=1 EXTRA_CFLAGS=-DFALCON_QEMU_SCHED_TEST
+      - name: Verify two cooperative CPL3 tasks switch and resume
+        run: python3 tools/qemu_ring3_sched_e2e.py
+      - name: Archive native task scheduling trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-native-ELF-cooperative-scheduler
+          path: build/ring3-scheduler-debug.log
+          if-no-files-found: ignore

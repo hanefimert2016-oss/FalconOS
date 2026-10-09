@@ -25,6 +25,15 @@ def screenshot(sock, path):
         time.sleep(0.1)
     return path.read_bytes()
 
+def wait_for_marker(debug, marker, after=0, timeout=22):
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        data=debug.read_bytes() if debug.exists() else b""
+        if marker in data[after:]:return
+        time.sleep(.13)
+    raise RuntimeError(f"Installer event {marker!r} missing. debug="+
+                       repr(debug.read_bytes() if debug.exists() else b""))
+
 def picture_difference(a, b):
     # PPM P6 headers share resolution; different pixels must reflect UI transitions.
     def split(ppm):
@@ -69,25 +78,57 @@ def main():
             sock.settimeout(5)
             sock.connect(str(monitor))
             before = screenshot(sock, first)
-            # Setup: language, theme, accent, keyboard, secure disk.
-            for _ in range(5): command(sock, "sendkey ret", 0.4)
-            for char in "falcon": command(sock, "sendkey " + char, 0.3)
-            # username + blank password and confirmation
-            for _ in range(3): command(sock, "sendkey ret", 0.45)
-            # "Add another user?" -> no
-            command(sock, "sendkey right", 0.3)
-            command(sock, "sendkey ret", 1)
-            # lock screen without password
-            command(sock, "sendkey ret", 1.5)
+            ppm_to_png(first,root/"FalconOS-Aura-Setup.png")
+            # Synchronize with real guest step transitions. A fixed sleep can
+            # send characters while GLB intro/GRUB still owns the keyboard.
+            wait_for_marker(debug,b"L",timeout=30)
+            for marker in (b"T",b"A",b"K",b"D",b"U"):
+                offset=len(debug.read_bytes())
+                command(sock,"sendkey ret",0.4)
+                wait_for_marker(debug,marker,after=offset)
+            for char in "falcon":command(sock,"sendkey "+char,0.4)
+            for marker in (b"P",b"Q",b"O"):
+                offset=len(debug.read_bytes())
+                command(sock,"sendkey ret",0.45)
+                wait_for_marker(debug,marker,after=offset)
+            command(sock,"sendkey right",0.35)
+            offset=len(debug.read_bytes())
+            command(sock,"sendkey ret",0.8)
+            wait_for_marker(debug,b"W",after=offset)
+            offset=len(debug.read_bytes())
+            command(sock,"sendkey ret",1.1)
+            wait_for_marker(debug,b"H",after=offset)
             # Open Launchpad (F2), move Home -> Files -> Store,
             # press Enter. Require kernel debugcon events as evidence.
             command(sock, "sendkey esc", .4)
             before = screenshot(sock, first)
+            ppm_to_png(first,root/"FalconOS-Aura-Desktop.png")
             command(sock, "sendkey f2", .8)
-            command(sock, "sendkey right", .3)
-            command(sock, "sendkey right", .3)
+            launcher=screenshot(sock, root/"aura-launcher.ppm")
+            ppm_to_png(root/"aura-launcher.ppm",root/"FalconOS-Aura-Launcher.png")
+            # Functional Shelf launcher: Store is eighth favorite (slot 7).
+            for _ in range(7): command(sock, "sendkey right", .17)
             command(sock, "sendkey ret", 1.5)
             after = screenshot(sock, last)
+            # Real framebuffer shots for native functional apps, not mockups.
+            current=7
+            for target,name in ((0,"Files"),(1,"Browser"),(2,"Falco"),
+                                (3,"Calculator"),(4,"Notes"),(5,"Settings")):
+                command(sock,"sendkey esc",.18)
+                command(sock,"sendkey f2",.35)
+                while current>target:
+                    command(sock,"sendkey left",.07)
+                    current-=1
+                while current<target:
+                    command(sock,"sendkey right",.07)
+                    current+=1
+                command(sock,"sendkey ret",.5)
+                ppm=root/("FalconOS-Aura-"+name+".ppm")
+                shot=screenshot(sock,ppm)
+                if picture_difference(before,shot)<40:
+                    raise AssertionError("No visual change after launching "+name)
+                ppm_to_png(ppm,root/("FalconOS-Aura-"+name+".png"))
+                print("PASS: QEMU rendered actual app window",name)
         score = picture_difference(before, after)
         ppm_to_png(last, args.output)
         events = debug.read_bytes() if debug.exists() else b""

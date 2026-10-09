@@ -159,3 +159,124 @@ irq_table:
     dq irq %+ i
 %assign i i+1
 %endrep
+
+; ---- Experimental CPL3 return and INT 0x80 (not enabled in release) -------
+%ifdef FALCON_RING3_TEST
+section .bss
+align 8
+saved_ring_rsp:   resq 1
+saved_ring_rbx:   resq 1
+saved_ring_rbp:   resq 1
+saved_ring_r12:   resq 1
+saved_ring_r13:   resq 1
+saved_ring_r14:   resq 1
+saved_ring_r15:   resq 1
+global ring3_saved_user_frame
+ring3_saved_user_frame: resq 20
+
+
+section .text
+global ring3_enter
+global ring3_syscall_int80
+extern ring3_syscall_dispatch
+ring3_enter:
+    ; User code can clobber nonvolatile registers. Preserve kernel ABI.
+    mov [rel saved_ring_rsp], rsp
+    mov [rel saved_ring_rbx], rbx
+    mov [rel saved_ring_rbp], rbp
+    mov [rel saved_ring_r12], r12
+    mov [rel saved_ring_r13], r13
+    mov [rel saved_ring_r14], r14
+    mov [rel saved_ring_r15], r15
+    mov ax, 0x23
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    push qword 0x23
+    push rsi
+    pushfq
+    pop rax
+    or rax, 0x200           ; IF, allow PIC timer to continue running
+    and rax, ~0x3000        ; IOPL=0, user cannot inb/outb
+    push rax
+    push qword 0x1B
+    push rdi
+    iretq
+
+ring3_syscall_int80:
+    PUSHA64
+    ; On CPL3 entry, CPU used TSS.RSP0 and pushed SS/RSP/RFLAGS/CS/RIP.
+    ; Full saved frame layout after PUSHA64: CS at rsp+128.
+    mov rax, [rsp+128]
+    and eax, 3
+    cmp eax, 3
+    jne .invalid
+    mov rdi, [rsp+112]      ; user RAX syscall number
+    mov rbx, rsp
+    and rsp, -16
+    cld
+    call ring3_syscall_dispatch
+    mov rsp, rbx
+    cmp rax, 2
+    je .yield_ring3
+    cmp rax, 1
+    je ring3_leave_kernel         ; syscall 2 (exit)
+    mov [rsp+112], rax
+    POPA64
+    iretq
+.invalid:
+    mov qword [rsp+112], -38
+    POPA64
+    iretq
+.yield_ring3:
+    ; Copy complete syscall context (15 GPRs + IRETQ frame) for a
+    ; cooperative scheduler. EAX gets 0 when userland is resumed.
+    lea rdi, [rel ring3_saved_user_frame]
+    mov rsi, rsp
+    mov ecx, 20
+    cld
+    rep movsq
+    mov qword [rel ring3_saved_user_frame + 112], 0
+    jmp ring3_leave_kernel
+
+global ring3_resume
+ring3_resume:
+    ; Resume a previously yielded CPL3 context without executing user code
+    ; at CPL0. Preserve the host ABI identically to ring3_enter.
+    mov [rel saved_ring_rsp], rsp
+    mov [rel saved_ring_rbx], rbx
+    mov [rel saved_ring_rbp], rbp
+    mov [rel saved_ring_r12], r12
+    mov [rel saved_ring_r13], r13
+    mov [rel saved_ring_r14], r14
+    mov [rel saved_ring_r15], r15
+    sub rsp, 160
+    lea rsi, [rel ring3_saved_user_frame]
+    mov rdi, rsp
+    mov ecx, 20
+    cld
+    rep movsq
+    mov ax, 0x23
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    POPA64
+    iretq
+ring3_leave_kernel:
+    mov rsp, [rel saved_ring_rsp]
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    mov rbx, [rel saved_ring_rbx]
+    mov rbp, [rel saved_ring_rbp]
+    mov r12, [rel saved_ring_r12]
+    mov r13, [rel saved_ring_r13]
+    mov r14, [rel saved_ring_r14]
+    mov r15, [rel saved_ring_r15]
+    ret
+%endif

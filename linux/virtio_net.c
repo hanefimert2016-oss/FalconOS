@@ -13,6 +13,13 @@
  *  License: FalconOS License
  * ============================================================================= */
 #include "uapi.h"
+extern bool native_net_init(void);
+extern const u8 *rtl8139_mac(void);
+extern bool native_net_parse_ipv4(const char *,u8 out[4]);
+extern void native_net_config(u8 ip[4],u8 mask[4],u8 gw[4]);
+extern bool native_dhcp_acquire(u8 ip[4],u8 mask[4],u8 gateway[4],u8 dns[4]);
+extern void rtl8139_stats(u32 *,u32 *,u32 *,u32 *,u32 *,u32 *);
+static void native_config_update(void);
 
 /* ---- Virtio registers (virtio 1.1 spec) ----------------------------------- */
 #define VIRTIO_PCI_VENDOR_ID    0x1AF4
@@ -232,6 +239,15 @@ bool net_init(void)
     k_strcpy(NET_DEV.netmask, "255.255.255.0");
     k_strcpy(NET_DEV.gateway, "0.0.0.0");
 
+    /* Real QEMU RTL8139 hardware driver; do not claim virtio connectivity
+     * until a virtqueue implementation exists. QEMU user-net static profile. */
+    NET_DEV.present = native_net_init();
+    NET_DEV.connected = NET_DEV.present;
+    if (NET_DEV.present) {
+        k_memcpy(NET_DEV.mac_addr, rtl8139_mac(), 6);
+        k_strcpy(NET_DEV.ip_addr, "10.0.2.15");
+        k_strcpy(NET_DEV.gateway, "10.0.2.2");
+    }
     g_inited = true;
     return NET_DEV.present;
 }
@@ -287,6 +303,7 @@ void net_set_ip(const char *ip)
     if (!g_inited) net_init();
     k_strcpy(NET_DEV.ip_addr, ip);
     NET_DEV.ip_addr[15] = '\0';
+    native_config_update();
 }
 
 void net_set_netmask(const char *nm)
@@ -294,6 +311,7 @@ void net_set_netmask(const char *nm)
     if (!g_inited) net_init();
     k_strcpy(NET_DEV.netmask, nm);
     NET_DEV.netmask[15] = '\0';
+    native_config_update();
 }
 
 void net_set_gateway(const char *gw)
@@ -301,6 +319,7 @@ void net_set_gateway(const char *gw)
     if (!g_inited) net_init();
     k_strcpy(NET_DEV.gateway, gw);
     NET_DEV.gateway[15] = '\0';
+    native_config_update();
 }
 
 /* Get network statistics */
@@ -308,6 +327,8 @@ void net_stats(u32 *tx_pkt, u32 *rx_pkt, u32 *tx_by, u32 *rx_by,
                 u32 *tx_err, u32 *rx_err)
 {
     if (!g_inited) net_init();
+    if (NET_DEV.present) rtl8139_stats(&NET_DEV.tx_packets,&NET_DEV.rx_packets,
+        &NET_DEV.tx_bytes,&NET_DEV.rx_bytes,&NET_DEV.tx_errors,&NET_DEV.rx_errors);
     if (tx_pkt) *tx_pkt = NET_DEV.tx_packets;
     if (rx_pkt) *rx_pkt = NET_DEV.rx_packets;
     if (tx_by)  *tx_by  = NET_DEV.tx_bytes;
@@ -316,23 +337,30 @@ void net_stats(u32 *tx_pkt, u32 *rx_pkt, u32 *tx_by, u32 *rx_by,
     if (rx_err) *rx_err = NET_DEV.rx_errors;
 }
 
-/* Simple DHCP-style IP configuration (simulated) */
-bool net_dhcp(void)
-{
-    if (!NET_DEV.present) return false;
-
-    /* Simulated DHCP response - in real implementation this would
-     * interact with virtio-net's configuration registers */
-    NET_DEV.connected = true;
-
-    /* Default to a private network address */
-    k_strcpy(NET_DEV.ip_addr, "10.0.2.15");
-    k_strcpy(NET_DEV.netmask, "255.255.255.0");
-    k_strcpy(NET_DEV.gateway, "10.0.2.2");
-
+static void native_config_update(void) {
+    u8 ip[4],mask[4],gw[4];
+    if (native_net_parse_ipv4(NET_DEV.ip_addr,ip) &&
+        native_net_parse_ipv4(NET_DEV.netmask,mask) &&
+        native_net_parse_ipv4(NET_DEV.gateway,gw))
+        native_net_config(ip,mask,gw);
+}
+static void format_ipv4(char target[16],const u8 v[4]){
+    target[0]=0;
+    for(i32 i=0;i<4;i++){
+        char number[16];k_itoa(v[i],number,10);
+        k_strcat(target,number);
+        if(i<3)k_strcat(target,".");
+    }
+}
+bool net_dhcp(void){
+    if(!net_present())return false;
+    u8 ip[4],mask[4],gateway[4],dns[4];
+    if(!native_dhcp_acquire(ip,mask,gateway,dns))return false;
+    format_ipv4(NET_DEV.ip_addr,ip);
+    format_ipv4(NET_DEV.netmask,mask);
+    format_ipv4(NET_DEV.gateway,gateway);
     return true;
 }
-
 /* Network summary for system info */
 const char *net_summary(void)
 {

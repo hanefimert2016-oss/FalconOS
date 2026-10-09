@@ -74,40 +74,38 @@ static void cmd_ip_dhcp(char *out)
         k_strcpy(out, "ip: DHCP assigned ");
         k_strcat(out, net_ip_addr());
     } else {
-        k_strcpy(out, "ip: DHCP failed");
+        k_strcpy(out, "ip: DHCP not implemented; QEMU uses static 10.0.2.15");
     }
 }
 
-/* ---- ping command (simplified ICMP echo) ------------------------------------ */
+/* The shell reports real ICMP replies, never fabricated latency/output. */
 static void cmd_ping(char *out, const char *host)
 {
     if (!net_present() || !net_connected()) {
-        k_strcpy(out, "ping: network not available");
-        return;
+        k_strcpy(out, "ping: network not available"); return;
     }
-
-    /* Simplified ping - just show we would send to this host */
-    if (!host || !host[0]) {
-        k_strcpy(out, "ping: usage: ping <host>");
-        return;
+    u8 addr[4];
+    if (!host || !native_net_parse_ipv4(host, addr)) {
+        k_strcpy(out, "ping: IPv4 address required (DNS not yet available)"); return;
     }
-
-    /* Simple host validation - no DNS resolution in this version */
-    k_strcpy(out, "ping: ");
+    bool ok = native_net_ping(addr);
+    k_strcpy(out, "ping ");
     k_strcat(out, host);
-    k_strcat(out, " - 64 bytes from 10.0.2.2: icmp_seq=1 ttl=64 time=1.2 ms");
+    k_strcat(out, ok ? ": ICMP echo reply received" : ": timeout (no echo reply)");
 }
-
-/* ---- arp command ------------------------------------------------------------- */
 static void cmd_arp(char *out)
 {
-    if (!net_present() || !net_connected()) {
-        k_strcpy(out, "arp: network not available");
-        return;
+    if (!net_present()) { k_strcpy(out, "arp: no adapter"); return; }
+    if (!native_net_arp_known()) { k_strcpy(out, "arp: no resolved neighbor"); return; }
+    u8 mac[6]; native_net_arp_mac(mac);
+    k_strcpy(out, "ARP neighbor MAC: ");
+    for (i32 i=0;i<6;i++) {
+        i32 n=k_strlen(out);
+        out[n]="0123456789ABCDEF"[mac[i] >> 4];
+        out[n+1]="0123456789ABCDEF"[mac[i]&15];
+        out[n+2]=(i==5) ? 0 : ':';
+        out[n+3]=0;
     }
-
-    k_strcpy(out, "ARP table:\n");
-    k_strcat(out, "10.0.2.1     at 52:54:00:12:34:56 [ether] on eth0");
 }
 
 /* ---- netstat command -------------------------------------------------------- */

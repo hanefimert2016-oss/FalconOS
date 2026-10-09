@@ -71,9 +71,9 @@ bool installer_is_done(void) { return g_step == INST_DONE; }
 static void draw_card(i32 cx, i32 cy, i32 w, i32 h)
 {
     i32 x = cx - w / 2, y = cy - h / 2;
-    gfx_round_rect_a(x - 2, y - 2, w + 4, h + 4, 22, PAL_ACCENT, 30);
-    gfx_round_glass(x, y, w, h, 20);
-    gfx_round_outline(x, y, w, h, 20, PAL_HAIRLINE);
+    gfx_round_rect_a(x + 7, y + 12, w, h, 28, 0x0B2049u, 74);
+    gfx_round_rect_a(x, y, w, h, 28, PAL_PANEL, 252);
+    gfx_round_outline(x, y, w, h, 28, PAL_HAIRLINE);
 }
 
 static void draw_progress(i32 cx, i32 y, i32 active, i32 total)
@@ -124,7 +124,7 @@ void installer_render(u32 frame)
         if ((u32)g_step < sizeof steps - 1u) outb(0xE9, (u8)steps[(i32)g_step]);
         last_reported = (i32)g_step;
     }
-    gfx_gradient_v(PAL_BG_TOP, PAL_BG_BOT);
+    gfx_gradient_v(0xE8F2FFu,0xCADDF8u);
 
     i32 W = (i32)FB.width;
     i32 H = (i32)FB.height;
@@ -133,12 +133,19 @@ void installer_render(u32 frame)
 
     /* logo + title — the title uses the 16×32 headline font so the
      * setup wizard reads as a real OS install screen, not a debug ROM. */
-    gfx_circle(cx, cy - 220, 36, PAL_ACCENT);
-    gfx_text_lg_centered(cx, cy - 236, "F", 0xFFFFFF);
-    gfx_text_lg_centered(cx, cy - 180, "FalconOS Setup", PAL_TEXT);
-
-    /* card */
-    draw_card(cx, cy, 760, 280);
+    /* Contemporary Chromebook-inspired onboarding, not an OS debug UI. */
+    /* Keep first-run keyboard latency low on software QEMU framebuffer. */
+    gfx_round_rect_a(W-310,20,250,58,26,0xA6C9FFu,54);
+    gfx_round_rect_a(34,H-125,240,55,24,0x8BC7F8u,48);
+    gfx_round_rect(38,31,44,44,16,0x286BE5u);
+    gfx_text_lg_centered(60,37,"F",0xFFFFFFu);
+    gfx_text(101,46,"FalconOS  /  Welcome",0x1A3C70u);
+    gfx_text(W-260,45,"FIRST RUN SETUP",0x55749Fu);
+    gfx_text_lg_centered(cx,cy-266,"Make FalconOS yours",0x14396Du);
+    gfx_text_centered(cx,cy-220,
+        "Choose your preferences and prepare your own secure workspace.",0x6683AAu);
+    draw_card(cx,cy,930,326);
+    /* Safety: permanent storage is NEVER selected automatically. */
 
     const char *headline = "";
     const char *helptext = "";
@@ -454,8 +461,39 @@ void installer_render(u32 frame)
     i32 step_idx = (i32)g_step;
     if (step_idx > 8) step_idx = 8;
     draw_progress(cx, cy + 124, step_idx, 9);
-
-    gfx_text_centered(cx, H - 30, "FalconOS 1  -  bare-metal x86_64", PAL_TEXT_FAINT);
+    char progress[20],n[8];
+    k_strcpy(progress,"STEP ");
+    k_itoa((u32)step_idx+1u,n,10);k_strcat(progress,n);
+    k_strcat(progress," OF 9");
+    gfx_text_centered(cx,cy+179,progress,0x5578A6u);
+    gfx_round_rect(cx-101,cy+199,202,5,4,0xC4D7F3u);
+    gfx_round_rect(cx-101,cy+199,(step_idx+1)*202/9,5,4,0x2E78EFu);
+    gfx_round_rect(cx+287,cy+95,143,43,16,0x2E72E7u);
+    gfx_text_centered(cx+358,cy+108,T("Next  [Enter]","Ileri [Enter]"),0xFFFFFFu);
+    gfx_text_centered(cx,H-32,
+        "FalconOS  |  No automatic partition formatting  |  QEMU first",
+        0x516D93u);
+    /* Mouse input works alongside the existing keyboard setup flow. */
+    if(mouse_peek_click()){
+        i32 mx,my;bool pressed;mouse_get(&mx,&my,&pressed);(void)pressed;
+        if(mx>=cx+287&&mx<cx+430&&my>=cy+95&&my<cy+138){
+            (void)mouse_consume_click();
+            installer_input(KEY_ENTER);
+        } else if(g_step==INST_LANG||g_step==INST_KBD||
+                  g_step==INST_USER_MORE){
+            i32 count=g_step==INST_LANG?2:g_step==INST_KBD?3:2;
+            i32 row_w=count*180+(count-1)*14;
+            i32 x0=(W-row_w)/2;
+            if(my>=cy-40&&my<cy+16){
+                for(i32 i=0;i<count;i++){
+                    if(mx>=x0+i*194&&mx<x0+i*194+180){
+                        (void)mouse_consume_click();
+                        g_choice=i;break;
+                    }
+                }
+            }
+        }
+    }
 }
 
 /* --------------------------------------------------------------------------- */

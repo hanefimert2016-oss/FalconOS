@@ -132,8 +132,8 @@ def test_gui(args):
                 wait_for_marker(debug, b"H", after=prior, timeout=12)
                 hmp(mon, "sendkey esc", 0.4)
                 hmp(mon, "sendkey f2", 0.8)
-                hmp(mon, "sendkey right", 0.3)
-                hmp(mon, "sendkey right", 0.3)
+                # Functional app list: Store is favorite slot 7.
+                for _ in range(7): hmp(mon, "sendkey right", 0.17)
                 hmp(mon, "sendkey ret", 1.0)
                 try:
                     wait_for_marker(debug, b"M", timeout=15)

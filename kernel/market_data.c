@@ -87,7 +87,7 @@ static void path_for(char out[SHFS_PATH], const char *id)
 void market_disk_restore(void)
 {
     if (SET.install_disk < 0) return;
-    shfs_init();
+    /* Preserve PFS1 files already replayed by main.c. */
     (void)shfs_mkdir_abs("/home/falcon/apps");
     for (u32 slot = 0; slot < MARKET_SLOTS; slot++) {
         if (!diskdb_store_io(SLOT_BASE + slot * SLOT_SECTORS,

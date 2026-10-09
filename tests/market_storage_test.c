@@ -38,7 +38,13 @@ int main(void) {
     SET.install_disk = 0;
     if (!market_disk_save("hello-world", package, (u32)strlen(package))) return 1;
     if (disk[16 * 512u] != 'F') return 2;
+    shfs_ent_t *note=shfs_open_w_abs("/home/falcon/keep.txt",false);
+    if(!note)return 21;
+    k_strcpy(note->data,"must survive package restore");
+    note->len=(u32)k_strlen(note->data);
     market_disk_restore();
+    note=shfs_lookup("/home/falcon/keep.txt");
+    if(!note || k_strcmp(note->data,"must survive package restore"))return 22;
     shfs_ent_t *f = shfs_lookup("/home/falcon/apps/hello-world.pkg");
     if (!f || f->len != strlen(package) || strcmp(f->data, package)) return 3;
     if (!shfs_rm_abs("/home/falcon/apps/hello-world.pkg")) return 4;

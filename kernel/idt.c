@@ -53,6 +53,11 @@ void idt_install(void)
     k_memset(IDT, 0, sizeof(IDT));
     for (i32 i = 0; i < 32; i++) idt_set((u8)i,        (u64)isr_table[i]);
     for (i32 i = 0; i < 16; i++) idt_set((u8)(0x20+i), (u64)irq_table[i]);
+#ifdef FALCON_RING3_TEST
+    extern void ring3_syscall_int80(void);
+    idt_set(0x80u,(u64)(uintptr_t)&ring3_syscall_int80);
+    IDT[0x80].flags=0xEEu; /* P=1, DPL=3, interrupt gate */
+#endif
 
     IDTR.limit = sizeof(IDT) - 1;
     IDTR.base  = (u64)&IDT;
@@ -81,8 +86,30 @@ static const char *EXC_NAMES[32] = {
     "Reserved","Reserved","Reserved","Reserved","Reserved","Reserved","Security","Reserved"
 };
 
+#ifdef FALCON_QEMU_TLS_TEST
+static void isr_debug_hex(u64 v,u32 digits){
+    static const char chars[]="0123456789ABCDEF";
+    for(u32 n=digits;n>0;n--)
+        outb(0xE9,(u8)chars[(v>>(4u*(n-1)))&15u]);
+}
+#endif
 void isr_handler(regs_t *r)
 {
+#ifdef FALCON_QEMU_TLS_TEST
+    /* Test-only crash record: vector / error / faulting instruction pointer.
+     * Handle #PF/#GP without attempting unsafe printf or heap operations. */
+    outb(0xE9,'@');
+    isr_debug_hex(r->vec,2u);
+    outb(0xE9,':');
+    isr_debug_hex(r->err,16u);
+    outb(0xE9,':');
+    isr_debug_hex(r->rip,16u);
+    outb(0xE9,':');
+    u64 cr2;
+    __asm__ volatile("mov %%cr2,%0":"=r"(cr2));
+    isr_debug_hex(cr2,16u);
+    outb(0xE9,';');
+#endif
     extern volatile bool g_panic;
     extern char          g_panic_msg[80];
     g_panic = true;

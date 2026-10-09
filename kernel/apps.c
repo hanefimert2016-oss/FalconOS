@@ -912,7 +912,7 @@ static i32 sh_find_app_idx(const char *name)
         sh_streq_ci(name, "sistem-güncellemeleri"))
         return sh_find_app_idx("Sistem Güncellemeleri");
     if (sh_streq_ci(name, "google-chrome") || sh_streq_ci(name, "googlechrome"))
-        return sh_find_app_idx("Chrome");
+        return sh_find_app_idx("Browser");
     if (sh_streq_ci(name, "heroic-launcher") || sh_streq_ci(name, "heroiclauncher"))
         return sh_find_app_idx("Heroic");
     if (sh_streq_ci(name, "media") || sh_streq_ci(name, "video-player"))
@@ -1049,7 +1049,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
             "touch cp mv mkdir rmdir basename dirname more less xxd file "
             "echo printf yes seq expr test [ env set unset alias export "
-            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id "
+            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm dns ping http https xfile hwcheck jfs "
             "groups who w users hostname uptime cal date reboot shutdown "
             "which type prg pkg open chrome falco heroic video search "
             "update man | > >>");
@@ -1110,14 +1110,10 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 0;
     }
     if (k_strcmp(cmd, "chrome") == 0) {
-        i32 pkg = sh_find_pkg_idx("app-google-chrome");
-        if (pkg >= 0 && !prg_is_installed(pkg)) {
-            k_strcpy(out, "chrome: package not installed (run: prg install app-google-chrome)");
-            return 1;
-        }
-        i32 ai = sh_find_app_idx("Chrome");
+        /* Legacy alias: this is Falcon Browser, not Linux/Google Chrome. */
+        i32 ai = sh_find_app_idx("Browser");
         if (ai >= 0) apps_open(ai);
-        k_strcpy(out, "opening Chrome");
+        k_strcpy(out, "opening Falcon Browser (native HTTPS text view)");
         return 0;
     }
     if (k_strcmp(cmd, "heroic") == 0) {
@@ -1277,6 +1273,189 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         }
         k_strcpy(out, "prg: unknown subcommand");
         return 1;
+    }
+
+    /* Native QEMU network tools: responses originate from NIC RX packets. */
+    if (k_strcmp(cmd,"dns")==0 || k_strcmp(cmd,"ping")==0) {
+        if(argc<2) {
+            k_strcpy(out,"usage: dns <hostname> | ping <IPv4-or-hostname>");
+            return 1;
+        }
+        u8 address[4];
+        if(!native_net_parse_ipv4(argv[1],address) &&
+           !native_net_dns_query(argv[1],address)) {
+            k_strcpy(out,"network: DNS resolution failed or timed out");
+            return 1;
+        }
+        if(k_strcmp(cmd,"ping")==0) {
+            bool success=native_net_ping(address);
+            k_strcpy(out,success?"ping: ICMP reply received":"ping: timeout/no ICMP reply");
+            return success?0:1;
+        }
+        out[0]=0;
+        char number[16];
+        for(i32 i=0;i<4;i++){
+            k_itoa(address[i],number,10);
+            k_strcat(out,number);
+            if(i<3)k_strcat(out,".");
+        }
+        return 0;
+    }
+    if(k_strcmp(cmd,"https")==0 || k_strcmp(cmd,"http")==0) {
+        if(argc<3 || cap<128 || cap>4096) {
+            k_strcpy(out,"usage: https <hostname> <path> (TLS verified) | http <hostname> <path> (plaintext)");
+            return 1;
+        }
+        bool secure=k_strcmp(cmd,"https")==0;
+        bool ok=secure ? native_https_get(argv[1],argv[2],out,(u32)cap)
+                       : native_http_get(argv[1],argv[2],out,(u32)cap);
+        if(!ok) {
+            k_strcpy(out, secure ?
+                 "https: TLS handshake, certificate, DNS or response validation failed (never downgraded)" :
+                 "http: failed, timed out or incomplete response");
+            return 1;
+        }
+        return 0;
+    }
+
+
+    if(k_strcmp(cmd,"jfs")==0){
+        if(!jfs_ready()){
+            k_strcpy(out,"jfs: journal unavailable or write-protected (use QEMU 0xFA test disk)");
+            return 1;
+        }
+        if(argc<2 || k_strcmp(argv[1],"stat")==0){
+            char n[16];k_strcpy(out,"JFS2 journal | files=");
+            k_itoa(jfs_file_count(),n,10);k_strcat(out,n);
+            k_strcat(out,"/128 | remaining sectors=");
+            k_itoa(jfs_free_sectors(),n,10);k_strcat(out,n);
+            return 0;
+        }
+        if(k_strcmp(argv[1],"fsck")==0){
+            u32 files=0,invalid=0;
+            if(!jfs_fsck(&files,&invalid)){
+                k_strcpy(out,"jfs: read-only recovery scan failed");return 1;
+            }
+            char n[16];k_strcpy(out,"JFS2 recovered ");
+            k_itoa(files,n,10);k_strcat(out,n);
+            k_strcat(out," files; incomplete transactions=");
+            k_itoa(invalid,n,10);k_strcat(out,n);
+            return invalid?1:0;
+        }
+        if(argc<3){
+            k_strcpy(out,"jfs: stat | fsck | write <absolute-path> <text> | cat <absolute-path> | rm <absolute-path>");
+            return 1;
+        }
+        if(k_strcmp(argv[1],"write")==0 && argc>=4){
+            u32 len=(u32)k_strlen(argv[3]);
+            bool ok=jfs_write(argv[2],(const u8*)argv[3],len);
+            k_strcpy(out,ok?"jfs: committed to transactional journal":"jfs: rejected path, full journal or write failed");
+            return ok?0:1;
+        }
+        if(k_strcmp(argv[1],"rm")==0){
+            bool ok=jfs_remove(argv[2]);
+            k_strcpy(out,ok?"jfs: removed with committed tombstone":"jfs: remove failed");
+            return ok?0:1;
+        }
+        if(k_strcmp(argv[1],"cat")==0){
+            static u8 bytes[131072u];
+            i32 len=jfs_read(argv[2],bytes,sizeof bytes);
+            if(len<0){k_strcpy(out,"jfs: file absent or corrupt");return 1;}
+            if(len>=cap){k_strcpy(out,"jfs: larger than terminal buffer; use a file reader");return 1;}
+            for(i32 j=0;j<len;j++)
+                if(bytes[j]<0x20u&&bytes[j]!='\n'&&bytes[j]!='\t'){
+                    k_strcpy(out,"jfs: binary file; cannot display as text");
+                    return 1;
+                }
+            k_memcpy(out,bytes,(u32)len);out[len]=0;return 0;
+        }
+        k_strcpy(out,"jfs: unknown command");return 1;
+    }
+    if(k_strcmp(cmd,"xfile")==0) {
+        if(!xfs_ready()){
+            k_strcpy(out,"xfile: 32KiB volume unavailable (safe disk needed)");
+            return 1;
+        }
+        if(argc==1 || k_strcmp(argv[1],"stat")==0){
+            char digits[16];
+            k_strcpy(out,"XFS1 32KiB objects: ");
+            k_itoa(xfs_count(),digits,10);k_strcat(out,digits);
+            k_strcat(out," / 32, per object 32768 bytes");
+            return 0;
+        }
+        if(k_strcmp(argv[1],"fsck")==0){
+            u32 files=0,bad=0;
+            if(!xfs_fsck(&files,&bad)){
+                k_strcpy(out,"xfile: read-only consistency scan failed");return 1;
+            }
+            char digits[16];
+            k_strcpy(out,"XFS1 verified files: ");
+            k_itoa(files,digits,10);k_strcat(out,digits);
+            k_strcat(out,", corrupt bank copies: ");
+            k_itoa(bad,digits,10);k_strcat(out,digits);
+            return bad?1:0;
+        }
+        if(argc<3){k_strcpy(out,"xfile: stat | fsck | fill <name> | rm <name> | inspect <name>");return 1;}
+        if(k_strcmp(argv[1],"rm")==0){
+            bool success=xfs_remove(argv[2]);
+            k_strcpy(out,success?"xfile: removed":"xfile: removal failed");
+            return success?0:1;
+        }
+        static u8 object[32768];
+        if(k_strcmp(argv[1],"fill")==0){
+            for(u32 j=0;j<32768;j++)object[j]=(u8)((j*37u)&255u);
+            bool ok=xfs_write(argv[2],object,32768u);
+            k_strcpy(out,ok?"xfile: committed 32768 bytes to safe disk":"xfile: disk write/space failure");
+            return ok?0:1;
+        }
+        if(k_strcmp(argv[1],"inspect")==0){
+            i32 len=xfs_read(argv[2],object,sizeof object);
+            if(len<0){k_strcpy(out,"xfile: no valid checksum-verified object");return 1;}
+            char digits[16];
+            k_strcpy(out,"xfile: valid object, bytes=");
+            k_itoa((u32)len,digits,10);k_strcat(out,digits);
+            return 0;
+        }
+        if(k_strcmp(argv[1],"elfcheck")==0){
+            i32 len=xfs_read(argv[2],object,sizeof object);
+            u64 entry=0;u32 count=0;
+            bool valid=len>0 && elf64_inspect(object,(u32)len,&entry,&count);
+            if(!valid){k_strcpy(out,"elfcheck: rejected invalid/unsafe ELF64");return 1;}
+            k_strcpy(out,"elfcheck: valid W^X ELF64 (NOT executed), segments=");
+            char num[16];k_itoa(count,num,10);k_strcat(out,num);return 0;
+        }
+        k_strcpy(out,"xfile: stat | fsck | fill | rm | inspect | elfcheck");
+        return 1;
+    }
+    if(k_strcmp(cmd,"hwcheck")==0){
+        char digits[16];
+        k_strcpy(out,"PCI capability scan (NOT production drivers)\nNVMe: ");
+        k_itoa(pci_extended_count(1),digits,10);k_strcat(out,digits);
+        k_strcat(out,pci_extended_mmio(1)?" CAP readable":" CAP unavailable");
+        k_strcat(out,"\nxHCI: ");
+        k_itoa(pci_extended_count(2),digits,10);k_strcat(out,digits);
+        k_strcat(out,pci_extended_mmio(2)?" CAP readable":" CAP unavailable");
+        k_strcat(out,"\nGPU/VGA: ");
+        k_itoa(pci_extended_count(3),digits,10);k_strcat(out,digits);
+        return 0;
+    }
+    if (k_strcmp(cmd,"vm")==0) {
+        if (argc<2 || k_strcmp(argv[1],"list")==0) {
+            fvm_status(out,cap);return 0;
+        }
+        if(k_strcmp(argv[1],"start")==0 && argc>=3) {
+            i32 slot=fvm_spawn_file(argv[2]);
+            if(slot<0){k_strcpy(out,"vm: missing or invalid FVM/1 file");return 1;}
+            k_strcpy(out,"vm: started slot ");
+            char num[16];k_itoa((u32)slot,num,10);k_strcat(out,num);
+            return 0;
+        }
+        if(k_strcmp(argv[1],"kill")==0 && argc>=3 &&
+           argv[2][0]>='0' && argv[2][0]<='3' && !argv[2][1]) {
+            bool ok=fvm_kill(argv[2][0]-'0');
+            k_strcpy(out,ok?"vm: stopped":"vm: invalid slot");return ok?0:1;
+        }
+        k_strcpy(out,"vm: list | start <path.fvm> | kill <0..3>");return 1;
     }
     if (k_strcmp(cmd, "pwd") == 0)    { k_strcpy(out, shfs_cwd); return 0; }
     if (k_strcmp(cmd, "uname") == 0)  {
@@ -2309,6 +2488,8 @@ typedef enum {
 } set_row_t;
 
 static i32 set_row = 0;
+static i32 settings_scroll=0;
+static i32 settings_view_min=0,settings_view_max=0;
 static const char *VIEWPORT_NAMES[] = {
     "native", "1280x800", "1920x1080", "2560x1440", "1024x768",
 };
@@ -2364,6 +2545,7 @@ static void set_input_key(i32 key)
 
     if (key == KEY_UP   && set_row > 0)             set_row--;
     if (key == KEY_DOWN && set_row < SR_COUNT - 1)  set_row++;
+    if(set_row<settings_scroll)settings_scroll=set_row;
 
     if (key == KEY_LEFT || key == KEY_RIGHT || key == KEY_ENTER || key == ' ') {
         i32 d = (key == KEY_LEFT) ? -1 : 1;
@@ -2418,9 +2600,9 @@ static void set_input_key(i32 key)
               SET.viewport_h = VIEWPORT_H[v]; }
             break;
         case SR_PASSWORD:
-            set_pwd_editing = true;
-            set_pwd_len = 0;
-            set_pwd[0] = 0;
+            /* Never write plaintext passwords into persistent settings.
+             * User credentials are PBKDF2-hashed during first-run setup.
+             * Password changes require a future authenticated account UI. */
             break;
         case SR_USERS:
             /* cycle which user is "default" (auto-focused on next boot)   */
@@ -2446,22 +2628,50 @@ static void set_input_key(i32 key)
 static void s_row(i32 x, i32 y, i32 w, const char *label, const char *val,
                   bool active, u32 valcolor)
 {
-    gfx_round_rect_a(x, y, w, SR_BOX_H, 9,
-                     active ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
-    gfx_round_outline(x, y, w, SR_BOX_H, 9, active ? PAL_ACCENT : PAL_HAIRLINE);
+    y-=settings_scroll*36;
+    if(y<settings_view_min||y+SR_BOX_H>settings_view_max)return;
+    gfx_round_rect_a(x, y, w, SR_BOX_H, 11,
+                     active ? 0xDBE9FFu : PAL_PANEL_DEEP, 255);
+    gfx_round_outline(x, y, w, SR_BOX_H, 11,
+                      active ? 0x337DF6u : PAL_HAIRLINE);
     gfx_text(x + 14, y + 9, label, PAL_TEXT);
     gfx_text(x + w - gfx_text_width(val) - 14, y + 9, val, valcolor);
 }
 
 static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
-    (void)frame; (void)wh;
-    section(wx, wy, T("Settings", "Ayarlar"),
-                    T("up/down  pick row    left/right  change",
-                      "yukarı/aşağı  satır   sol/sağ  değiştir"));
-
-    i32 sx = wx + 24, sy = wy + 56, sw = ww - 48;
-    i32 step = 36;     /* row vertical pitch                            */
+    (void)frame;
+    i32 sx=wx+22,sw=ww-44;
+    gfx_round_rect_a(sx,wy+7,sw,100,19,0xE2EEFFu,255);
+    gfx_round_rect(sx+18,wy+24,49,49,16,0x3476E9u);
+    gfx_circle_outline(sx+43,wy+48,14,0xFFFFFFu);
+    gfx_circle(sx+43,wy+48,5,0xFFFFFFu);
+    gfx_text_lg(sx+85,wy+22,T("Settings","Ayarlar"),0x173C72u);
+    gfx_text(sx+85,wy+60,
+        "Personalization  |  Accounts  |  Device  |  Security",0x6284A9u);
+    i32 sy=wy+124;
+    i32 step=36;
+    settings_view_min=sy-1;
+    settings_view_max=wy+wh-42;
+    i32 visible=(settings_view_max-settings_view_min)/step;
+    if(visible<2)visible=2;
+    if(set_row>=settings_scroll+visible)
+        settings_scroll=set_row-visible+1;
+    if(set_row<settings_scroll)settings_scroll=set_row;
+    gfx_text(wx+ww-192,wy+112,
+      "Up/Down   Left/Right",PAL_TEXT_DIM);
+    if(mouse_peek_click()){
+        i32 mx,my;bool pressed;mouse_get(&mx,&my,&pressed);(void)pressed;
+        if(mx>=sx&&mx<sx+sw&&my>=settings_view_min &&
+           my<settings_view_max){
+            i32 picked=settings_scroll+(my-settings_view_min)/step;
+            if(picked>=0&&picked<SR_COUNT){
+                (void)mouse_consume_click();
+                set_row=picked;
+                set_input_key(KEY_RIGHT);
+            }
+        }
+    }     /* row vertical pitch                            */
     char val[40];
 
     /* Theme ------------------------------------------------------------ */
@@ -2547,7 +2757,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
             masked[set_pwd_len] = 0;
             p = masked;
         } else {
-            p = (k_strlen(SET.password) ? T("set", "var") : T("none", "yok"));
+            p = "Protected by account login";
         }
         s_row(sx, sy + SR_PASSWORD * step, sw,
               T("Password", "Parola"), p,
@@ -2618,26 +2828,41 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 
 /* --- Notes --------------------------------------------------------------- */
 #define NOTES_MAX 256
-static char  notes_buf[NOTES_MAX] = "Welcome to Notes.\n\nType freely, this buffer\nlives in BSS until reboot.\n\n- ";
-static i32   notes_len = 0;
-static void  notes_init_once(void) {
-    if (notes_len == 0) notes_len = k_strlen(notes_buf);
+#define NOTES_FILE "/home/falcon/Desktop/Notes.txt"
+static char notes_buf[NOTES_MAX] = "Notes - FalconOS\n\n";
+static i32 notes_len = 0;
+static bool notes_loaded;
+static void notes_init_once(void) {
+    if(notes_loaded)return;
+    notes_loaded=true;
+    shfs_ent_t *saved=shfs_lookup(NOTES_FILE);
+    if(saved&&!saved->is_dir&&saved->len<NOTES_MAX){
+        k_memcpy(notes_buf,saved->data,saved->len);
+        notes_len=(i32)saved->len;
+        notes_buf[notes_len]=0;
+    }else notes_len=k_strlen(notes_buf);
+}
+static void notes_save(void){
+    shfs_ent_t *f=shfs_open_w_abs(NOTES_FILE,false);
+    if(!f)return;
+    k_memcpy(f->data,notes_buf,(u32)notes_len);
+    f->len=(u32)notes_len;f->data[notes_len]=0;
+    /* PFS copy-on-write writeback occurs in the kernel main loop. */
 }
 static void notes_input_key(i32 key)
 {
     notes_init_once();
     if (key == KEY_BACKSPACE) {
         sh_buf_pop_utf8(notes_buf, &notes_len);
-        return;
-    }
-    if (key == KEY_ENTER) {
+    } else if (key == KEY_ENTER) {
         if (notes_len < NOTES_MAX - 1) {
             notes_buf[notes_len++] = '\n';
             notes_buf[notes_len] = 0;
         }
-        return;
+    } else {
+        (void)sh_buf_append_key(notes_buf, &notes_len, NOTES_MAX, key);
     }
-    (void)sh_buf_append_key(notes_buf, &notes_len, NOTES_MAX, key);
+    notes_save();
 }
 static void render_notes(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
@@ -2748,294 +2973,351 @@ static void render_gallery(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     }
 }
 
-/* --- Falco (native Falcon browser/search surface) ------------------------
- *  Falco is a first-party browser shell designed for FalconOS. With no
- *  network stack yet, it runs a real indexed search over curated web cards
- *  and ships API-ready connectors (DuckDuckGo / Wikipedia / HN) that can be
- *  wired to HTTP once net drivers are live.                                  */
-typedef struct {
-    const char *title;
-    const char *url;
-    const char *desc;
-} falco_doc_t;
-
-static const falco_doc_t FALCO_INDEX[] = {
-    { "FalconOS repository", "https://github.com/hanefimert2016-oss/FalconOS", "Source, issues, roadmap and docs." },
-    { "DuckDuckGo Instant API", "https://duckduckgo.com/api", "Free JSON endpoint for search snippets." },
-    { "Wikipedia API", "https://www.mediawiki.org/wiki/API:Main_page", "Open encyclopedia API for summaries." },
-    { "Stack Exchange API", "https://api.stackexchange.com/docs", "Developer Q&A endpoint with public quotas." },
-    { "GitHub REST API", "https://docs.github.com/rest", "Repository and release metadata API." },
-    { "Heroic Games Launcher", "https://heroicgameslauncher.com/", "Open launcher for Epic/GOG libraries." },
-    { "Google Chrome", "https://www.google.com/chrome/", "Browser compatibility target package." },
-    { "QEMU documentation", "https://www.qemu.org/docs/master/", "Virtual machine setup and acceleration." },
-    { "Kernel Dev Notes", "falco://docs/kernel", "Local Falcon docs bundle for OS internals." },
-    { "Falcon package index", "falco://packages", "Installed + available prg packages." },
-};
-
-static char falco_query[80] = "FalconOS";
-static i32  falco_query_len = 8;
-static i32  falco_sel = 0;
-
-static void falco_set_query(const char *q)
-{
-    falco_query_len = 0;
-    falco_query[0] = 0;
-    if (!q) return;
-    while (q[falco_query_len] && falco_query_len < 79) {
-        falco_query[falco_query_len] = q[falco_query_len];
+/* Falco Search — live Wikipedia API via explicitly verified host HTTPS.
+ * No fabricated result cards or static fake search engine.
+ * Guest-to-host NAT hop is plain TCP; real TLS is validated on trusted host.
+ */
+static char falco_query[80]="FalconOS";
+static i32 falco_query_len=8;
+static i32 falco_sel=0;
+static char falco_http[4096],falco_results[3100];
+static char falco_status[128]="Enter searches live Wikipedia, via HTTPS host gateway.";
+static bool falco_has_results;
+static bool falco_dhcp_done;
+static void falco_set_query(const char *q){
+    falco_query_len=0;
+    while(q&&q[falco_query_len]&&falco_query_len<79){
+        falco_query[falco_query_len]=q[falco_query_len];
         falco_query_len++;
     }
-    falco_query[falco_query_len] = 0;
-    falco_sel = 0;
+    falco_query[falco_query_len]=0;
+    falco_sel=0;
+    falco_has_results=false;
 }
-
-static i32 falco_collect_hits(i32 out_idx[], i32 cap)
-{
-    i32 n = 0;
-    i32 total = (i32)(sizeof(FALCO_INDEX) / sizeof(FALCO_INDEX[0]));
-    bool empty = (falco_query[0] == 0);
-    for (i32 i = 0; i < total && n < cap; i++) {
-        if (empty ||
-            sh_contains_ci(FALCO_INDEX[i].title, falco_query) ||
-            sh_contains_ci(FALCO_INDEX[i].url,   falco_query) ||
-            sh_contains_ci(FALCO_INDEX[i].desc,  falco_query)) {
-            out_idx[n++] = i;
-        }
-    }
-    return n;
-}
-
-static void falco_input_key(i32 key)
-{
-    if (key == KEY_BACKSPACE) {
-        sh_buf_pop_utf8(falco_query, &falco_query_len);
+static void falco_search(void){
+    falco_has_results=false;
+    if(!falco_query_len)return;
+    if(!net_present()){
+        k_strcpy(falco_status,"No RTL8139 network card is active");
         return;
     }
-    if (key == KEY_UP && falco_sel > 0) { falco_sel--; return; }
-    if (key == KEY_DOWN) { falco_sel++; return; }
-    if (key == KEY_ENTER) return;
-    (void)sh_buf_append_key(falco_query, &falco_query_len, 80, key);
+    if(!falco_dhcp_done){falco_dhcp_done=true;(void)net_dhcp();}
+    char path[300];i32 i=0;
+    const char *prefix="/search/";
+    for(i32 j=0;prefix[j];j++)path[i++]=prefix[j];
+    static const char hex[]="0123456789ABCDEF";
+    for(i32 j=0;j<falco_query_len && i<270;j++){
+        u8 c=(u8)falco_query[j];
+        if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+           (c>='0'&&c<='9')||c=='-'){
+            path[i++]=(char)c;
+        }else{
+            path[i++]='%';path[i++]=hex[c>>4];path[i++]=hex[c&15u];
+        }
+    }
+    path[i]=0;
+    k_strcpy(falco_status,"Searching Wikipedia HTTPS...");
+    if(!native_http_get_port(net_gateway(),18444,path,falco_http,sizeof falco_http)||
+       !sh_contains_ci(falco_http,"X-Falcon-Host-HTTPS-Verified: yes")){
+        k_strcpy(falco_status,
+          "HTTPS host gateway unavailable. Start falcon_https_gateway.py");
+        return;
+    }
+    const char *body=falco_http;
+    while(body[0]&&!(body[0]=='\r'&&body[1]=='\n'&&
+                      body[2]=='\r'&&body[3]=='\n'))body++;
+    if(!body[0]){
+        k_strcpy(falco_status,"Malformed search response");return;
+    }
+    body+=4;
+    i32 n=0;
+    while(body[n]&&n<(i32)sizeof falco_results-1){
+        u8 c=(u8)body[n];
+        falco_results[n]=(c<32&&c!='\n')?' ':((c>126)?'?':(char)c);
+        n++;
+    }
+    falco_results[n]=0;
+    falco_sel=0;falco_has_results=true;
+    k_strcpy(falco_status,
+         "Live Wikipedia results - host certificate verified");
 }
-
-static void render_falco(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
+static void falco_input_key(i32 key){
+    if(key==KEY_F4){
+        falco_query[0]=0;falco_query_len=0;
+        falco_has_results=false;falco_sel=0;return;
+    }
+    if(key==KEY_ENTER||key==KEY_F5){falco_search();return;}
+    if(key==KEY_UP){if(falco_sel>0)falco_sel--;return;}
+    if(key==KEY_DOWN){if(falco_sel<40)falco_sel++;return;}
+    if(key==KEY_BACKSPACE){
+        sh_buf_pop_utf8(falco_query,&falco_query_len);
+        return;
+    }
+    (void)sh_buf_append_key(falco_query,&falco_query_len,80,key);
+}
+static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;
-    section(wx, wy, "Falco",
-            T("Local index search — virtio-net ile tam web araması planlanır",
-              "Yerel indeks araması — tam internet araması için virtio-net planlanır"));
-
-    /* provider chips */
-    {
-        const char *chips[3] = { "DuckDuckGo API", "Wikipedia API", "HN API" };
-        i32 x = wx + 24, y = wy + 42;
-        for (i32 i = 0; i < 3; i++) {
-            i32 cw = gfx_text_width(chips[i]) + 18;
-            gfx_round_rect_a(x, y, cw, 20, 10, PAL_PANEL_DEEP, 255);
-            gfx_round_outline(x, y, cw, 20, 10, PAL_HAIRLINE);
-            gfx_text(x + 9, y + 5, chips[i], PAL_TEXT_DIM);
-            x += cw + 8;
+    i32 x=wx+22,w=ww-44;
+    gfx_round_rect_a(x,wy+12,w,84,20,0xDBEAFE,240);
+    gfx_round_rect(x+14,wy+26,48,48,16,0x2269D9);
+    gfx_text_lg_centered(x+38,wy+34,"F",0xFFFFFF);
+    gfx_text_lg(x+80,wy+31,"Falco Search",0x16355F);
+    gfx_text(x+80,wy+62,"Live results, not an offline demo index",0x597698);
+    gfx_round_rect_a(x,wy+109,w,51,18,PAL_PANEL,255);
+    gfx_round_outline(x,wy+109,w,51,18,PAL_ACCENT);
+    gfx_circle_outline(x+23,wy+134,8,0x487CCA);
+    gfx_line(x+28,wy+139,x+35,wy+146,0x487CCA);
+    gfx_text(x+51,wy+127,falco_query_len?falco_query:"Search Wikipedia...",PAL_TEXT);
+    gfx_round_rect(x+w-110,wy+117,100,35,13,0x246DE8);
+    gfx_text_centered(x+w-60,wy+128,"Enter",0xFFFFFF);
+    gfx_text(x+4,wy+179,falco_status,0x4B779E);
+    gfx_round_rect_a(x,wy+204,w,wh-264,19,PAL_PANEL,240);
+    gfx_round_outline(x,wy+204,w,wh-264,19,PAL_HAIRLINE);
+    if(!falco_has_results){
+        gfx_text_lg(x+26,wy+232,"Discover something new",PAL_TEXT);
+        gfx_text(x+26,wy+283,"Type a topic and press Enter.",PAL_TEXT_DIM);
+        gfx_text(x+26,wy+312,
+            "HTTPS is verified on the Arch host (not inside FalconOS).",PAL_TEXT_DIM);
+        gfx_text(x+26,wy+341,
+            "Run the companion gateway first; nothing is simulated.",PAL_TEXT_FAINT);
+    }else{
+        char line[116];i32 col=0,row=0,logical=0;
+        i32 rows=(wh-302)/21;if(rows>19)rows=19;
+        i32 max_chars=(w-44)/8;
+        if(max_chars>106)max_chars=106;
+        for(i32 i=0;falco_results[i]&&row<rows;i++){
+            char c=falco_results[i];
+            if(c=='\n'||col>=max_chars){
+                line[col]=0;
+                if(logical>=falco_sel)
+                    gfx_text(x+22,wy+225+(row++)*21,line,PAL_TEXT);
+                logical++;col=0;
+                if(c=='\n')continue;
+            }
+            if(col<115)line[col++]=c;
+        }
+        if(col && row<rows && logical>=falco_sel){
+            line[col]=0;
+            gfx_text(x+22,wy+225+row*21,line,PAL_TEXT);
         }
     }
-
-    /* search box */
-    i32 sx = wx + 24, sy = wy + 70, sw = ww - 48;
-    gfx_round_rect_a(sx, sy, sw, 34, 17, PAL_PANEL_DEEP, 255);
-    gfx_round_outline(sx, sy, sw, 34, 17, PAL_ACCENT);
-    gfx_circle(sx + 16, sy + 17, 6, PAL_ACCENT);
-    if (falco_query_len == 0) {
-        gfx_text(sx + 30, sy + 10,
-                 T("Search local index… (no live internet in this build)",
-                   "Yerel indekste ara… (bu sürümde canlı internet yok)"),
-                 PAL_TEXT_FAINT);
-    } else {
-        gfx_text(sx + 30, sy + 10, falco_query, PAL_TEXT);
-    }
-    if ((g_ticks / 50) & 1) {
-        i32 cx = sx + 30 + gfx_text_width(falco_query);
-        gfx_rect(cx, sy + 8, 2, 18, PAL_ACCENT);
-    }
-
-    i32 hits[12];
-    i32 hn = falco_collect_hits(hits, 12);
-    if (hn <= 0) falco_sel = 0;
-    else if (falco_sel >= hn) falco_sel = hn - 1;
-
-    i32 ry = sy + 42;
-    if (hn == 0) {
-        gfx_round_rect_a(sx, ry, sw, 32, 8, PAL_PANEL_DEEP, 255);
-        gfx_round_outline(sx, ry, sw, 32, 8, PAL_HAIRLINE);
-        gfx_text(sx + 12, ry + 9,
-                 T("No local hit. Real web search needs virtio-net/TCP (not bundled).",
-                   "Yerel sonuç yok. Gerçek web araması virtio-net/TCP gerektirir (bu sürümde yok)."),
-                 PAL_TEXT_DIM);
-    } else {
-        i32 rows = (wh - 140) / 44;
-        if (rows < 1) rows = 1;
-        if (rows > hn) rows = hn;
-        for (i32 i = 0; i < rows; i++) {
-            i32 idx = hits[i];
-            bool sel = (i == falco_sel);
-            i32 y = ry + i * 44;
-            gfx_round_rect_a(sx, y, sw, 38, 8, sel ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
-            gfx_round_outline(sx, y, sw, 38, 8, sel ? PAL_ACCENT : PAL_HAIRLINE);
-            gfx_text(sx + 10, y + 7,  FALCO_INDEX[idx].title, PAL_TEXT);
-            gfx_text(sx + 10, y + 22, FALCO_INDEX[idx].url,   PAL_TEXT_DIM);
-        }
-        if (falco_sel >= 0 && falco_sel < hn) {
-            const falco_doc_t *d = &FALCO_INDEX[hits[falco_sel]];
-            gfx_text(wx + 24, wy + wh - 24, d->desc, PAL_TEXT_FAINT);
-        }
-    }
+    gfx_text(x+5,wy+wh-36,"F4 clear | Enter search | Up/Down scroll | Verified Host HTTPS",PAL_TEXT_FAINT);
 }
 
-/* --- Chrome (visual browser app) ----------------------------------------
- *  Goal: read like a real Chrome window. The window chrome (title bar +
- *  traffic lights) is drawn by the dispatcher; this routine paints
- *      [tab bar]  [address bar + nav buttons]  [bookmark bar]  [page]
- *  in roughly Chrome's layout, with a Google-search-style landing page.
- *  No real network — but the surface area, typography and component
- *  spacing are correct for screenshots and demos.                        */
-static const char *CHROME_TABS[3] = {
-    "Welcome",
-    "Falcon Docs",
-    "Source",
-};
-static i32 chrome_active_tab = 0;
-
-static void chrome_input_key(i32 key)
-{
-    /* Tab and arrow keys cycle tabs. */
-    if (key == KEY_TAB || key == KEY_RIGHT) {
-        chrome_active_tab = (chrome_active_tab + 1) % 3;
-    } else if (key == KEY_LEFT) {
-        chrome_active_tab = (chrome_active_tab + 2) % 3;
+/* --- Falcon Browser: actual guest TCP + authenticated HTTPS only ---------
+ * Not a Chromium/WebKit engine. Real certificate-verified HTTPS fetch,
+ * bounded HTML-to-text rendering; no CSS, JavaScript, cookies or sandbox.
+ * In preview builds TLS verification is done by native BearSSL in Ring0.
+ * HTTPS failure NEVER falls back to plaintext HTTP.
+ */
+static char browser_address[224]="https://example.com/";
+static i32 browser_address_len=20;
+static bool browser_address_focus=true;
+/* F6 enables a clearly labeled host-validated TLS proxy, never automatic. */
+static bool browser_host_gateway=false;
+static bool browser_dhcp_attempted=false;
+static char browser_result[4096];
+static char browser_text[4096];
+static char browser_status[120]="Type an HTTPS address, then press Enter to load.";
+static i32 browser_scroll;
+static bool browser_loaded;
+static void browser_page_from_http(void){
+    /* Only show actual bytes authenticated by the TLS transport.
+     * Strip active markup and avoid escape/control injection into GUI. */
+    const char *p=browser_result;
+    while(*p&&!(p[0]=='\r'&&p[1]=='\n'&&p[2]=='\r'&&p[3]=='\n'))p++;
+    if(!*p){k_strcpy(browser_status,"Invalid HTTP response");return;}
+    p+=4;
+    i32 n=0;bool intag=false;bool space=false;
+    for(;*p&&n<3900;p++){
+        char c=*p;
+        if(c=='<'){intag=true;continue;}
+        if(intag){
+            if(c=='>'){intag=false;space=true;}
+            continue;
+        }
+        if(c=='\r'||c=='\n'||c=='\t'||c==' '){
+            space=true;continue;
+        }
+        if((u8)c<32u||(u8)c>=127u)continue;
+        if(space&&n>0&&browser_text[n-1]!=' ')browser_text[n++]=' ';
+        space=false;
+        browser_text[n++]=c;
     }
+    browser_text[n]=0;
+    browser_loaded=true;
+    browser_scroll=0;
+    k_strcpy(browser_status,"TLS+hostname verified - bounded HTML text preview (may be partial)");
 }
-
-static void render_browser(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
-    (void)frame; (void)wh;
-
-    /* ---- tab strip ----------------------------------------------------- */
-    i32 tx = wx + 12, ty = wy + 8;
-    i32 tw = (ww - 24) / 4;     /* leave room for a "+" button on the right */
-    for (i32 i = 0; i < 3; i++) {
-        i32 x = tx + i * (tw + 4);
-        u32 fill = (i == chrome_active_tab) ? PAL_PANEL : PAL_PANEL_DEEP;
-        gfx_round_rect_a(x, ty, tw, 32, 8, fill, 255);
-        gfx_round_outline(x, ty, tw, 32, 8, PAL_HAIRLINE);
-        gfx_circle(x + 14, ty + 16, 5,
-                   i == 0 ? 0x4285F4 :
-                   i == 1 ? 0x34A853 : 0xFBBC04);
-        gfx_text(x + 26, ty + 9, CHROME_TABS[i],
-                 i == chrome_active_tab ? PAL_TEXT : PAL_TEXT_DIM);
-        gfx_text(x + tw - 16, ty + 9, "x", PAL_TEXT_FAINT);
+static void browser_load(void){
+#ifdef FALCON_QEMU_BROWSER_TEST
+    outb(0xE9,'b'); /* user pressed Enter inside the real GUI */
+#endif
+    browser_loaded=false;browser_result[0]=0;browser_text[0]=0;
+    if(!net_present()){
+        k_strcpy(browser_status,"No RTL8139 NIC. Set Virt-Manager network model to rtl8139.");
+        return;
     }
-    /* "+" new-tab button                                                  */
-    {
-        i32 nx = tx + 3 * (tw + 4);
-        gfx_round_rect_a(nx, ty + 4, 28, 24, 6, PAL_PANEL_DEEP, 255);
-        gfx_text_centered(nx + 14, ty + 9, "+", PAL_TEXT);
+    if(!browser_dhcp_attempted){
+        browser_dhcp_attempted=true;
+        (void)net_dhcp(); /* QEMU user NAT and libvirt virbr0 both offer DHCP */
     }
-
-    /* ---- toolbar (back / fwd / reload / address / star / menu) -------- */
-    i32 by = wy + 50;
-    gfx_rect(wx, by, ww, 44, PAL_PANEL_HI);
-
-    i32 bx = wx + 12;
-    /* nav buttons */
-    const char *NAV[3] = { "<", ">", "C" };
-    for (i32 i = 0; i < 3; i++) {
-        gfx_circle(bx + 14 + i * 32, by + 22, 12, PAL_PANEL);
-        gfx_text_centered(bx + 14 + i * 32, by + 16, NAV[i], PAL_TEXT);
+    const char *p=browser_address;
+    const char *https="https://";
+    for(i32 i=0;i<8;i++)if(p[i]!=https[i]){
+        k_strcpy(browser_status,"HTTPS only. Prefix address with https://");
+        return;
     }
-
-    /* address bar */
-    i32 ax = bx + 110, aw = ww - 110 - 80;
-    gfx_round_rect_a(ax, by + 6, aw, 32, 16, PAL_PANEL, 255);
-    gfx_round_outline(ax, by + 6, aw, 32, 16, PAL_HAIRLINE);
-    gfx_circle(ax + 16, by + 22, 6, COL_OK);   /* lock icon            */
-    const char *URL[3] = {
-        "https://www.google.com/",
-        "falcon.os/docs",
-        "github.com/hanefimert2016-oss/FalconOS",
-    };
-    gfx_text(ax + 32, by + 16, URL[chrome_active_tab], PAL_TEXT);
-    gfx_text(ax + aw - 18, by + 16, "*", PAL_TEXT_DIM);  /* bookmark star */
-
-    /* menu button */
-    gfx_circle(wx + ww - 28, by + 22, 12, PAL_PANEL);
-    gfx_text_centered(wx + ww - 28, by + 16, ":", PAL_TEXT);
-
-    /* ---- bookmark bar -------------------------------------------------- */
-    i32 mb = wy + 96;
-    gfx_rect(wx, mb, ww, 28, PAL_PANEL_DEEP);
-    const char *BM[5] = { "Falcon Docs", "Source", "Issues",
-                          "PRs", "Lumen Notes" };
-    i32 bmx = wx + 16;
-    for (i32 i = 0; i < 5; i++) {
-        gfx_circle(bmx + 6, mb + 14, 4, PAL_ACCENT);
-        gfx_text(bmx + 16, mb + 8, BM[i], PAL_TEXT);
-        bmx += k_strlen(BM[i]) * 8 + 36;
+    p+=8;
+    char hostname[201],path[304];
+    i32 k=0;
+    while(p[k]&&p[k]!='/'&&p[k]!='?'&&p[k]!='#'){
+        char c=p[k];
+        if(k>=199||!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+                      (c>='0'&&c<='9')||c=='-'||c=='.')){
+            k_strcpy(browser_status,"Invalid HTTPS hostname.");return;
+        }
+        hostname[k]=c;k++;
     }
-
-    /* ---- page content (per-tab) --------------------------------------- */
-    i32 px = wx + 24, py = wy + 132, pw = ww - 48;
-    gfx_round_rect_a(px, py, pw, 200, 12, PAL_PANEL, 255);
-    gfx_round_outline(px, py, pw, 200, 12, PAL_HAIRLINE);
-
-    if (chrome_active_tab == 0) {
-        /* Google-style landing page. */
-        i32 cx = px + pw / 2;
-        gfx_text_lg_centered(cx - 70, py + 28, "G", 0x4285F4);
-        gfx_text_lg_centered(cx - 38, py + 28, "o", 0xEA4335);
-        gfx_text_lg_centered(cx -  6, py + 28, "o", 0xFBBC04);
-        gfx_text_lg_centered(cx + 26, py + 28, "g", 0x4285F4);
-        gfx_text_lg_centered(cx + 58, py + 28, "l", 0x34A853);
-        gfx_text_lg_centered(cx + 90, py + 28, "e", 0xEA4335);
-
-        /* search box */
-        gfx_round_rect_a(cx - 200, py + 80, 400, 36, 18, PAL_PANEL_DEEP, 255);
-        gfx_round_outline(cx - 200, py + 80, 400, 36, 18, PAL_HAIRLINE);
-        gfx_circle(cx - 184, py + 98, 6, PAL_TEXT_DIM);
-        gfx_text(cx - 168, py + 92, "Search Google or type a URL",
-                 PAL_TEXT_DIM);
-
-        /* search / lucky buttons */
-        gfx_round_rect_a(cx - 90, py + 134, 80, 28, 6, PAL_PANEL_DEEP, 255);
-        gfx_text_centered(cx - 50, py + 138, "Search", PAL_TEXT);
-        gfx_round_rect_a(cx + 10, py + 134, 80, 28, 6, PAL_PANEL_DEEP, 255);
-        gfx_text_centered(cx + 50, py + 138, "I'm Lucky", PAL_TEXT);
-    } else if (chrome_active_tab == 1) {
-        gfx_text_lg(px + 16, py + 12, "FalconOS Docs", PAL_TEXT);
-        gfx_text(px + 16, py + 56,
-                 "Bare-metal x86_64 OS with multi-user, PBKDF2 hashing,",
-                 PAL_TEXT);
-        gfx_text(px + 16, py + 76,
-                 "antialiased UI text and a Linux-derived ATA / HID layer.",
-                 PAL_TEXT);
-        gfx_text(px + 16, py + 110, "  - make run        run in QEMU",
-                 PAL_TEXT_DIM);
-        gfx_text(px + 16, py + 130, "  - make run-disk   persistent disk",
-                 PAL_TEXT_DIM);
-        gfx_text(px + 16, py + 150, "  - F1              toggle dev kernel",
-                 PAL_TEXT_DIM);
-        gfx_text(px + 16, py + 170, "  - F2              Launchpad",
-                 PAL_TEXT_DIM);
-    } else {
-        gfx_text_lg(px + 16, py + 12, "github.com/hanefimert2016-oss/FalconOS",
-                    PAL_TEXT);
-        const char *FILES[5] = {
-            "kernel/", "linux/", "boot/", "tools/", "README.md"
-        };
-        for (i32 i = 0; i < 5; i++)
-            gfx_text(px + 16, py + 60 + i * 20, FILES[i], PAL_TEXT);
+    if(k==0){k_strcpy(browser_status,"Missing HTTPS hostname.");return;}
+    hostname[k]=0;
+    i32 n=0;
+    if(p[k]=='/'||p[k]=='?'){
+        if(p[k]=='?')path[n++]='/';
+        while(p[k]&&p[k]!='#'&&n<300)path[n++]=p[k++];
+    }else path[n++]='/';
+    path[n]=0;
+    k_strcpy(browser_status,"Connecting: DNS / TCP / TLS / CA certificate...");
+    /* User-triggered and synchronous; slow networks can delay this UI.
+     * Never execute a network operation while rendering each frame. */
+    bool verified=false;
+    if(browser_host_gateway){
+        char local_path[480];
+        u32 used=0;
+        const char *prefix="/fetch/";
+        for(u32 i=0;prefix[i];i++)local_path[used++]=prefix[i];
+        for(u32 i=0;hostname[i]&&used<300u;i++)local_path[used++]=hostname[i];
+        for(u32 i=0;path[i]&&used+1<sizeof local_path;i++)
+            local_path[used++]=path[i];
+        local_path[used]=0;
+        verified=native_http_get_port(net_gateway(),18444u,local_path,
+                                      browser_result,sizeof browser_result);
+        if(!verified || !sh_contains_ci(browser_result,"X-Falcon-Host-HTTPS-Verified: yes")){
+            k_strcpy(browser_status,
+                "Host HTTPS gateway unavailable/unverified; run companion script.");
+            return;
+        }
+    }else{
+#ifdef FALCON_BEARSSL
+        verified=native_https_get_preview(hostname,path,browser_result,sizeof browser_result);
+        if(!verified){
+            k_strcpy(browser_status,
+                "Native TLS failed: check CA, DNS, network or response size.");
+            return;
+        }
+#else
+        k_strcpy(browser_status,
+            "Native TLS not included in this build. Use TLS-enabled preview.");
+        return;
+#endif
     }
+    browser_page_from_http();
+#ifdef FALCON_QEMU_BROWSER_TEST
+    outb(0xE9,browser_loaded?'Y':'N');
+#endif
+    if(browser_loaded && browser_host_gateway)
+        k_strcpy(browser_status,
+            "HOST-verified HTTPS | local VM link plaintext | read-only");
 
-    /* ---- status hint --------------------------------------------------- */
-    gfx_text(wx + 24, wy + 350,
-             "Tab: switch tabs   Esc: close   (no network stack)",
-             PAL_TEXT_FAINT);
+}
+static void chrome_input_key(i32 key){
+    if(key==KEY_F4){
+        browser_address[0]=0;
+        browser_address_len=0;
+        browser_address_focus=true;
+        k_strcpy(browser_status,"Address cleared. Type https://... and press Enter.");
+        return;
+    }
+    if(key==KEY_F6){
+        browser_host_gateway=!browser_host_gateway;
+        browser_loaded=false;browser_result[0]=0;
+        k_strcpy(browser_status,browser_host_gateway?
+            "HOST HTTPS enabled (no guest TLS). Start host gateway first.":
+            "NATIVE HTTPS mode - BearSSL checks CA and hostname.");
+        return;
+    }
+    if(key==KEY_UP){if(browser_scroll>0)browser_scroll--;return;}
+    if(key==KEY_DOWN){if(browser_scroll<190)browser_scroll++;return;}
+    if(key==KEY_TAB){browser_address_focus=!browser_address_focus;return;}
+    if(key==KEY_F5){browser_load();return;}
+    if(key==KEY_ENTER){browser_load();browser_address_focus=false;return;}
+    if(!browser_address_focus)return;
+    if(key==KEY_BACKSPACE){
+        sh_buf_pop_utf8(browser_address,&browser_address_len);return;
+    }
+    if(browser_address_len>=220)return;
+    (void)sh_buf_append_key(browser_address,&browser_address_len,
+                            sizeof browser_address,key);
+}
+static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    (void)frame;
+    i32 margin=18,bar=wy+54;
+    gfx_rect(wx,wy,ww,44,PAL_PANEL_DEEP);
+    gfx_round_rect_a(wx+margin,wy+7,170,32,9,PAL_PANEL,255);
+    gfx_text(wx+margin+12,wy+15,"Falcon Browser",PAL_ACCENT);
+    gfx_text(wx+205,wy+16,
+        browser_host_gateway?"HOST HTTPS / LOCAL LINK":"NATIVE HTTPS / BEARSSL",PAL_TEXT_DIM);
+    gfx_rect(wx,wy+45,ww,56,PAL_PANEL_HI);
+    i32 sx=wx+margin,sy=bar,sw=ww-margin*2;
+    gfx_round_rect_a(sx,sy,sw,34,10,PAL_PANEL,255);
+    gfx_round_outline(sx,sy,sw,34,10,
+                      browser_address_focus?PAL_ACCENT:PAL_HAIRLINE);
+    gfx_circle(sx+15,sy+17,5,COL_OK);
+    gfx_text(sx+27,sy+11,browser_address,PAL_TEXT);
+    gfx_rect(wx,wy+102,ww,34,PAL_PANEL_DEEP);
+    gfx_text(wx+margin,wy+113,browser_status,
+             browser_loaded?COL_OK:PAL_TEXT_DIM);
+    i32 py=wy+146;
+    i32 height=wh-184;
+    if(height<70)height=70;
+    gfx_round_rect_a(sx,py,sw,height,10,PAL_PANEL,255);
+    gfx_round_outline(sx,py,sw,height,10,PAL_HAIRLINE);
+    if(!browser_loaded){
+        gfx_text_lg(sx+20,py+26,"Falcon Browser",PAL_TEXT);
+        gfx_text(sx+20,py+76,"Open a real HTTPS page using Enter.",PAL_TEXT);
+        gfx_text(sx+20,py+102,
+            "Certificates validated by BearSSL, no HTTP fallback.",PAL_TEXT_DIM);
+        gfx_text(sx+20,py+128,
+            "Supports limited HTML-to-text, not CSS/JS or full websites.",PAL_TEXT_DIM);
+    }else{
+        i32 chars=(sw-40)/8;
+        if(chars<15)chars=15;
+        if(chars>120)chars=120;
+        i32 rows=(height-24)/19;
+        if(rows>60)rows=60;
+        char line[128];
+        const char *p=browser_text;
+        i32 line_no=0,row=0,col=0;
+        for(i32 i=0;p[i]&&row<rows;i++){
+            char c=p[i];
+            if(c=='\n'||col>=chars){
+                line[col]=0;
+                if(line_no>=browser_scroll){
+                    gfx_text(sx+18,py+14+row*19,line,PAL_TEXT);
+                    row++;
+                }
+                col=0;line_no++;
+                if(c=='\n')continue;
+            }
+            if(col<126)line[col++]=c;
+        }
+        if(row<rows&&col&&line_no>=browser_scroll){
+            line[col]=0;gfx_text(sx+18,py+14+row*19,line,PAL_TEXT);
+        }
+    }
+    gfx_text(wx+margin,wy+wh-26,
+        "F4 new URL | Enter load | F5 reload | F6 HTTPS mode | Up/Down scroll",
+        PAL_TEXT_FAINT);
 }
 
 /* --- Video (software demo player) ---------------------------------------- */
@@ -3470,7 +3752,7 @@ static app_def_t APPS[] = {
     { "Gallery",    "palette swatches",    0xC084FC, render_gallery,  NULL,             icon_gallery  },
     { "Video",      "software player",     0x16B5A8, render_video,    video_input_key,  icon_video    },
     { "Falco",      "native web search",   0x2A66F5, render_falco,    falco_input_key,  icon_falco    },
-    { "Chrome",     "Tab to switch tabs",  0x4285F4, render_browser, chrome_input_key,  icon_browser  },
+    { "Browser",    "Native TLS 1.2 text web", 0x4285F4, render_browser, chrome_input_key, icon_browser },
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
@@ -3478,6 +3760,38 @@ static app_def_t APPS[] = {
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
+/* ChromeOS-style launcher catalog: native functions only, stable original
+ * app IDs for desktop pins, Store receipts and automation compatibility.
+ * Demo video/palette gallery, Heroic (no Linux ABI) and Jarvis (not a
+ * connected AI) are deliberately absent rather than mislabeled as working.
+ * USB UVC camera is not yet implemented and is never faked.
+ */
+static const i32 LAUNCH_FAVORITES[] = {1,14,13,6,7,3,5,2,8};
+static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,18,5};
+static const i32 LAUNCH_ALL[] = {1,14,13,6,7,3,5,2,8,9,4,17,18};
+i32 apps_launcher_count(i32 group) {
+    if(group==0) return (i32)(sizeof LAUNCH_FAVORITES/sizeof *LAUNCH_FAVORITES);
+    if(group==1) return (i32)(sizeof LAUNCH_SYSTEM/sizeof *LAUNCH_SYSTEM);
+    i32 installed=0;
+    for(i32 i=0;i<market_count();i++)
+        if(market_installed(i))installed++;
+    return (i32)(sizeof LAUNCH_ALL/sizeof *LAUNCH_ALL)+installed;
+}
+i32 apps_launcher_id(i32 group,i32 index) {
+    i32 count=apps_launcher_count(group);
+    if(index<0||index>=count)return -1;
+    if(group==0)return LAUNCH_FAVORITES[index];
+    if(group==1)return LAUNCH_SYSTEM[index];
+    i32 count_builtin=(i32)(sizeof LAUNCH_ALL/sizeof *LAUNCH_ALL);
+    if(index<count_builtin)return LAUNCH_ALL[index];
+    i32 slot=index-count_builtin;
+    for(i32 i=0;i<market_count();i++){
+        if(!market_installed(i))continue;
+        if(slot--==0)return builtin_app_count()+i;
+    }
+    return -1;
+}
+
 i32 apps_count(void) { return builtin_app_count() + market_count(); }
 const char *apps_name(i32 i) {
     if (i < 0 || i >= apps_count()) return "?";
@@ -3510,7 +3824,7 @@ const char *apps_display_name(i32 i)
         case 11: return "Galeri";
         case 12: return "Video";
         case 13: return "Falco";
-        case 14: return "Chrome";
+        case 14: return "Tarayici";
         case 15: return "Heroic";
         case 16: return "Jarvis";
         case 17: return "Hakkında";
@@ -3541,7 +3855,7 @@ const char *apps_display_subtitle(i32 i)
         case 11: return "Renk paleti";
         case 12: return "Yazılım oynatıcı";
         case 13: return "Yerel indeks arama";
-        case 14: return "Sekme görünümü (demo)";
+        case 14: return "Dogrulanmis HTTPS metin gorunumu";
         case 15: return "Oyun başlatıcı (uyum)";
         case 16: return "Yapay asistan";
         case 17: return "FalconOS bilgisi";
@@ -3553,11 +3867,98 @@ u32 apps_tint(i32 i) {
     if (i < 0 || i >= apps_count()) return 0x2BB673;
     return i < builtin_app_count() ? APPS[i].tint : 0x2BB673;
 }
-void apps_draw_icon(i32 i, i32 cx, i32 cy)
-{
-    if (i < 0 || i >= apps_count()) return;
-    if (i >= builtin_app_count()) { icon_term(cx, cy); return; }
-    if (APPS[i].draw_icon) APPS[i].draw_icon(cx, cy);
+/* Material-symbol family: all first-party app icons share one 36px optical
+ * grid, restrained rounded geometry and legible white vector strokes.
+ * No borrowed Chromebook brand icon files or giant decorative fake apps.
+ */
+void apps_draw_icon(i32 i,i32 cx,i32 cy){
+    if(i<0||i>=apps_count())return;
+    const u32 white=0xFFFFFFu,shadow=0xECF3FFu;
+    u32 col=apps_tint(i);
+    if(i==5)col=0x1C304Eu;
+    if(i==14)col=0x2865E8u;
+    if(i==1)col=0xECA847u;
+    gfx_round_rect(cx-18,cy-18,36,36,12,col);
+    /* Inner letterforms are high-contrast and consistent at shelf size. */
+    switch(i){
+    case 1: /* Files */
+        gfx_round_rect(cx-12,cy-9,13,5,2,white);
+        gfx_round_rect(cx-12,cy-5,24,17,4,shadow);
+        gfx_line(cx-9,cy+3,cx+9,cy+3,0xD59C42u);
+        break;
+    case 14: /* Browser: globe, not deceptive Chrome logo */
+        gfx_circle_outline(cx,cy,12,white);
+        gfx_line(cx-11,cy,cx+11,cy,white);
+        gfx_line(cx,cy-12,cx,cy+12,white);
+        gfx_circle_outline(cx,cy,5,shadow);
+        break;
+    case 13: /* Falco search */
+        gfx_circle_outline(cx-2,cy-3,9,white);
+        gfx_line(cx+5,cy+4,cx+13,cy+12,white);
+        gfx_circle(cx-2,cy-3,3,0xCAE5FFu);
+        break;
+    case 6: /* Calculator */
+        gfx_round_rect(cx-10,cy-13,20,26,4,white);
+        gfx_rect(cx-7,cy-9,14,5,0x5A4BC4u);
+        for(i32 y=0;y<2;y++)for(i32 x=0;x<3;x++)
+            gfx_circle(cx-5+x*5,cy+3+y*5,2,0x8479E8u);
+        break;
+    case 7: /* Notes */
+        gfx_round_rect(cx-10,cy-12,20,26,4,white);
+        gfx_rect(cx-6,cy-6,12,2,0xBC9447u);
+        gfx_rect(cx-6,cy,12,2,0xBC9447u);
+        gfx_rect(cx-6,cy+6,8,2,0xBC9447u);
+        break;
+    case 3: /* Settings: slider controls */
+        gfx_line(cx-11,cy-8,cx+11,cy-8,white);
+        gfx_line(cx-11,cy,cx+11,cy,white);
+        gfx_line(cx-11,cy+8,cx+11,cy+8,white);
+        gfx_circle(cx+4,cy-8,3,0xBED5FFu);
+        gfx_circle(cx-5,cy,3,0xBED5FFu);
+        gfx_circle(cx+6,cy+8,3,0xBED5FFu);
+        break;
+    case 5: case 18: /* Terminal and code */
+        gfx_round_rect(cx-13,cy-11,26,22,5,0x121D2Cu);
+        gfx_text(cx-9,cy-6,i==18?"{}":">_",0xB2FCDEu);
+        break;
+    case 2: /* Store */
+        gfx_round_rect(cx-11,cy-7,22,21,4,white);
+        gfx_line(cx-7,cy-6,cx-7,cy-13,white);
+        gfx_line(cx+7,cy-6,cx+7,cy-13,white);
+        gfx_line(cx-7,cy-13,cx+7,cy-13,white);
+        gfx_text_centered(cx,cy-1,"+",0x20A372u);
+        break;
+    case 8: /* Clock */
+        gfx_circle_outline(cx,cy,12,white);
+        gfx_line(cx,cy,cx,cy-8,white);
+        gfx_line(cx,cy,cx+7,cy+4,white);
+        break;
+    case 9: /* Telemetry */
+        gfx_line(cx-12,cy+11,cx+12,cy+11,white);
+        gfx_rect(cx-10,cy,5,10,white);
+        gfx_rect(cx-2,cy-8,5,18,white);
+        gfx_rect(cx+6,cy-3,5,13,white);
+        break;
+    case 4: /* Update */
+        gfx_circle_outline(cx,cy,12,white);
+        gfx_line(cx,cy-9,cx,cy+6,white);
+        gfx_line(cx-6,cy+2,cx,cy+8,white);
+        gfx_line(cx+6,cy+2,cx,cy+8,white);
+        break;
+    case 17: /* Information */
+        gfx_circle_outline(cx,cy,12,white);
+        gfx_text_centered(cx,cy-6,"i",white);
+        break;
+    case 10: /* Calendar */
+        gfx_round_rect(cx-12,cy-11,24,23,5,white);
+        gfx_rect(cx-12,cy-8,24,6,0x5B84CDu);
+        gfx_circle(cx-4,cy+5,3,0x5B84CDu);
+        break;
+    default:
+        if(i>=builtin_app_count()){
+            gfx_text_centered(cx,cy-7,"P",white);
+        }else if(APPS[i].draw_icon)APPS[i].draw_icon(cx,cy);
+    }
 }
 
 void apps_input_active(i32 key)
@@ -3574,8 +3975,8 @@ static bool wm_window_rect(i32 *out_x, i32 *out_y, i32 *out_w, i32 *out_h)
     if (active_app < 0) return false;
     i32 W = (i32)FB.width, H = (i32)FB.height;
     if (wm_max) {
-        *out_x = 8; *out_y = 36;                   /* below the menu bar */
-        *out_w = W - 16; *out_h = H - 76;          /* leave dock visible */
+        *out_x=24;*out_y=48;
+        *out_w=W-48;*out_h=H-164; /* floating Shelf remains visible */
         return true;
     }
     i32 ww = W - 280; if (ww > 920) ww = 920; if (ww < 600) ww = 600;
@@ -3627,17 +4028,14 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
      *   red    → close (×)
      *   yellow → minimise to dock
      *   green  → toggle maximised (+)                                  */
-    i32 ty = wy + 18;
-    if (my >= ty - 10 && my <= ty + 10) {
-        if (mx >= wx + 9  && mx <= wx + 27) { apps_close(); return true; }
-        if (mx >= wx + 29 && mx <= wx + 47) {
-            minimized_app = active_app;
-            active_app = -1;
-            wm_dragging = false;
-            wm_resizing = false;
-            return true;
+    i32 ty=wy+20;
+    if(my>=ty-15&&my<=ty+15){
+        if(mx>=wx+ww-44&&mx<wx+ww-9){apps_close();return true;}
+        if(mx>=wx+ww-84&&mx<wx+ww-46){wm_max=!wm_max;return true;}
+        if(mx>=wx+ww-124&&mx<wx+ww-86){
+            minimized_app=active_app;active_app=-1;
+            wm_dragging=false;wm_resizing=false;return true;
         }
-        if (mx >= wx + 49 && mx <= wx + 67) { wm_max = !wm_max; return true; }
     }
 
     /* resize handle: 18×18 square at the bottom-right, only visible
@@ -3675,9 +4073,9 @@ void apps_render_active(u32 frame)
     if (SET.aero_enabled) {
         i32 hx = wx - 24, hy = wy - 24, hw = ww + 48, hh = wh + 48;
         if (SET.theme == THEME_LIQUID) gfx_blur_rect(hx, hy, hw, hh, 4);
-        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 68);
+        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 24);
     } else {
-        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 60);
+        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 22);
     }
 
     /* slide-in: 200 ms — only on first open, not while dragging */
@@ -3691,47 +4089,20 @@ void apps_render_active(u32 frame)
     /* card — Aero dims the desktop / dock / widgets behind the window  
      * so the chrome feels lifted. Window body remains solid because most
      * apps render their own opaque content into it.                      */
-    gfx_round_rect_a(wx + 4, wy + 12, ww, wh, 18, COL_SHADOW, 70);   /* shadow */
-    gfx_round_rect_a(wx, wy, ww, wh, 18, PAL_PANEL, SET.aero_enabled ? 230 : 245);
-    gfx_round_outline(wx, wy, ww, wh, 18, PAL_HAIRLINE);
+    gfx_round_rect_a(wx + 4, wy + 12, ww, wh, 24, COL_SHADOW, 60);   /* shadow */
+    gfx_round_rect_a(wx, wy, ww, wh, 24, PAL_PANEL, SET.aero_enabled ? 246 : 255);
+    gfx_round_outline(wx, wy, ww, wh, 24, PAL_HAIRLINE);
 
-    /* title bar — macOS-spec traffic lights on the left.
-     *   x+18  red    close       (#FF5F57)
-     *   x+38  yellow minimise    (#FEBC2E)
-     *   x+58  green  maximise    (#28C840)
-     *
-     * Each light is rendered as a sphere: inner disc + soft top
-     * highlight + thin dark outline.  When the cursor is over the
-     * traffic-light cluster, the hover glyph (× / − / +) is drawn
-     * inside its circle — same as Big Sur.                          */
-    {
-        i32 mx, my; bool ml;
-        mouse_get(&mx, &my, &ml);
-        bool hover_cluster =
-            (my >= wy +  8 && my <= wy + 28 &&
-             mx >= wx +  8 && mx <= wx + 68);
-
-        const i32   LX[3]   = { wx + 18, wx + 38, wx + 58 };
-        const u32   FILL[3] = { 0xFF5F57u, 0xFEBC2Eu, 0x28C840u };
-        const u32   RIM[3]  = { 0xCB4B43u, 0xC79624u, 0x21A434u };
-        const char *GLYPH[3]= { "x", "-", "+" };
-
-        for (i32 b = 0; b < 3; b++) {
-            gfx_circle(LX[b], wy + 18, 7, FILL[b]);
-            /* faint inner highlight on top half so the disc reads as
-             * a sphere lit from above (the macOS look).              */
-            gfx_circle_a(LX[b], wy + 16, 4, 0xFFFFFFu, 90);
-            /* 1-px outer rim — slightly darker than the fill         */
-            gfx_circle_outline(LX[b], wy + 18, 7, RIM[b]);
-
-            if (hover_cluster) {
-                gfx_text_centered(LX[b], wy + 12, GLYPH[b], 0x202020u);
-            }
-        }
-    }
-    /* app-tint pip on the right keeps the chrome symmetric */
-    gfx_circle(wx + ww - 26, wy + 18, 8, a->tint);
-    gfx_text_centered(wx + ww / 2, wy + 12, apps_display_name(active_app), PAL_TEXT_DIM);
+    /* Unified Aura title strip: app symbol left, ChromeOS window actions
+     * on the right; no macOS traffic-light clone. */
+    gfx_round_rect(wx+14,wy+8,28,28,10,a->tint);
+    apps_draw_icon(active_app,wx+28,wy+22);
+    gfx_text(wx+54,wy+13,apps_display_name(active_app),PAL_TEXT);
+    gfx_text(wx+ww-115,wy+14,"-",PAL_TEXT_DIM);
+    gfx_text(wx+ww-77,wy+14,"[]",PAL_TEXT_DIM);
+    gfx_round_rect(wx+ww-40,wy+7,31,30,11,0xFBE6E8u);
+    gfx_text_centered(wx+ww-24,wy+14,"x",0xAE3E4Bu);
+    gfx_rect_a(wx+13,wy+42,ww-26,1,PAL_HAIRLINE,255);
 
     /* body offset by 44 px for title strip */
     a->render(wx, wy + 44, ww, wh - 44, frame);
@@ -3746,7 +4117,7 @@ void apps_render_active(u32 frame)
 
     /* hint */
     gfx_text_centered(wx + ww / 2, wy + wh - 24,
-        T("drag title-bar  ·  resize corner  ·  yellow=minimize  ·  green=max",
-          "başlık çubuğunu sürükleyin · sağ alttan yeniden boyutlandırın"),
+        T("Move window by title | resize corner | Esc to close",
+          "Basliktan tasi | koseden boyutlandir | Esc kapat"),
         PAL_TEXT_FAINT);
 }

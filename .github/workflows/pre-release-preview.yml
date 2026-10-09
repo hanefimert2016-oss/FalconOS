@@ -1,0 +1,92 @@
+name: FalconOS private preview ISO
+on:
+  push:
+    branches:
+      - feature/core-storage-net-usermode
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: falcon-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install x86_64 kernel and QEMU test toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Test interrupted dynamic filesystem journal
+        run: |
+          mkdir -p build
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/jfs_dynamic_test.c kernel/jfs_dynamic.c -o build/jfs-test
+          ./build/jfs-test
+      - name: Install animation baker for original GLB
+        run: |
+          python3 -m pip install --user --break-system-packages 'numpy<3' trimesh opencv-python-headless pillow
+          python3 tools/bake_boot_intro.py --frames 48
+      - name: Build safe pre-release preview ISO
+        run: |
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1
+          grub-file --is-x86-multiboot2 build/falcon.elf
+          cp build/FalconOS.iso build/FalconOS-preview-QEMU.iso
+      - name: Verify bootable safe preview
+        run: python3 tools/qemu_smoke.py --iso build/FalconOS.iso --boot-seconds 16
+      - name: Verify real setup, Aura Launcher and Store UI in QEMU
+        run: python3 tools/qemu_ui_smoke.py --iso build/FalconOS.iso --boot-seconds 7
+      - name: Upload actual Aura framebuffer screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Aura-UI-Screenshots
+          path: |
+            build/FalconOS-Aura-*.png
+            build/FalconOS-Store-screen.png
+            build/falcon-boot-smoke.png
+          if-no-files-found: ignore
+      - name: Upload unlisted preview ISO (no GitHub Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-PREVIEW-before-Release-QEMU-only
+          path: build/FalconOS-preview-QEMU.iso
+          if-no-files-found: error
+          retention-days: 14
+      - name: Build and exercise Ring3 ELF64 developer preview
+        run: |
+          make clean
+          python3 tools/bake_boot_intro.py --frames 48
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 ENABLE_RING3_TEST=1 EXTRA_CFLAGS='-DFALCON_QEMU_ELF_TEST -DFALCON_QEMU_SCHED_TEST'
+          python3 tools/qemu_ring3_sched_e2e.py
+          python3 tools/qemu_elf_ring3_e2e.py
+          cp build/FalconOS.iso build/FalconOS-preview-Ring3-ELF64.iso
+      - name: Upload experimental Ring3 preview (no Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-PREVIEW-ELF64-Ring3-QEMU-only
+          path: build/FalconOS-preview-Ring3-ELF64.iso
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish direct ISO downloads on isolated preview branch (not Release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="preview-iso-$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
+          mkdir -p /tmp/falcon-verified-isos
+          cp build/FalconOS-preview-QEMU.iso /tmp/falcon-verified-isos/FalconOS-GLB-HTTPS-Preview.iso
+          cp build/FalconOS-preview-Ring3-ELF64.iso /tmp/falcon-verified-isos/FalconOS-GLB-HTTPS-Ring3-Preview.iso
+          sha256sum /tmp/falcon-verified-isos/*.iso
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan "$branch"
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          cp /tmp/falcon-verified-isos/*.iso .
+          git add FalconOS-GLB-HTTPS-Preview.iso FalconOS-GLB-HTTPS-Ring3-Preview.iso
+          git commit -m "preview: QEMU-verified GLB boot and HTTPS experimental ISOs"
+          git push origin "HEAD:refs/heads/$branch"
+          echo "### Direct ISO download (no GitHub Release)" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$branch/FalconOS-GLB-HTTPS-Preview.iso" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$branch/FalconOS-GLB-HTTPS-Ring3-Preview.iso" >> "$GITHUB_STEP_SUMMARY"
