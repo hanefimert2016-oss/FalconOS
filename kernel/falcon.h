@@ -634,6 +634,18 @@ i32 fvm_state(i32 slot);
 i32 fvm_last_print(i32 slot);
 void fvm_status(char *out,i32 capacity);
 
+/* XFS1 large-object store, partition type 0xFA only; QEMU first. */
+bool xfs_mount(void);
+bool xfs_ready(void);
+u32 xfs_max_size(void);
+u32 xfs_capacity(void);
+u32 xfs_corrupt_copies(void);
+i32 xfs_read(const char *name,u8 *out,u32 capacity);
+bool xfs_write(const char *name,const u8 *data,u32 len);
+bool xfs_remove(const char *name);
+u32 xfs_count(void);
+bool xfs_fsck(u32 *files,u32 *bad_copies);
+
 /* Native IPv4/ICMP packet networking; not a TLS or full TCP stack. */
 void native_net_poll(void);
 /* Guest-native TCP IPv4 client, single connection, QEMU-first. */
