@@ -106,29 +106,39 @@ def main():
             command(sock, "sendkey f2", .8)
             launcher=screenshot(sock, root/"aura-launcher.ppm")
             ppm_to_png(root/"aura-launcher.ppm",root/"FalconOS-Aura-Launcher.png")
-            # Functional Shelf launcher: Store is eighth favorite (slot 7).
-            for _ in range(7): command(sock, "sendkey right", .17)
-            command(sock, "sendkey ret", 1.5)
+            # Navigate native Launchpad at QEMU/TCG-safe cadence; use
+            # explicit kernel window-open markers, not merely pixel diffs.
+            for _ in range(7): command(sock, "sendkey right", .24)
+            off=len(debug.read_bytes())
+            command(sock, "sendkey ret", 1.2)
+            wait_for_marker(debug,b"zCn1",after=off,timeout=30) # Store ID=2
+            time.sleep(.8)
             after = screenshot(sock, last)
-            # Real framebuffer shots for native functional apps, not mockups.
+
+            # All these are actual native rendered windows, not Launchpad.
             current=7
-            for target,name in ((0,"Files"),(1,"Browser"),(2,"Falco"),
-                                (3,"Calculator"),(4,"Notes"),(5,"Settings")):
-                command(sock,"sendkey esc",.18)
-                command(sock,"sendkey f2",.35)
+            for target,name,app_id in ((0,"Files",1),(1,"Browser",14),
+                                       (2,"Falco",13),(3,"Calculator",6),
+                                       (4,"Notes",7),(5,"Settings",3)):
+                command(sock,"sendkey esc",.5)
+                command(sock,"sendkey f2",1.0)
                 while current>target:
-                    command(sock,"sendkey left",.07)
+                    command(sock,"sendkey left",.25)
                     current-=1
                 while current<target:
-                    command(sock,"sendkey right",.07)
+                    command(sock,"sendkey right",.25)
                     current+=1
-                command(sock,"sendkey ret",.5)
+                off=len(debug.read_bytes())
+                command(sock,"sendkey ret",1.0)
+                marker=("z"+chr(ord("A")+app_id)+"n1").encode("ascii")
+                wait_for_marker(debug,marker,after=off,timeout=35)
+                time.sleep(.9)
                 ppm=root/("FalconOS-Aura-"+name+".ppm")
                 shot=screenshot(sock,ppm)
                 if picture_difference(before,shot)<40:
                     raise AssertionError("No visual change after launching "+name)
                 ppm_to_png(ppm,root/("FalconOS-Aura-"+name+".png"))
-                print("PASS: QEMU rendered actual app window",name)
+                print("PASS: QEMU app ID and window count traced, native PNG",name)
             # Native framebuffer compositor verification, synchronized to
             # kernel debugcon events (z<app-id> n<visible-window-count>).
             # A screenshot with just Launchpad open must never count as pass.
