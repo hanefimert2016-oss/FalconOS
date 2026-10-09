@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import socket
+import hashlib
 import threading
 import unittest
 from unittest.mock import patch
@@ -20,6 +21,7 @@ class ProtocolTest(unittest.TestCase):
     def test_catalog_and_chunked_download(self):
         release = {
             "hello-world": {
+                "checksum_asset": {"browser_download_url": "https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/a/a.app.pkg.sha256"},
                 "asset": {"browser_download_url":
                     "https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/a/a.app.pkg"},
                 "version": "1.0.0",
@@ -45,8 +47,11 @@ class ProtocolTest(unittest.TestCase):
                 if c == b"\n": return data.decode("ascii")
                 if not c: raise RuntimeError("socket closed unexpectedly")
                 data += c
+        checksum = hashlib.sha256(PKG).hexdigest().encode("ascii") + b"  a.app.pkg\n"
+        def fake_download(url):
+            return checksum if url.endswith(".sha256") else PKG
         with patch.object(bridge, "releases", return_value=release), patch.object(
-                bridge, "request_bytes", return_value=PKG):
+                bridge, "request_bytes", side_effect=fake_download):
             thread = threading.Thread(target=server, daemon=True)
             thread.start()
             try:

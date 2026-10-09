@@ -68,7 +68,7 @@ def validate_package(raw, app_id):
             continue
         if len(line) > 180 or line.split(maxsplit=1)[0] not in ALLOWED:
             raise ValueError(f"invalid command on line {number}")
-        if any(x in line for x in (";", "&&", "||", "|", ">", "<", "$", chr(96), "\\")):
+        if any(x in line for x in (";", "&&", "||", "|", ">", "<", "$", chr(96), "\\", "&")):
             raise ValueError(f"prohibited script operator on line {number}")
     return vals
 
@@ -82,7 +82,14 @@ def releases():
             m = re.fullmatch(r"([a-z][a-z0-9-]{1,31})-v([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?)\.app\.pkg", filename)
             if not m or m.group(1) in result or a.get("size", MAX_BYTES + 1) > MAX_BYTES:
                 continue
-            result[m.group(1)] = {"asset": a, "version": m.group(2), "release": release}
+            if release.get("tag_name") != f"app-{m.group(1)}-v{m.group(2)}":
+                continue
+            sha_asset = next((x for x in release.get("assets", [])
+                              if x.get("name") == filename + ".sha256"), None)
+            if not sha_asset:
+                continue
+            result[m.group(1)] = {"asset": a, "checksum_asset": sha_asset,
+                                   "version": m.group(2), "release": release}
     return result
 
 def send(sock, message):
@@ -136,7 +143,11 @@ def serve(sock):
                 if info["version"] != entry["version"]:
                     raise ValueError("manifest version mismatch")
                 digest = hashlib.sha256(raw).hexdigest()
-                # SHA is independently checked again by the guest.
+                checksum = request_bytes(entry["checksum_asset"]["browser_download_url"])
+                published = checksum.decode("ascii").split()[0]
+                if not re.fullmatch(r"[0-9a-f]{64}", published) or published != digest:
+                    raise ValueError("Published Release checksum does not match package")
+                # SHA-256 is independently checked again by the guest.
                 send_acknowledged(sock, "BEGIN|" + app_id + "|" + str(len(raw)) + "|" + digest)
                 for start in range(0, len(raw), 16):
                     send_acknowledged(sock, "CHUNK|" + raw[start:start + 16].hex())
