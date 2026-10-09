@@ -72,6 +72,33 @@ def validate_package(raw, app_id):
             raise ValueError(f"prohibited script operator on line {number}")
     return vals
 
+def semver_key(version):
+    """Return SemVer-compatible ordering, rejecting unsupported huge versions."""
+    m = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([a-z0-9.-]+))?", version)
+    if not m or len(version) > 24:
+        raise ValueError("invalid or oversized release version")
+    core = []
+    for part in m.groups()[:3]:
+        if (len(part) > 1 and part.startswith("0")) or int(part) > 0xFFFFFFFF:
+            raise ValueError("invalid numeric component")
+        core.append(int(part))
+    suffix = m.group(4)
+    if suffix is None:
+        return (*core, 1, ())
+    fields = suffix.split(".")
+    if any(not f for f in fields):
+        raise ValueError("empty prerelease identifier")
+    identifiers = []
+    for f in fields:
+        if f.isdigit():
+            if len(f) > 1 and f[0] == "0":
+                raise ValueError("prerelease numeric leading zero")
+            identifiers.append((0, int(f)))
+        else:
+            identifiers.append((1, f))
+    return (*core, 0, tuple(identifiers))
+
+
 def releases():
     result = {}
     for page in range(1, 6):
@@ -84,7 +111,14 @@ def releases():
             for a in release.get("assets", []):
                 filename = a.get("name", "")
                 m = re.fullmatch(r"([a-z][a-z0-9-]{1,31})-v([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?)\.app\.pkg", filename)
-                if not m or m.group(1) in result or a.get("size", MAX_BYTES + 1) > MAX_BYTES:
+                if not m or a.get("size", MAX_BYTES + 1) > MAX_BYTES:
+                    continue
+                try:
+                    key = semver_key(m.group(2))
+                except ValueError:
+                    continue
+                existing = result.get(m.group(1))
+                if existing and key <= semver_key(existing["version"]):
                     continue
                 if release.get("tag_name") != f"app-{m.group(1)}-v{m.group(2)}":
                     continue
@@ -94,9 +128,7 @@ def releases():
                     continue
                 result[m.group(1)] = {"asset": a, "checksum_asset": sha_asset,
                                        "version": m.group(2), "release": release}
-            if len(result) >= 48:
-                return result
-    return result
+    return dict(sorted(result.items())[:48])
 
 def send(sock, message):
     wire = (message + "\n").encode("ascii")
