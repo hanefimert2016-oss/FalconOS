@@ -221,3 +221,24 @@ jobs:
           name: FalconOS-CPL3-INT80
           path: build/ring3-debug.log
           if-no-files-found: ignore
+
+  tcp-multi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU and multiboot toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build concurrent TCP guest kernel
+        run: make iso EXTRA_CFLAGS=-DFALCON_QEMU_TCP_MULTI_TEST
+      - name: Validate two real simultaneous TCP sessions
+        run: python3 tools/qemu_tcp_multi_e2e.py
+      - name: Save TCP multiconnection trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-TCP-multi-socket
+          path: build/tcp-multi-debug.log
+          if-no-files-found: ignore
