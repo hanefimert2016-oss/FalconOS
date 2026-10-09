@@ -58,9 +58,12 @@ bool native_http_get(const char *hostname,const char *path,
 /* Fail closed until authenticated TLS can run inside the guest.
  * An HTTPS URL is NEVER downgraded to plaintext HTTP or COM1 here.
  */
+#ifndef FALCON_BEARSSL
 bool native_https_get(const char *hostname,const char *path,
                       char *response,u32 capacity){
     (void)hostname;(void)path;
     if(response&&capacity)response[0]=0;
     return false;
 }
+
+#endif /* !FALCON_BEARSSL: secure backend is kernel/https_bearssl.c */
