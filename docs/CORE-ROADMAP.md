@@ -27,6 +27,25 @@ Date: 2026-10-09. Branch: feature/core-storage-net-usermode.
 - Terminal ping and ARP report actual protocol results, not fake success.
 - Wire-format tests and separate genuine QEMU gateway echo test.
 
+### Native DNS, TCP, HTTP, experimental HTTPS
+- UDP DNS queries sent by the FalconOS RTL8139 driver to the QEMU
+  resolver (10.0.2.3); DNS A responses parsed with bounds and transaction
+  checks. QEMU DNS E2E has passed.
+- TCP single-client stack: SYN/SYN-ACK/ACK handshake, checksums, sequence
+  checking, ordered data, retransmissions, FIN/RST and bounded timeouts.
+- Guest-native HTTP/1.0 GET is verified against an actual QEMU host server.
+  Commands: dns example.com, ping 10.0.2.2, http example.com /.
+- HTTPS is implemented as an **opt-in BearSSL 0.6 integration**:
+  pinned-SHA source bootstrap, build-time PEM trust anchors, hostname and
+  certificate-chain validation, UTC RTC validation and mandatory CPU RDRAND.
+  Commands: https example.com / (only TLS-enabled ISO).
+- The TLS-enabled ISO **compiles successfully**; TLS live QEMU handshake
+  remains **UNVERIFIED / FAILING** at this milestone. Do NOT claim working
+  native HTTPS downloads or enable Marketplace downloads from this path.
+- Enable test-only TLS build with make iso ENABLE_BEARSSL=1; set
+  TLS_CA_BUNDLE=/path/to/explicit/audited/roots.pem. No plain HTTP
+  downgrade is permitted when TLS fails.
+
 ### Independent virtual applications: FVM/1
 - Four cooperatively scheduled virtual machines, each with its own
   stack, globals, PC, instruction count and sleeping state.
@@ -41,8 +60,10 @@ Date: 2026-10-09. Branch: feature/core-storage-net-usermode.
 ## NOT COMPLETED — do not present as shipping
 - PFS1 is not a complete journaled, dynamic, general-purpose filesystem;
   no multimegabyte files, fsck, encryption or power-loss certification.
-- Native networking still lacks DHCP, DNS, TCP, TLS certificate validation,
-  HTTPS downloads and a native browser. Marketplace uses host COM1 bridge.
+- Networking still lacks DHCP, DNSSEC, production-grade TCP multi-session
+  handling, browser support and a **QEMU-E2E-verified native HTTPS client**.
+  Marketplace still uses host COM1 bridge; the experimental BearSSL-backed
+  HTTPS client must not replace it until the positive/negative TLS tests pass.
 - User-mode ELF, true isolated address spaces, Ring 3, hardware-enforced
   memory protection, syscalls and preemptive process scheduler not implemented.
 - Production NVMe, USB xHCI and GPU acceleration deferred.
