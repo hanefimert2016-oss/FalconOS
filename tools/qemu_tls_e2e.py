@@ -26,6 +26,10 @@ class OneShotTLS:
         self.ctx.minimum_version=ssl.TLSVersion.TLSv1_2
         self.ctx.maximum_version=ssl.TLSVersion.TLSv1_2
         self.ctx.load_cert_chain(str(cert),str(key))
+        # Controlled interoperability probe: avoid ECDHE to isolate the
+        # existing post-ClientKeyExchange hang. This does NOT change what
+        # public websites require or the guest's secure cipher preferences.
+        self.ctx.set_ciphers("AES128-SHA256")
     def run(self):
         try:
             sock,_=self.s.accept()
