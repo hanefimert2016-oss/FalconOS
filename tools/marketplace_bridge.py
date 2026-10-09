@@ -96,7 +96,7 @@ def send(sock, message):
     wire = (message + "\n").encode("ascii")
     for byte in wire:
         sock.sendall(bytes((byte,)))
-        time.sleep(0.001)  # avoid overflowing emulated UART RX FIFO
+        time.sleep(0.004)  # 16550 RX FIFO = 16 bytes; guest polls ~50 FPS
 
 def read_line(sock):
     data = bytearray()
@@ -112,7 +112,11 @@ def read_line(sock):
 
 def send_acknowledged(sock, line):
     send(sock, line)
-    answer = read_line(sock)
+    sock.settimeout(12)
+    try:
+        answer = read_line(sock)
+    finally:
+        sock.settimeout(None)  # idle guest may stay open indefinitely
     if answer != "ACK":
         raise ValueError("guest rejected packet: " + answer[:100])
 
