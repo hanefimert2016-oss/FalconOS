@@ -3264,7 +3264,7 @@ static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 }
 
 /* ---- CodeDium: native editable FAPP/1 source, file save and script preview --- */
-#define CODE_CAP 2048
+#define CODE_CAP 4096
 static char code_text[CODE_CAP];
 static i32 code_len, code_cursor;
 static bool code_ready;
@@ -3323,8 +3323,9 @@ static void code_export(void)
         "FAPP/1\nid=codedium-demo\nname=CodeDium Demo\n"
         "version=1.0.0\nsummary=Created inside FalconOS CodeDium\n\n";
     i32 n = k_strlen(header);
-    if (n + code_len >= SHFS_FBYTES) {
-        code_status = "Export error: package is too large"; return;
+    i32 add_newline = (!code_len || code_text[code_len - 1] != '\n') ? 1 : 0;
+    if (n + code_len + add_newline >= SHFS_FBYTES) {
+        code_status = "Export error: package exceeds 4096 bytes"; return;
     }
     shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/code.app.pkg", false);
     if (!file) { code_status = "Export failed: RAM file system full"; return; }

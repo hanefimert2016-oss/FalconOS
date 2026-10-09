@@ -8,7 +8,7 @@
 - The guest calculates SHA-256, checks package syntax and a restricted
   command allowlist, then installs and launches the script via Terminal.
 - When a dedicated, correctly partitioned FalconOS test disk is selected,
-  up to 12 apps persist in checksummed fixed-size partition slots.
+  up to 48 apps persist in checksummed fixed-size partition slots.
 - CodeDium can edit scripts, save to RAM, run allowlisted commands and
   export a .app.pkg in its RAM Desktop folder. The web CodeDium Studio in
   the Marketplace repo can export a host-downloadable package and submit
@@ -36,7 +36,7 @@ The guest does not yet have native TCP/TLS. The HTTPS bridge is opt-in
 and works only in a QEMU-style environment with the configured serial
 socket. Bare-metal internet downloading is not supported.
 The guest storage format is not a general-purpose file system, and
-12 slots x 4 KiB is only an MVP. Executable ELF application packages
+48 slots x 4 KiB is only an MVP. Executable ELF application packages
 are not supported. Apps can currently run only restricted built-in
 shell commands. No third-party native code is run in ring 3.
 Do not treat a successful ISO compile as proof of QEMU desktop usability.

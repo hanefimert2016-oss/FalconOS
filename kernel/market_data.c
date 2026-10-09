@@ -1,11 +1,11 @@
 /* FalconOS Marketplace: persistent, integrity-checked 0xFA partition slots.
- * This is NOT a general disk filesystem. It is 12 fixed-size, safely
+ * This is NOT a general disk filesystem. It is 48 fixed-size, safely
  * bounded records for <=4095-byte interpreted FAPP/1 packages.
  */
 #include "falcon.h"
 #include "shfs.h"
 
-#define MARKET_SLOTS 12
+#define MARKET_SLOTS 48
 #define SLOT_SECTORS 10u
 #define SLOT_BASE 16u
 #define RECORD_BYTES (SLOT_SECTORS * 512u)
@@ -157,15 +157,15 @@ bool market_disk_delete(const char *id)
 }
 
 
-/* CodeDium workspace: single durable 4 KiB source slot, relative LBA 160.
+/* CodeDium workspace: single durable 4 KiB source slot, relative LBA 512.
  * Never uses unpartitioned media; diskdb_store_io bounds-checks partition.
  * Write-then-read validation rejects corrupt projects on subsequent boots.
  */
-#define WORKSPACE_BASE 160u
+#define WORKSPACE_BASE 512u
 #define WORKSPACE_HEADER 48u
 bool codedium_project_save(const char *source, u32 size)
 {
-    if (!source || !size || size >= 2048u ||
+    if (!source || !size || size >= 4096u ||
         size + WORKSPACE_HEADER > RECORD_BYTES ||
         SET.install_disk < 0) return false;
     k_memset(REC, 0, sizeof REC);
@@ -182,7 +182,7 @@ i32 codedium_project_load(char *dest, u32 capacity)
     if (REC[0] != 'C' || REC[1] != 'D' || REC[2] != 'M' ||
         REC[3] != '1') return 0;
     u32 len = len_from_record(REC);
-    if (!len || len >= capacity || len >= 2048u ||
+    if (!len || len >= capacity || len >= 4096u ||
         len + WORKSPACE_HEADER > RECORD_BYTES) return 0;
     u8 expected[32];
     sha256_hash(REC + WORKSPACE_HEADER, len, expected);

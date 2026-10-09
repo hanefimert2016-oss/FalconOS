@@ -3,7 +3,7 @@
 #include "shfs.h"
 #include <stdio.h>
 #include <string.h>
-#define DISK_SECTORS 192u
+#define DISK_SECTORS 544u
 static u8 disk[DISK_SECTORS * 512u];
 settings_t SET;
 i32 k_strlen(const char *s) { return (i32)strlen(s); }
@@ -56,7 +56,7 @@ int main(void) {
     char restored[120];
     if (codedium_project_load(restored, sizeof restored) != (i32)strlen(project)) return 11;
     if (strcmp(restored, project)) return 12;
-    disk[160u * 512u + 48] ^= 7; /* simulate corrupted workspace */
+    disk[512u * 512u + 48] ^= 7; /* simulate corrupted workspace */
     if (codedium_project_load(restored, sizeof restored) != 0) return 13;
     SET.install_disk = -1;
     if (codedium_project_save(project, (u32)strlen(project))) return 14;
