@@ -25,8 +25,10 @@ void mode_personal_input(i32 key){
 static void backdrop(void){
     /* Organic light bands give structure without expensive full-screen blur. */
     i32 w=(i32)FB.width,h=(i32)FB.height;
-    gfx_circle_a(w*4/5,h/4,h/3,0x86ACF8u,23);
-    gfx_circle_a(w/5,h*3/4,h/4,0x4ECFCBu,20);
+    /* Simple layered broad tints: full-frame supersampled circles at 50fps
+     * stalled keyboard processing under QEMU TCG (no GPU acceleration). */
+    gfx_round_rect_a(w-420,170,300,92,28,0x86ACF8u,20);
+    gfx_round_rect_a(58,h-272,300,72,26,0x4ECFCBu,19);
     gfx_round_rect_a(28,55,w-56,104,26,surface(),is_dark()?178:196);
     gfx_round_outline(28,55,w-56,104,26,is_dark()?0x3E5074u:0xE4ECF7u);
     gfx_round_rect(52,77,54,54,19,0x2867E6u);
