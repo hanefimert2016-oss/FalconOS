@@ -27,7 +27,7 @@ typedef struct {
 } jfs_entry_t;
 static jfs_entry_t entries[JFS_MAX_FILES];
 static u32 next_sector,seq,invalid_records;
-static bool mounted;
+static bool mounted,read_only;
 static u8 header[512],footer[512],payload[JFS_LIMIT],hash_buffer[96+JFS_LIMIT];
 
 static u32 get32(const u8 *p){
@@ -99,7 +99,7 @@ static bool valid_transaction(u32 pos,u32 sectors,u32 n){
     return true;
 }
 bool jfs_mount(void){
-    mounted=false;seq=0;invalid_records=0;next_sector=0;
+    mounted=false;read_only=false;seq=0;invalid_records=0;next_sector=0;
     k_memset(entries,0,sizeof entries);
     if(SET.install_disk<0 ||
        !diskdb_store_io(JFS_BEGIN+JFS_SECTORS-1,header,1,false))
@@ -108,7 +108,8 @@ bool jfs_mount(void){
         if(!io(pos,header,1,false))return false;
         if(get32(header)!=JFS_INTENT) {
             /* No magic means end of log (new partition should be zero). */
-            if(get32(header)!=0)invalid_records++;
+            for(u32 j=0;j<512;j++)if(header[j]){read_only=true;break;}
+            if(read_only)invalid_records++;
             next_sector=pos;mounted=true;return true;
         }
         u32 generation=get32(header+4);
@@ -131,15 +132,16 @@ bool jfs_mount(void){
     mounted=true;
     return true;
 }
-bool jfs_ready(void){return mounted;}
+bool jfs_ready(void){return mounted&&!read_only;}
 u32 jfs_file_count(void){
     u32 n=0;for(u32 i=0;i<JFS_MAX_FILES;i++)if(entries[i].present)n++;
     return n;
 }
 u32 jfs_free_sectors(void){return mounted?JFS_SECTORS-next_sector:0u;}
 u32 jfs_incomplete(void){return invalid_records;}
+bool jfs_read_only(void){return read_only;}
 static bool commit(const char *name,const u8 *buf,u32 n,bool deleted){
-    if(!mounted||!name_valid(name)||n>JFS_LIMIT||(n&&!buf)||(!deleted&&
+    if(!mounted||read_only||!name_valid(name)||n>JFS_LIMIT||(n&&!buf)||(!deleted&&
        find(name)<0&&vacant()<0))return false;
     u32 blocks=(n+511u)/512u;
     if(blocks+2u>JFS_SECTORS-next_sector)return false;
