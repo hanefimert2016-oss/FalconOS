@@ -53,6 +53,11 @@ void idt_install(void)
     k_memset(IDT, 0, sizeof(IDT));
     for (i32 i = 0; i < 32; i++) idt_set((u8)i,        (u64)isr_table[i]);
     for (i32 i = 0; i < 16; i++) idt_set((u8)(0x20+i), (u64)irq_table[i]);
+#ifdef FALCON_RING3_TEST
+    extern void ring3_syscall_int80(void);
+    idt_set(0x80u,(u64)(uintptr_t)&ring3_syscall_int80);
+    IDT[0x80].flags=0xEEu; /* P=1, DPL=3, interrupt gate */
+#endif
 
     IDTR.limit = sizeof(IDT) - 1;
     IDTR.base  = (u64)&IDT;
