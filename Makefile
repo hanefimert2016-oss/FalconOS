@@ -3,9 +3,9 @@
 # -----------------------------------------------------------------------------
 #  Targets:
 #    all            build the kernel ELF (default)
-#    start / everything  build ISO + QEMU with 200G qcow2 demo disk (tek komut)
+#    start / everything  build ISO + QEMU with safe 4G raw demo disk (tek komut)
 #    iso            wrap kernel.elf into a bootable GRUB ISO
-#    run            same as run-disk (persistent qcow2 disk)
+#    run            same as run-disk (persistent raw test disk)
 #    run-disk-ephemeral  QEMU -snapshot (guest writes discarded on exit)
 #    run-fb         boot kernel.elf directly via QEMU's -kernel (faster iter)
 #    run-headless   ISO + disk, no display
@@ -73,7 +73,7 @@ ISO         := $(BUILD)/FalconOS.iso
 RAM           ?= 12288
 CPUS          ?= 6
 VRAM          ?= 256
-DISK_CAPACITY ?= 200G
+DISK_CAPACITY ?= 4G
 
 QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -serial stdio \
                  -display sdl -vga std -global VGA.vgamem_mb=$(VRAM) \
@@ -91,7 +91,7 @@ start: everything
 
 all: $(KERNEL)
 
-RUN_DISK_DRIVE := file=$(BUILD)/falcon.img,format=qcow2,if=ide,index=0
+RUN_DISK_DRIVE := file=$(BUILD)/falcon-safe.raw,format=raw,if=ide,index=0
 
 # ---- compile C ---------------------------------------------------------------
 $(BUILD)/kernel/%.o: kernel/%.c kernel/falcon.h | $(BUILD)/kernel
@@ -131,27 +131,24 @@ run-fb: $(KERNEL)
 
 run-headless: run-disk-headless
 
-# Sparse qcow2: host file grows as the guest writes; logical size $(DISK_CAPACITY).
-$(BUILD)/falcon.img: | $(BUILD)
-	@if [ ! -f $@ ]; then \
-	  qemu-img create -f qcow2 $@ "$(DISK_CAPACITY)"; \
-	  echo "[OK] new $@ (qcow2, capacity $(DISK_CAPACITY))"; \
-	fi
+# Create a dedicated, sparse MBR-partitioned QEMU test image (never touch legacy qcow2).
+$(BUILD)/falcon-safe.raw: | $(BUILD)
+	python3 tools/make_safe_disk.py --image $@ --size $(DISK_CAPACITY)
 
-run-disk: $(ISO) $(BUILD)/falcon.img
+run-disk: $(ISO) $(BUILD)/falcon-safe.raw
 	$(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
-run-disk-headless: $(ISO) $(BUILD)/falcon.img
+run-disk-headless: $(ISO) $(BUILD)/falcon-safe.raw
 	$(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(HEADLESS_FLAGS)
 
 # Writes stay in QEMU’s overlay only — discarded when QEMU exits (“USB çıkarılınca kalmadan”).
-run-disk-ephemeral: $(ISO) $(BUILD)/falcon.img
+run-disk-ephemeral: $(ISO) $(BUILD)/falcon-safe.raw
 	$(QEMU) -snapshot -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 everything: iso run-disk
 
 wipe-disk:
-	rm -f $(BUILD)/falcon.img
+	rm -f $(BUILD)/falcon-safe.raw
 
 font:
 	python3 tools/genfont.py
@@ -160,4 +157,6 @@ $(BUILD) $(BUILD)/kernel $(BUILD)/boot $(BUILD)/linux:
 	@mkdir -p $@
 
 clean:
-	rm -rf $(BUILD)
+	@rm -rf $(BUILD)/kernel $(BUILD)/linux $(BUILD)/boot $(ISO_DIR)
+	@rm -f $(KERNEL) $(ISO)
+	@echo "[OK] Build outputs cleaned; persistent disk images preserved"
