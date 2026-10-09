@@ -4,6 +4,9 @@ on:
     branches: [FalconOS-1-release, 'fix/**', 'feature/core-storage-net-usermode']
   pull_request:
     branches: [FalconOS-1-release]
+concurrency:
+  group: core-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
