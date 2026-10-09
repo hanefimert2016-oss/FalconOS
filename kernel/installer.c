@@ -134,8 +134,9 @@ void installer_render(u32 frame)
     /* logo + title — the title uses the 16×32 headline font so the
      * setup wizard reads as a real OS install screen, not a debug ROM. */
     /* Contemporary Chromebook-inspired onboarding, not an OS debug UI. */
-    gfx_circle_a(W-90,68,160,0xA6C9FFu,75);
-    gfx_circle_a(90,H-92,130,0x8BC7F8u,60);
+    /* Keep first-run keyboard latency low on software QEMU framebuffer. */
+    gfx_round_rect_a(W-310,20,250,58,26,0xA6C9FFu,54);
+    gfx_round_rect_a(34,H-125,240,55,24,0x8BC7F8u,48);
     gfx_round_rect(38,31,44,44,16,0x286BE5u);
     gfx_text_lg_centered(60,37,"F",0xFFFFFFu);
     gfx_text(101,46,"FalconOS  /  Welcome",0x1A3C70u);
