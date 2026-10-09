@@ -67,25 +67,6 @@ static bool app_meta(const char *p, const char *id) {
     if (k_strncmp(beg, id, len) != 0 || beg[len] != '\n') return false;
     return true;
 }
-bool market_line_allowed(const char *line, i32 size) {
-    static const char *allowed[] = {
-        "echo", "date", "uname", "uptime", "whoami", "pwd", "ls",
-        "help", "cal", "hwinfo", "free", "df", "clear", NULL
-    };
-    if (size <= 0 || size > 180) return false;
-    for (i32 i = 0; i < size; i++) {
-        char c = line[i];
-        if (c < 32 || c > 126 || c == ';' || c == '|' || c == '>' ||
-            c == '<' || c == '$' || c == '\\' || c == 96 ||
-            c == '&') return false;
-    }
-    for (i32 j = 0; allowed[j]; j++) {
-        i32 n = k_strlen(allowed[j]);
-        if (size >= n && k_strncmp(line, allowed[j], n) == 0 &&
-            (size == n || line[n] == ' ')) return true;
-    }
-    return false;
-}
 static bool check_package(void) {
     if (rx_used != rx_expected || !app_meta(rx_data, rx_id)) return false;
     for (i32 i = 0; i < rx_used; i++) if (rx_data[i] == 0) return false;

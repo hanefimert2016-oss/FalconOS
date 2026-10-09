@@ -6,12 +6,6 @@
 i32 k_strlen(const char *p){return (i32)strlen(p);}
 i32 k_strncmp(const char*a,const char*b,i32 n){return strncmp(a,b,(size_t)n);}
 void k_memset(void*d,u8 v,u32 n){memset(d,v,n);}
-bool market_line_allowed(const char*s,i32 n){
-    if(n>=5&&strncmp(s,"echo ",5)==0) return true;
-    if(n==5&&strncmp(s,"uname",5)==0) return true;
-    if(n==5&&strncmp(s,"clear",5)==0) return true;
-    return false;
-}
 static void must(int cond,int code){
     if(!cond){fprintf(stderr,"CodeDium package error %d\n",code);exit(code);}
 }

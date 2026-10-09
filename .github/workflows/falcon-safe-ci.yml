@@ -26,7 +26,7 @@ jobs:
           ./build/test-market-cache
       - name: Test native Marketplace serial protocol
         run: |
-          gcc -std=gnu11 -Wall -Wextra -Ikernel tests/market_protocol_test.c kernel/marketplace.c kernel/shfs.c kernel/market_version.c -o build/test-market-protocol
+          gcc -std=gnu11 -Wall -Wextra -Ikernel tests/market_protocol_test.c kernel/marketplace.c kernel/shfs.c kernel/market_version.c kernel/fapp_policy.c -o build/test-market-protocol
           ./build/test-market-protocol
       - name: Test SemVer precedence
         run: |
@@ -34,7 +34,7 @@ jobs:
           ./build/test-semver
       - name: Test CodeDium package builder
         run: |
-          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/codedium_package_test.c kernel/codedium_pkg.c kernel/market_version.c -o build/test-codedium-pkg
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/codedium_package_test.c kernel/codedium_pkg.c kernel/market_version.c kernel/fapp_policy.c -o build/test-codedium-pkg
           ./build/test-codedium-pkg
       - name: Compile ISO
         run: make iso
