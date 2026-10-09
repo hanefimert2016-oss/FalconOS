@@ -2776,13 +2776,30 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
     i32 sx=wx+22,sw=ww-44;
-    gfx_round_rect_a(sx,wy+7,sw,100,19,0xE2EEFFu,255);
-    gfx_round_rect(sx+18,wy+24,49,49,16,0x3476E9u);
+    gfx_round_rect_a(sx,wy+7,sw,100,19,PAL_PANEL_DEEP,255);
+    gfx_round_outline(sx,wy+7,sw,100,19,PAL_HAIRLINE);
+    gfx_round_rect(sx+18,wy+24,49,49,16,PAL_ACCENT);
     gfx_circle_outline(sx+43,wy+48,14,0xFFFFFFu);
     gfx_circle(sx+43,wy+48,5,0xFFFFFFu);
-    gfx_text_lg(sx+85,wy+22,T("Settings","Ayarlar"),0x173C72u);
+    gfx_text_lg(sx+85,wy+22,T("Make FalconOS yours","FalconOS'u kisisellestir"),PAL_TEXT);
     gfx_text(sx+85,wy+60,
-        "Personalization  |  Accounts  |  Device  |  Security",0x6284A9u);
+        T("Themes / colors / accounts / display","Temalar / renkler / hesaplar / ekran"),PAL_TEXT_DIM);
+    /* Interactive theme swatches: native palette changes immediately. */
+    static const u32 swatches[THEME_COUNT] = {
+        0xE8EFF8u,0x202937u,0x6CB7DCu,0xB9C9D8u,0xDAA5A0u
+    };
+    i32 mx_theme,my_theme;bool held_theme;
+    mouse_get(&mx_theme,&my_theme,&held_theme);(void)held_theme;
+    for(i32 t=0;t<THEME_COUNT;t++){
+        i32 cx=sx+sw-159+t*29,cy=wy+80;
+        gfx_round_rect(cx,cy,24,15,5,swatches[t]);
+        if((i32)SET.theme==t)
+            gfx_round_outline(cx-2,cy-2,28,19,7,PAL_ACCENT);
+        if(wm_click_enabled()&&mx_theme>=cx&&mx_theme<cx+24 &&
+           my_theme>=cy&&my_theme<cy+15){
+            SET.theme=(theme_t)t;(void)mouse_consume_click();
+        }
+    }
     i32 sy=wy+124;
     i32 step=36;
     settings_view_min=sy-1;
@@ -2826,7 +2843,9 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         s_row(sx, sy + SR_ACCENT * step, sw,
               T("Accent", "Vurgu"), names[SET.accent],
               set_row == SR_ACCENT, PAL_ACCENT);
-        gfx_circle(sx + sw - 14, sy + SR_ACCENT * step + SR_BOX_H / 2, 6, PAL_ACCENT);
+        i32 accent_y=sy+(SR_ACCENT-settings_scroll)*step+SR_BOX_H/2;
+        if(accent_y>settings_view_min+6&&accent_y<settings_view_max-6)
+            gfx_circle(sx+sw-14,accent_y,6,PAL_ACCENT);
     }
 
     /* Aero --- frosted glass toggle ------------------------------------ */
