@@ -84,6 +84,8 @@ def main():
             command(sock, "sendkey esc", .4)
             before = screenshot(sock, first)
             command(sock, "sendkey f2", .8)
+            launcher=screenshot(sock, root/"aura-launcher.ppm")
+            ppm_to_png(root/"aura-launcher.ppm",root/"FalconOS-Aura-Launcher.png")
             # Functional Shelf launcher: Store is eighth favorite (slot 7).
             for _ in range(7): command(sock, "sendkey right", .17)
             command(sock, "sendkey ret", 1.5)
