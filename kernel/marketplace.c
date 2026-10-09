@@ -13,6 +13,7 @@
 #define LINE_MAX 196
 typedef struct {
     char id[33], version[25], name[41];
+    char sha256[65], filename[80];
 } market_app_t;
 static market_app_t APP[MARKET_MAX];
 static i32 N_APP, rx_used, rx_expected;
@@ -229,7 +230,103 @@ void market_consume_byte(char c) {
         else { line_used = 0; status_text = "Protocol line too long"; }
     }
 }
+
+/* Experimental direct-HTTPS Marketplace: no shell bridge, no insecure HTTP.
+ * Requires an explicit TLS-enabled build and a reviewed certificate root.
+ * All packages are fetched from authenticated static raw.githubusercontent.com.
+ * This path stays opt-in until real public HTTPS E2E is green.
+ */
+#ifdef FALCON_NATIVE_MARKET
+#if !defined(FALCON_BEARSSL)
+#error Native Marketplace requires certificate-verified BearSSL
+#endif
+#define DIRECT_HOST "raw.githubusercontent.com"
+#define DIRECT_ROOT "/hanefimert2016-oss/FalconOS-Marketplace/main/site/native/"
+static char direct_http[4096];
+static const char *direct_http_body(char *data){
+    if(!data || k_strncmp(data,"HTTP/1.",7)!=0 || data[9]!='2' ||
+       data[10]!='0' || data[11]!='0') return NULL;
+    for(char *p=data;*p;p++)if(p[0]=='\r'&&p[1]=='\n'&&
+                            p[2]=='\r'&&p[3]=='\n')return p+4;
+    return NULL;
+}
+static bool direct_filename(const char *id,const char *version,const char *name){
+    if(!safe_id(id)||!market_version_valid(version)||!name)return false;
+    char expected[80];
+    k_strcpy(expected,id);k_strcat(expected,"-v");
+    k_strcat(expected,version);k_strcat(expected,".app.pkg");
+    return k_strcmp(name,expected)==0;
+}
+static bool direct_https_refresh(void){
+    if(!native_https_get(DIRECT_HOST,DIRECT_ROOT "catalog.fcat",
+                         direct_http,sizeof direct_http))return false;
+    const char *start=direct_http_body(direct_http);
+    if(!start || k_strncmp(start,"FCAT/1\n",7)!=0)return false;
+    char *line=(char *)start+7;
+    i32 accepted=0;
+    while(*line){
+        char *end=line;
+        while(*end && *end!='\n')end++;
+        if(!*end)return false;
+        *end=0;
+        if(k_strncmp(line,"CAT|",4)!=0)return false;
+        char *fields[7];
+        if(parts(line,fields,7)!=6 || !direct_filename(fields[1],fields[2],fields[5]) ||
+           k_strlen(fields[3])<2 || k_strlen(fields[3])>40 ||
+           k_strlen(fields[4])!=64)return false;
+        for(i32 k=0;k<64;k++)if(hexn(fields[4][k])<0)return false;
+        i32 idx=-1;
+        for(i32 i=0;i<N_APP;i++)if(k_strcmp(APP[i].id,fields[1])==0){idx=i;break;}
+        if(idx<0 && N_APP<MARKET_MAX)idx=N_APP++;
+        if(idx<0)return false;
+        market_app_t *app=&APP[idx];
+        copy_small(app->id,sizeof app->id,fields[1]);
+        copy_small(app->name,sizeof app->name,fields[3]);
+        copy_small(app->version,sizeof app->version,fields[2]);
+        copy_small(app->sha256,sizeof app->sha256,fields[4]);
+        copy_small(app->filename,sizeof app->filename,fields[5]);
+        accepted++;
+        line=end+1;
+    }
+    return accepted>0;
+}
+static bool direct_https_download(i32 i){
+    market_app_t *app=&APP[i];
+    if(!direct_filename(app->id,app->version,app->filename) ||
+       k_strlen(app->sha256)!=64)return false;
+    char url[256];
+    k_strcpy(url,DIRECT_ROOT);k_strcat(url,app->filename);
+    if(!native_https_get(DIRECT_HOST,url,direct_http,sizeof direct_http))return false;
+    const char *payload=direct_http_body(direct_http);
+    if(!payload)return false;
+    u32 n=(u32)k_strlen(payload);
+    if(n<70 || n>=PKG_MAX || n>=SHFS_FBYTES)return false;
+    copy_small(rx_id,sizeof rx_id,app->id);
+    copy_small(rx_digest,sizeof rx_digest,app->sha256);
+    k_memcpy(rx_data,payload,n);rx_data[n]=0;
+    rx_used=rx_expected=(i32)n;
+    if(!check_package())return false;
+    char path[SHFS_PATH];
+    k_strcpy(path,"/home/falcon/apps/");k_strcat(path,app->id);
+    k_strcat(path,".pkg");
+    (void)shfs_mkdir_abs("/home/falcon/apps");
+    shfs_ent_t *file=shfs_open_w_abs(path,false);
+    if(!file)return false;
+    k_memcpy(file->data,rx_data,n);file->data[n]=0;file->len=n;
+    bool saved=market_disk_save(app->id,rx_data,n);
+    status_text=saved ? "HTTPS verified: app saved to disk" :
+                        "HTTPS verified: installed to RAM only";
+    return true;
+}
+#endif
+
 void market_refresh(void) {
+#ifdef FALCON_NATIVE_MARKET
+    status_text=direct_https_refresh() ?
+        "Native HTTPS catalog verified" :
+        "Native HTTPS catalog unavailable/invalid (cached apps intact)";
+    return;
+#endif
     pending_id[0] = 0;
     status_text = "Refreshing releases; cached apps remain available...";
     uart_write("LIST\n");
@@ -257,6 +354,11 @@ const char *market_script(i32 i) {
 }
 void market_download(i32 i) {
     if (i < 0 || i >= N_APP) return;
+#ifdef FALCON_NATIVE_MARKET
+    if(!direct_https_download(i))status_text =
+        "HTTPS app download or SHA-256 verification failed (no HTTP downgrade)";
+    return;
+#endif
     copy_small(pending_id, sizeof pending_id, APP[i].id);
     uart_write("GET|");
     uart_write(APP[i].id);
