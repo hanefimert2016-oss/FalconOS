@@ -3741,7 +3741,10 @@ static const i32 LAUNCH_ALL[] = {1,14,13,6,7,3,5,2,8,9,4,17,18};
 i32 apps_launcher_count(i32 group) {
     if(group==0) return (i32)(sizeof LAUNCH_FAVORITES/sizeof *LAUNCH_FAVORITES);
     if(group==1) return (i32)(sizeof LAUNCH_SYSTEM/sizeof *LAUNCH_SYSTEM);
-    return (i32)(sizeof LAUNCH_ALL/sizeof *LAUNCH_ALL)+market_count();
+    i32 installed=0;
+    for(i32 i=0;i<market_count();i++)
+        if(market_installed(i))installed++;
+    return (i32)(sizeof LAUNCH_ALL/sizeof *LAUNCH_ALL)+installed;
 }
 i32 apps_launcher_id(i32 group,i32 index) {
     i32 count=apps_launcher_count(group);
@@ -3750,7 +3753,12 @@ i32 apps_launcher_id(i32 group,i32 index) {
     if(group==1)return LAUNCH_SYSTEM[index];
     i32 count_builtin=(i32)(sizeof LAUNCH_ALL/sizeof *LAUNCH_ALL);
     if(index<count_builtin)return LAUNCH_ALL[index];
-    return builtin_app_count()+index-count_builtin;
+    i32 slot=index-count_builtin;
+    for(i32 i=0;i<market_count();i++){
+        if(!market_installed(i))continue;
+        if(slot--==0)return builtin_app_count()+i;
+    }
+    return -1;
 }
 
 i32 apps_count(void) { return builtin_app_count() + market_count(); }
