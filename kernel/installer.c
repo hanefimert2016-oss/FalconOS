@@ -116,6 +116,14 @@ static void mask_password(char *out, i32 n)
 /* --------------------------------------------------------------------------- */
 void installer_render(u32 frame)
 {
+    /* One diagnostic marker per actual first-boot wizard transition.
+     * QEMU debugcon 0xE9 is harmless without the emulator device. */
+    static i32 last_reported = -1;
+    if (last_reported != (i32)g_step) {
+        static const char steps[] = "LTAKDUPQOZ";
+        if ((u32)g_step < sizeof steps - 1u) outb(0xE9, (u8)steps[(i32)g_step]);
+        last_reported = (i32)g_step;
+    }
     gfx_gradient_v(PAL_BG_TOP, PAL_BG_BOT);
 
     i32 W = (i32)FB.width;

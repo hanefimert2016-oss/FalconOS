@@ -500,6 +500,7 @@ void long_start(u64 magic, u64 info_ptr)
 
     /* Same for the lockscreen → desktop handoff.                          */
     kbd_drain(); mouse_drain();
+    outb(0xE9, 'H'); /* QEMU: user authenticated and desktop entered */
 
     /* First time the user reaches the desktop, slide the Help drawer
      * open automatically so they discover the F1/F2/F12 shortcuts and

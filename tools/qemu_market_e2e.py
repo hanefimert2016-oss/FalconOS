@@ -110,21 +110,31 @@ def test_gui(args):
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as mon:
                 mon.settimeout(10)
                 mon.connect(str(monitor))
-                # Same first-boot walkthrough used by the known-good UI smoke.
-                for _ in range(5):
-                    hmp(mon, "sendkey ret", 0.4)
+                # Synchronize against actual kernel screen transitions.
+                # Avoid lost keystrokes while GRUB and setup are still booting.
+                wait_for_marker(debug, b"L", timeout=30)
+                for step in (b"T", b"A", b"K", b"D", b"U"):
+                    prior = len(debug.read_bytes())
+                    hmp(mon, "sendkey ret", 0.35)
+                    wait_for_marker(debug, step, after=prior, timeout=12)
                 for char in "falcon":
                     hmp(mon, "sendkey " + char, 0.3)
-                for _ in range(3):
-                    hmp(mon, "sendkey ret", 0.45)
-                hmp(mon, "sendkey right", 0.3)
-                hmp(mon, "sendkey ret", 1.5)
-                hmp(mon, "sendkey ret", 1.5)
+                for step in (b"P", b"Q", b"O"):
+                    prior = len(debug.read_bytes())
+                    hmp(mon, "sendkey ret", 0.4)
+                    wait_for_marker(debug, step, after=prior, timeout=12)
+                hmp(mon, "sendkey right", 0.3)  # no additional user
+                prior = len(debug.read_bytes())
+                hmp(mon, "sendkey ret", 0.7)
+                wait_for_marker(debug, b"W", after=prior, timeout=12)
+                prior = len(debug.read_bytes())
+                hmp(mon, "sendkey ret", 0.7)   # passwordless login
+                wait_for_marker(debug, b"H", after=prior, timeout=12)
                 hmp(mon, "sendkey esc", 0.4)
                 hmp(mon, "sendkey f2", 0.8)
                 hmp(mon, "sendkey right", 0.3)
                 hmp(mon, "sendkey right", 0.3)
-                hmp(mon, "sendkey ret", 1.5)
+                hmp(mon, "sendkey ret", 1.0)
                 try:
                     wait_for_marker(debug, b"M", timeout=15)
                 except AssertionError:
