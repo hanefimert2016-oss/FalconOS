@@ -171,7 +171,12 @@ def main():
             command(sock,"sendkey f2",.7)
             command(sock,"sendkey tab",.25)   # System
             for _ in range(4):command(sock,"sendkey right",.13)
+            off=len(debug.read_bytes())
             command(sock,"sendkey ret",.65)    # CodeDium
+            wait_for_marker(debug,b"zSn4",after=off,timeout=35)
+            ppm4=root/"FalconOS-Aura-MultiWindow-4.ppm"
+            screenshot(sock,ppm4)
+            ppm_to_png(ppm4,root/"FalconOS-Aura-MultiWindow-4.png")
             ppm=root/"FalconOS-Aura-CodeDium.ppm"
             screen=screenshot(sock,ppm)
             ppm_to_png(ppm,root/"FalconOS-Aura-CodeDium.png")
@@ -181,7 +186,39 @@ def main():
             ppm=root/"FalconOS-Aura-CodeDium-Export.ppm"
             screenshot(sock,ppm)
             ppm_to_png(ppm,root/"FalconOS-Aura-CodeDium-Export.png")
-            print("PASS: native CodeDium opened and FAPP/1 export invoked")
+            print("PASS: CodeDium and four simultaneous native windows, FAPP/1 exported")
+            # Cover every non-demo app available in the native Launchpad.
+            # The System tab remains selected after opening CodeDium (index 4).
+            current_system=4
+            for target,name,app_id in (
+                (1,"Stats",9),(2,"Updates",4),(3,"About",17),(5,"Terminal",5)
+            ):
+                command(sock,"sendkey f2",.6)
+                while current_system>target:
+                    command(sock,"sendkey left",.13)
+                    current_system-=1
+                while current_system<target:
+                    command(sock,"sendkey right",.13)
+                    current_system+=1
+                off=len(debug.read_bytes())
+                command(sock,"sendkey ret",.7)
+                marker=("z"+chr(ord("A")+app_id)).encode("ascii")
+                wait_for_marker(debug,marker,after=off,timeout=35)
+                ppm=root/("FalconOS-Aura-"+name+".ppm")
+                screenshot(sock,ppm)
+                ppm_to_png(ppm,root/("FalconOS-Aura-"+name+".png"))
+                print("PASS: real guest screenshot",name)
+            command(sock,"sendkey f2",.65)
+            command(sock,"sendkey tab",.18) # System -> All apps
+            command(sock,"sendkey tab",.18) # All apps -> Essentials
+            for _ in range(8):command(sock,"sendkey right",.12)
+            off=len(debug.read_bytes())
+            command(sock,"sendkey ret",.8) # Clock at Favorites index 8
+            wait_for_marker(debug,b"zIn4",after=off,timeout=35)
+            ppm=root/"FalconOS-Aura-Clock.ppm"
+            screenshot(sock,ppm)
+            ppm_to_png(ppm,root/"FalconOS-Aura-Clock.png")
+            print("PASS: real guest screenshot Clock; functional Launchpad gallery complete")
         score = picture_difference(before, after)
         ppm_to_png(last, args.output)
         events = debug.read_bytes() if debug.exists() else b""
