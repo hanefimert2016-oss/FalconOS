@@ -73,7 +73,7 @@ def main():
                 con.settimeout(2)
                 con.connect(str(monitor))
                 con.recv(4096)
-                con.sendall(b"info registers\\n")
+                con.sendall(b"info registers\n")
                 response=con.recv(20000).decode(errors="replace")
             match=re.search(r"RIP=([0-9a-fA-F]+)",response)
             if not match:return response[-700:]
