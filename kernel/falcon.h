@@ -644,6 +644,17 @@ u32 pci_extended_count(u32 kind);
 bool pci_extended_mmio(u32 kind);
 u32 pci_extended_info(u32 kind,u32 field);
 
+/* JFS2 bounded dynamically allocated append-only transactional journal. */
+bool jfs_mount(void);
+bool jfs_ready(void);
+bool jfs_write(const char *path,const u8 *data,u32 length);
+bool jfs_remove(const char *path);
+i32 jfs_read(const char *path,u8 *out,u32 cap);
+u32 jfs_file_count(void);
+u32 jfs_free_sectors(void);
+u32 jfs_incomplete(void);
+bool jfs_fsck(u32 *files,u32 *incomplete);
+
 /* XFS1 large-object store, partition type 0xFA only; QEMU first. */
 bool xfs_mount(void);
 bool xfs_ready(void);
