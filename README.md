@@ -23,10 +23,10 @@ The native Store now lists actual GitHub Releases FAPP/1 packages, verifies
 SHA-256 and launches allowlisted commands through Terminal. Run `make run-market`
 on Linux to boot QEMU with a host HTTPS-to-COM1 bridge (native TCP/TLS is
 unfinished). Packages use the dedicated FalconOS partition for a persistent
-12-slot application cache when you explicitly select a safe disk.
+48-slot application cache when you explicitly select a safe disk.
 CodeDium is accessible by pressing C inside Store, with F5 save, F6 run,
-F7 export. The GUI Files app now lists real RAM files, not a demo tree.
-See `docs/MARKETPLACE.md` for limitations.
+F7 export. CodeDium source files persist on explicitly selected safe partitions. The GUI Files app now lists real RAM files, not a demo tree.
+See `docs/MARKETPLACE.md` and `docs/FALCONOS-V2-STATUS.md` for limits and milestones.
 
 ## What is it?
 
