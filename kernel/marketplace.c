@@ -178,7 +178,9 @@ static void on_line(char *line) {
                 k_memcpy(file->data, rx_data, rx_used);
                 file->data[rx_used] = 0;
                 file->len = rx_used;
-                status_text = "Verified, installed to guest RAM";
+                status_text = market_disk_save(rx_id, rx_data, rx_used)
+                    ? "Verified app installed to safe disk"
+                    : "Verified app installed to RAM (secure session)";
                 ack();
             } else {
                 status_text = "Not enough guest file storage";
@@ -201,6 +203,7 @@ void market_init(void) {
     outb(PORT + 3, 3);
     outb(PORT + 2, 0xC7);
     outb(PORT + 4, 3);
+    market_disk_restore();
 }
 void market_consume_byte(char c);
 void market_poll(void) {

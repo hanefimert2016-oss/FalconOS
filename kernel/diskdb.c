@@ -140,3 +140,30 @@ bool diskdb_save(void)
     h->checksum = fletcher16(payload, sizeof(settings_t));
     return ata_write_lba28(SET.install_disk, lba, buf, SUPER_SECTORS);
 }
+
+/* Reserved persistent application storage inside the *validated* 0xFA
+ * partition. Sector offsets 16+ are owned by the app store, not settings.
+ * Every I/O rechecks the MBR and partition boundary; physical LBA0 is
+ * never written. Caller buffers must have at least sectors * 512 bytes.
+ */
+bool diskdb_store_io(u32 offset, u8 *buffer, u32 sectors, bool write)
+{
+    if (!buffer || !sectors || sectors > 10u || offset < 16u ||
+        SET.install_disk < 0) return false;
+    u32 start;
+    if (!target_partition(SET.install_disk, &start)) return false;
+    u8 mbr[512];
+    if (!ata_read_lba28(SET.install_disk, 0, mbr, 1)) return false;
+    u32 length = 0;
+    for (u32 i = 0; i < MBR_COUNT; i++) {
+        const u8 *p = mbr + MBR_PART_OFF + i * MBR_PART_SIZE;
+        if (p[4] == FALCONFS_PARTITION_TYPE) {
+            length = read_le32(p + 12);
+            break;
+        }
+    }
+    if (!length || (u64)offset + sectors > length) return false;
+    u32 lba = start + offset;
+    if (write) return ata_write_lba28(SET.install_disk, lba, buffer, sectors);
+    return ata_read_lba28(SET.install_disk, lba, buffer, sectors);
+}
