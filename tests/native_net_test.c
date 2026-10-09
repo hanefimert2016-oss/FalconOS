@@ -4,6 +4,7 @@
 volatile u32 g_ticks;
 u64 rdtsc(void){return 0x12345678ULL;}
 void native_tcp_receive(const u8 *ip,u32 total){(void)ip;(void)total;}
+void native_dhcp_receive(const u8 *message,u32 size){(void)message;(void)size;}
 static u8 last_tx[1600],mac[6]={0x52,0x54,0,0x12,0x34,0x56},peer[6]={0x52,0x54,0,0xab,0xcd,0xef};
 static u32 tx_len; static bool drop;
 void k_memcpy(void *a,const void *b,u32 n){memcpy(a,b,n);}
