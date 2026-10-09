@@ -73,94 +73,50 @@ static void parse_multiboot(u64 magic, u64 info_ptr)
 
 /* --------------------------------------------------------------------------- */
 /* Top menu bar (full-width frosted strip with kernel name + clock).           */
-static void draw_menu_bar(void)
-{
-    i32 W = (i32)FB.width;
-    i32 H = 30;
+static void draw_menu_bar(void){
+    i32 W=(i32)FB.width,H=30;
+    gfx_rect_a(0,0,W,H,0xF6FAFFu,
+               SET.theme==THEME_DARK?210:244);
+    gfx_rect_a(0,H-1,W,1,0xD6E2F3u,230);
+    gfx_round_rect(13,4,22,22,8,0x3479E9u);
+    gfx_text_centered(24,7,"F",0xFFFFFFu);
+    gfx_text(45,7,"FalconOS",PAL_TEXT);
+    gfx_circle(151,15,3,g_mode==MODE_PERSONAL?0x2AAB91u:0xE7AF54u);
+    gfx_text(161,7,g_mode==MODE_PERSONAL?"Workspace":"Developer",PAL_TEXT_DIM);
+    const char *hint="F2  Apps  |  F1  Developer  |  F12  Power";
+    i32 hw=gfx_text_width(hint)+34;
+    i32 hx=(W-hw)/2;
+    gfx_round_rect_a(hx,3,hw,24,11,0xE6F0FFu,220);
+    gfx_text(hx+17,7,hint,0x55749Bu);
 
-    /* Aero glass strip across the top — blur the wallpaper underneath
-     * so the menu bar feels lifted off the desktop.  When SET.aero is
-     * off, fall back to the cheap flat overlay.                       */
-    if (SET.aero_enabled) {
-        if (SET.theme == THEME_LIQUID) {
-            gfx_blur_rect(0, 0, W, H, 6);
-            gfx_rect_a(0, 0, W, H, 0xE8F6FF, 105);
-            gfx_rect_a(0, 0, W, 1, 0xFFFFFF, 180);
-            gfx_rect_a(0, 1, W, 1, 0xCFF1FF, 120);
-        } else {
-            gfx_blur_rect(0, 0, W, H, 5);
-            gfx_rect_a(0, 0, W, H, PAL_PANEL, 150);
-        }
-    } else {
-        gfx_rect_a(0, 0, W, H, PAL_PANEL, 220);
-    }
-    gfx_rect_a(0, H, W, 1, PAL_HAIRLINE, 255);
-
-    /* left: brand */
-    gfx_circle(20, H / 2, 6, PAL_ACCENT);
-    gfx_text(34, 7, "Falcon", PAL_TEXT);
-
-    /* mode label + dot */
-    const char *label;
-    u32 accent;
-    if (g_mode == MODE_PERSONAL) { label = "Personal"; accent = PAL_ACCENT; }
-    else                         { label = "Developer"; accent = COL_OK; }
-
-    i32 mx = 110;
-    gfx_circle(mx, H / 2, 4, accent);
-    gfx_text(mx + 12, 7, label, PAL_TEXT_DIM);
-
-    /* hint pill (centered) */
-    {
-        const char *hint = T("F2 Launchpad    F12 Power    Esc closes",
-                             "F2 Launchpad    F12 Guc    Esc kapatir");
-        i32 hw = gfx_text_width(hint) + 28;
-        i32 hx = (W - hw) / 2;
-        gfx_round_rect_a(hx, 4, hw, H - 8, 11, PAL_PANEL_DEEP, 255);
-        gfx_text(hx + 14, 7, hint, PAL_TEXT_DIM);
-    }
-
-    /* right: locale-formatted "DD <mon> HH:MM:SS"  +  lang badge      */
-    rtc_time_t now; rtc_local(&now);
-    char clk[24]; char tmp[8];
-    k_strcpy(clk, "");
-    /* day + localized month abbrev */
-    k_itoa(now.day, tmp, 10);
-    if (now.day < 10) k_strcat(clk, "0");
-    k_strcat(clk, tmp);
-    k_strcat(clk, " ");
-    k_strcat(clk, loc_month_short(now.month));
-    k_strcat(clk, "  ");
-    /* HH:MM:SS */
-    k_itoa(now.hour, tmp, 10); if (now.hour < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
-    k_strcat(clk, ":");
-    k_itoa(now.min,  tmp, 10); if (now.min  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
-    k_strcat(clk, ":");
-    k_itoa(now.sec,  tmp, 10); if (now.sec  < 10) k_strcat(clk, "0"); k_strcat(clk, tmp);
-
-    i32 cw = gfx_text_width(clk);
-    gfx_text(W - cw - 18, 7, clk, PAL_TEXT);
-
-    /* tiny ISO-639 lang badge (TR/EN/DE/FR/ES) */
-    const char *codes[] = { "TR", "EN", "DE", "FR", "ES" };
-    const char *lang = (SET.lang < LANG_COUNT) ? codes[SET.lang] : "EN";
-    gfx_round_rect_a(W - cw - 56, 6, 28, 18, 9, PAL_PANEL_DEEP, 255);
-    gfx_text(W - cw - 48, 8, lang, PAL_ACCENT);
-
-    /* power glyph at the far right (click to open Power options).        */
-    i32 px = W - cw - 88;
-    i32 py = H / 2;
-    gfx_circle_outline(px, py, 9, COL_ERR);
-    gfx_circle_outline(px, py, 8, COL_ERR);
-    gfx_rect(px - 1, py - 11, 3, 7, COL_ERR);
-    gfx_rect(px - 1, py - 11, 3, 3, PAL_PANEL); /* knock out the top */
-
-    /* "?" help glyph — sits 26 px left of the power glyph, opens the
-     * sliding Help drawer.  Subtle outline so it doesn't compete with
-     * the power button visually.                                     */
-    i32 hpx = W - cw - 88 - 28;
-    gfx_circle_outline(hpx, py, 9, PAL_TEXT_DIM);
-    gfx_text_centered(hpx + 1, py - 7, "?", PAL_TEXT_DIM);
+    /* Match the legacy hit test's variable-width clock geometry. */
+    rtc_time_t now;rtc_local(&now);
+    char clk[24],tmp[8];k_strcpy(clk,"");
+    k_itoa(now.day,tmp,10);
+    if(now.day<10)k_strcat(clk,"0");
+    k_strcat(clk,tmp);k_strcat(clk," ");
+    k_strcat(clk,loc_month_short(now.month));k_strcat(clk,"  ");
+    k_itoa(now.hour,tmp,10);
+    if(now.hour<10)k_strcat(clk,"0");
+    k_strcat(clk,tmp);k_strcat(clk,":");
+    k_itoa(now.min,tmp,10);
+    if(now.min<10)k_strcat(clk,"0");
+    k_strcat(clk,tmp);k_strcat(clk,":");
+    k_itoa(now.sec,tmp,10);
+    if(now.sec<10)k_strcat(clk,"0");
+    k_strcat(clk,tmp);
+    i32 cw=gfx_text_width(clk);
+    gfx_text(W-cw-18,7,clk,PAL_TEXT);
+    const char *codes[]={"TR","EN","DE","FR","ES"};
+    const char *lang=SET.lang<LANG_COUNT?codes[SET.lang]:"EN";
+    gfx_round_rect_a(W-cw-56,5,29,20,10,0xDEEAFDu,242);
+    gfx_text(W-cw-49,8,lang,0x2866CEu);
+    i32 px=W-cw-88;
+    gfx_circle_outline(px,15,9,0xCE5669u);
+    gfx_rect(px-1,3,3,11,0xCE5669u);
+    i32 hpx=px-28;
+    gfx_circle_outline(hpx,15,9,PAL_TEXT_DIM);
+    gfx_text_centered(hpx,8,"?",PAL_TEXT_DIM);
 }
 
 /* Hit-test for the power glyph in the menu bar; returns true if (mx,my) is
