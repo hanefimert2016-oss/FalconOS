@@ -21,7 +21,7 @@ def main():
         try:
             data=pcap.read_bytes()
             if len(data)<24:return "pcap missing"
-            off=24;counts={}
+            off=24;counts={};arps=[]
             while off+16<=len(data):
                 captured=struct.unpack_from('<I',data,off+8)[0]
                 off+=16
@@ -29,8 +29,17 @@ def main():
                 typ=int.from_bytes(data[off+12:off+14],'big')
                 name={0x0800:'IPv4',0x0806:'ARP'}.get(typ,'other')
                 counts[name]=counts.get(name,0)+1
+                if typ==0x0806 and captured>=42:
+                    q=data[off:off+captured]
+                    arps.append({
+                      "op":int.from_bytes(q[20:22],"big"),
+                      "src":q[6:12].hex(":"),
+                      "dst":q[0:6].hex(":"),
+                      "sender_ip":".".join(map(str,q[28:32])),
+                      "target_ip":".".join(map(str,q[38:42])),
+                    })
                 off+=captured
-            return f'captured Ethernet frames: {counts}'
+            return f'captured Ethernet frames: {counts}; ARP details: {arps[:6]}'
         except OSError as e:return str(e)
 
     debug.parent.mkdir(exist_ok=True)
