@@ -43,7 +43,7 @@ jobs:
         with:
           name: FalconOS-Aura-UI-Screenshots
           path: |
-            build/FalconOS-Aura-Launcher.png
+            build/FalconOS-Aura-*.png
             build/FalconOS-Store-screen.png
             build/falcon-boot-smoke.png
           if-no-files-found: ignore
