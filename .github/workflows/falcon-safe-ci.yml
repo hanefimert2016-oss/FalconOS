@@ -184,6 +184,27 @@ jobs:
           path: build/tls-smoke-debug.log
           if-no-files-found: ignore
 
+  native-public-https:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU, BearSSL build tools and CA roots
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 ca-certificates
+      - name: Build native HTTPS internet QEMU kernel with real public CA roots
+        run: make iso ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_TLS_PUBLIC_TEST
+      - name: Verify actual Internet DNS TCP BearSSL HTTPS and HTML
+        run: python3 tools/qemu_tls_public_e2e.py --timeout 115
+      - name: Archive public HTTPS guest trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-real-public-HTTPS
+          path: build/native-public-https.log
+          if-no-files-found: ignore
+
   hardware-probe:
     runs-on: ubuntu-24.04
     timeout-minutes: 9
