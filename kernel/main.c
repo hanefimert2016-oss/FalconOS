@@ -491,6 +491,10 @@ void long_start(u64 magic, u64 info_ptr)
         outb(0xE9, native_net_ping(gateway) ? 'N' : 'n');
         u8 remote[4];
         outb(0xE9, native_net_dns_query("example.com", remote) ? 'D' : 'd');
+#ifdef FALCON_QEMU_TCP_TEST
+        char http[512];
+        outb(0xE9,native_http_get("10.0.2.2","/falcon-test",http,sizeof(http)) ? 'T' : 't');
+#endif
     }
 #endif
 
