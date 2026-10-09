@@ -108,7 +108,6 @@ static const u8 kernel_probe[]={
       0xCD,0x80,               /* int 0x80 */
       0x0F,0x0B                /* ud2: impossible to return into user code */
     };
-};
 static bool ring3_exited;
 u64 ring3_syscall_dispatch(u64 number){
     u16 cs;
