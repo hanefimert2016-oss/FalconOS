@@ -667,6 +667,12 @@ i32 native_tcp_write(const u8 *data,u32 length);
 i32 native_tcp_read(u8 *out,u32 cap,u32 timeout_ticks);
 void native_tcp_close(void);
 i32 native_tcp_state(void);
+/* Multi-client sockets: slot 0 reserved for legacy HTTP/TLS; slots 1..3 for independent clients. */
+i32 native_tcp_socket_open(const u8 remote[4],u16 port);
+i32 native_tcp_socket_write(i32 handle,const u8 *data,u32 len);
+i32 native_tcp_socket_read(i32 handle,u8 *out,u32 cap,u32 timeout);
+bool native_tcp_socket_close(i32 handle);
+u32 native_tcp_socket_capacity(void);
 bool native_http_get(const char *hostname,const char *path,char *result,u32 cap);
 bool native_http_get_port(const char *hostname,u16 port,const char *path,char *result,u32 cap);
 bool native_https_get(const char *hostname,const char *path,char *result,u32 cap);
