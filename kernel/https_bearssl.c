@@ -136,10 +136,16 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
     unsigned char entropy[32];
     u32 days=0,seconds=0;
     if(!cpu_random(entropy) || !cert_time(&days,&seconds))return false;
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,'R'); /* RNG + RTC */
+#endif
     u8 addr[4];
     if(override_addr)k_memcpy(addr,override_addr,4);
     else if(!native_net_dns_query(host,addr))return false;
     if(!native_tcp_connect(addr,dest_port))return false;
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,'C'); /* native TCP connected */
+#endif
     bool result_ok=false;
     br_ssl_client_init_full(&CLIENT,&X509,falcon_tls_anchors,falcon_tls_anchor_count);
     br_x509_minimal_set_time(&X509,days,seconds);
@@ -147,6 +153,9 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
     k_memset(entropy,0,sizeof entropy);
     br_ssl_engine_set_buffer(&CLIENT.eng,IO_BUFFER,sizeof IO_BUFFER,1);
     if(!br_ssl_client_reset(&CLIENT,host,0))goto end;
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,'S'); /* TLS context ready */
+#endif
     br_sslio_init(&SSLIO,&CLIENT.eng,tcp_read_cb,NULL,tcp_write_cb,NULL);
     char request[512];u32 at=0;
     const char *p="GET ";
@@ -163,8 +172,14 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
     }
     p="\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
     for(u32 i=0;p[i];i++)request[at++]=p[i];
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,'W'); /* initiating HTTPS request / TLS handshake */
+#endif
     if(br_sslio_write_all(&SSLIO,request,at)<0 ||
        br_sslio_flush(&SSLIO)<0)goto end;
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,'X'); /* TLS write+flush succeeded */
+#endif
     u32 received=0;
     for(u32 i=0;i<16 && received+1<cap;i++){
         int n=br_sslio_read(&SSLIO,result+received,cap-received-1u);
