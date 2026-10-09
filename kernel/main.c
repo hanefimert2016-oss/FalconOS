@@ -474,8 +474,8 @@ void long_start(u64 magic, u64 info_ptr)
      * see attached disks and try to restore SET from LBA0 superblock.     */
     linux_compat_init();
     settings_init();
-    market_init();
-    apps_pkg_sync_receipts_from_state();   /* mirror prg install flags → shfs     */
+    /* Installer may choose secure RAM-only mode or an explicit 0xFA partition.
+     * Defer app and persistent file loading until AFTER installer decision. */
 
     pic_unmask(0);   /* PIT      */
     pic_unmask(1);   /* keyboard */
@@ -490,6 +490,11 @@ void long_start(u64 magic, u64 info_ptr)
         kbd_drain(); mouse_drain();
         modal_loop(installer_is_done, installer_render, installer_input);
     }
+
+    shfs_init();
+    pfs_mount();              /* replay checksum-verified durable user files */
+    market_init();            /* restore downloaded apps after PFS replay */
+    apps_pkg_sync_receipts_from_state();
 
     /* Drain any keys/clicks queued during the installer so the lockscreen
      * does not see a stale Enter from the final wizard step.            */
@@ -619,6 +624,8 @@ void long_start(u64 magic, u64 info_ptr)
 
         gfx_present();
         g_tick++;
+        /* One bounded copy-on-write SHFS record at most every 0.1 seconds. */
+        if ((g_tick % 5u) == 0u) pfs_sync_step();
 
         /* pace at ~50 FPS (every 2 PIT ticks) — halt CPU between frames     */
         while (g_ticks - last < 2) __asm__ volatile ("hlt");
