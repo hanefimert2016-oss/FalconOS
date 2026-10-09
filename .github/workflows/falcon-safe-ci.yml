@@ -164,7 +164,7 @@ jobs:
           cd build/tls-test
           openssl ecparam -name prime256v1 -genkey -noout -out ca.key
           openssl req -x509 -new -sha256 -key ca.key -out ca.pem -days 2 -subj '/CN=FalconOS CI Test CA' -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign'
-          openssl ecparam -name prime256v1 -genkey -noout -out server.key
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out server.key
           openssl req -new -sha256 -key server.key -out server.csr -subj '/CN=falcon.test'
           printf 'subjectAltName=DNS:falcon.test\nbasicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\nkeyUsage=digitalSignature,keyEncipherment\n' > good.ext
           openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out server.pem -days 2 -extfile good.ext
