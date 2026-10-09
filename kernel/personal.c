@@ -6,7 +6,8 @@
  */
 #include "falcon.h"
 #define SHELF_SLOTS 7
-static const i32 SHELF_APPS[SHELF_SLOTS]={1,14,13,7,6,3,5};
+/* Files, Falco, Browser, CodeDium, Discover, Notes and Settings. */
+static const i32 SHELF_APPS[SHELF_SLOTS]={1,13,14,18,2,7,3};
 static i32 shelf_cursor;
 static bool within(i32 px,i32 py,i32 x,i32 y,i32 w,i32 h){
     return px>=x&&px<x+w&&py>=y&&py<y+h;
@@ -55,16 +56,16 @@ static void quick_cards(void){
     i32 y=H/2-178;
     if(y<184)y=184;
     gfx_text_lg(x,y-52,T("Pick up where you left off","Calismaya devam et"),ink());
-    gfx_text(x,y-14,"REAL APPS   /   READY TO USE",muted());
-    const char *titles[4]={"Files","Browser","Notes","Calculator"};
-    const char *sub[4]={"Your documents","Live HTTPS text","Create and save","Calculate"};
-    const i32 ids[4]={1,14,7,6};
-    const u32 colors[4]={0xF3AD37u,0x3184F6u,0xE9C04Bu,0x7868E9u};
-    i32 cw=(content-3*18)/4;
+    gfx_text(x,y-14,"YOUR WORKSPACE   /   REAL NATIVE APPS",muted());
+    const char *titles[6]={"Files","Falco","CodeDium","Discover","Notes","Settings"};
+    const char *sub[6]={"Your files","Search + HTTPS","Build .app.pkg","Verified apps","Write & save","Make it yours"};
+    const i32 ids[6]={1,13,18,2,7,3};
+    const u32 colors[6]={0xF3AD37u,0x3184F6u,0x5369E9u,0x1DB88Fu,0xE9C04Bu,0x7868E9u};
+    i32 cw=(content-5*12)/6;
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool click=mouse_peek_click();
-    for(i32 i=0;i<4;i++){
-        i32 bx=x+i*(cw+18);
+    for(i32 i=0;i<6;i++){
+        i32 bx=x+i*(cw+12);
         bool hov=within(mx,my,bx,y+19,cw,165);
         gfx_round_rect_a(bx+3,y+25,cw,165,22,0x0C2248u,29);
         gfx_round_rect(bx,y+19,cw,165,22,surface());
@@ -84,8 +85,8 @@ static void quick_cards(void){
     gfx_circle(x+34,by+36,12,net_connected()?0x26B98Au:0xEAAE50u);
     gfx_text(x+62,by+18,"System & network",ink());
     gfx_text(x+62,by+42,net_connected()?
-       "Network detected. HTTPS uses certificate validation.":
-       "Offline. Configure RTL8139 + DHCP to use network apps.",muted());
+       "Network ready. Falco uses native TLS (text-only pages).":
+       "Offline. Configure RTL8139 + DHCP for Falco and Discover.",muted());
     gfx_round_rect(x+content-145,by+19,123,36,14,0xE6EEFFu);
     gfx_text_centered(x+content-83,by+30,"Settings",0x2758AEu);
     if(click&&within(mx,my,x+content-151,by+10,140,55)){
