@@ -3071,154 +3071,161 @@ static void render_falco(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     }
 }
 
-/* --- Chrome (visual browser app) ----------------------------------------
- *  Goal: read like a real Chrome window. The window chrome (title bar +
- *  traffic lights) is drawn by the dispatcher; this routine paints
- *      [tab bar]  [address bar + nav buttons]  [bookmark bar]  [page]
- *  in roughly Chrome's layout, with a Google-search-style landing page.
- *  No real network — but the surface area, typography and component
- *  spacing are correct for screenshots and demos.                        */
-static const char *CHROME_TABS[3] = {
-    "Welcome",
-    "Falcon Docs",
-    "Source",
-};
-static i32 chrome_active_tab = 0;
-
-static void chrome_input_key(i32 key)
-{
-    /* Tab and arrow keys cycle tabs. */
-    if (key == KEY_TAB || key == KEY_RIGHT) {
-        chrome_active_tab = (chrome_active_tab + 1) % 3;
-    } else if (key == KEY_LEFT) {
-        chrome_active_tab = (chrome_active_tab + 2) % 3;
+/* --- Falcon Browser: actual guest TCP + authenticated HTTPS only ---------
+ * Not a Chromium/WebKit engine. Real certificate-verified HTTPS fetch,
+ * bounded HTML-to-text rendering; no CSS, JavaScript, cookies or sandbox.
+ * In preview builds TLS verification is done by native BearSSL in Ring0.
+ * HTTPS failure NEVER falls back to plaintext HTTP.
+ */
+static char browser_address[224]="https://example.com/";
+static i32 browser_address_len=20;
+static bool browser_address_focus=true;
+static char browser_result[4096];
+static char browser_text[4096];
+static char browser_status[120]="Type an HTTPS address, then press Enter to load.";
+static i32 browser_scroll;
+static bool browser_loaded;
+static void browser_page_from_http(void){
+    /* Only show actual bytes authenticated by the TLS transport.
+     * Strip active markup and avoid escape/control injection into GUI. */
+    const char *p=browser_result;
+    while(*p&&!(p[0]=='\r'&&p[1]=='\n'&&p[2]=='\r'&&p[3]=='\n'))p++;
+    if(!*p){k_strcpy(browser_status,"Invalid HTTP response");return;}
+    p+=4;
+    i32 n=0;bool intag=false;bool space=false;
+    for(;*p&&n<3900;p++){
+        char c=*p;
+        if(c=='<'){intag=true;continue;}
+        if(intag){
+            if(c=='>'){intag=false;space=true;}
+            continue;
+        }
+        if(c=='\r'||c=='\n'||c=='\t'||c==' '){
+            space=true;continue;
+        }
+        if((u8)c<32u||(u8)c>=127u)continue;
+        if(space&&n>0&&browser_text[n-1]!=' ')browser_text[n++]=' ';
+        space=false;
+        browser_text[n++]=c;
     }
+    browser_text[n]=0;
+    browser_loaded=true;
+    browser_scroll=0;
+    k_strcpy(browser_status,"HTTPS verified - live response (read-only text view)");
 }
-
-static void render_browser(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
-    (void)frame; (void)wh;
-
-    /* ---- tab strip ----------------------------------------------------- */
-    i32 tx = wx + 12, ty = wy + 8;
-    i32 tw = (ww - 24) / 4;     /* leave room for a "+" button on the right */
-    for (i32 i = 0; i < 3; i++) {
-        i32 x = tx + i * (tw + 4);
-        u32 fill = (i == chrome_active_tab) ? PAL_PANEL : PAL_PANEL_DEEP;
-        gfx_round_rect_a(x, ty, tw, 32, 8, fill, 255);
-        gfx_round_outline(x, ty, tw, 32, 8, PAL_HAIRLINE);
-        gfx_circle(x + 14, ty + 16, 5,
-                   i == 0 ? 0x4285F4 :
-                   i == 1 ? 0x34A853 : 0xFBBC04);
-        gfx_text(x + 26, ty + 9, CHROME_TABS[i],
-                 i == chrome_active_tab ? PAL_TEXT : PAL_TEXT_DIM);
-        gfx_text(x + tw - 16, ty + 9, "x", PAL_TEXT_FAINT);
+static void browser_load(void){
+    browser_loaded=false;browser_result[0]=0;browser_text[0]=0;
+    if(!net_present()){
+        k_strcpy(browser_status,"No RTL8139 NIC. Set Virt-Manager network model to rtl8139.");
+        return;
     }
-    /* "+" new-tab button                                                  */
-    {
-        i32 nx = tx + 3 * (tw + 4);
-        gfx_round_rect_a(nx, ty + 4, 28, 24, 6, PAL_PANEL_DEEP, 255);
-        gfx_text_centered(nx + 14, ty + 9, "+", PAL_TEXT);
+    const char *p=browser_address;
+    const char *https="https://";
+    for(i32 i=0;i<8;i++)if(p[i]!=https[i]){
+        k_strcpy(browser_status,"HTTPS only. Prefix address with https://");
+        return;
     }
-
-    /* ---- toolbar (back / fwd / reload / address / star / menu) -------- */
-    i32 by = wy + 50;
-    gfx_rect(wx, by, ww, 44, PAL_PANEL_HI);
-
-    i32 bx = wx + 12;
-    /* nav buttons */
-    const char *NAV[3] = { "<", ">", "C" };
-    for (i32 i = 0; i < 3; i++) {
-        gfx_circle(bx + 14 + i * 32, by + 22, 12, PAL_PANEL);
-        gfx_text_centered(bx + 14 + i * 32, by + 16, NAV[i], PAL_TEXT);
+    p+=8;
+    char hostname[201],path[304];
+    i32 k=0;
+    while(p[k]&&p[k]!='/'&&p[k]!='?'&&p[k]!='#'){
+        char c=p[k];
+        if(k>=199||!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+                      (c>='0'&&c<='9')||c=='-'||c=='.')){
+            k_strcpy(browser_status,"Invalid HTTPS hostname.");return;
+        }
+        hostname[k]=c;k++;
     }
-
-    /* address bar */
-    i32 ax = bx + 110, aw = ww - 110 - 80;
-    gfx_round_rect_a(ax, by + 6, aw, 32, 16, PAL_PANEL, 255);
-    gfx_round_outline(ax, by + 6, aw, 32, 16, PAL_HAIRLINE);
-    gfx_circle(ax + 16, by + 22, 6, COL_OK);   /* lock icon            */
-    const char *URL[3] = {
-        "https://www.google.com/",
-        "falcon.os/docs",
-        "github.com/hanefimert2016-oss/FalconOS",
-    };
-    gfx_text(ax + 32, by + 16, URL[chrome_active_tab], PAL_TEXT);
-    gfx_text(ax + aw - 18, by + 16, "*", PAL_TEXT_DIM);  /* bookmark star */
-
-    /* menu button */
-    gfx_circle(wx + ww - 28, by + 22, 12, PAL_PANEL);
-    gfx_text_centered(wx + ww - 28, by + 16, ":", PAL_TEXT);
-
-    /* ---- bookmark bar -------------------------------------------------- */
-    i32 mb = wy + 96;
-    gfx_rect(wx, mb, ww, 28, PAL_PANEL_DEEP);
-    const char *BM[5] = { "Falcon Docs", "Source", "Issues",
-                          "PRs", "Lumen Notes" };
-    i32 bmx = wx + 16;
-    for (i32 i = 0; i < 5; i++) {
-        gfx_circle(bmx + 6, mb + 14, 4, PAL_ACCENT);
-        gfx_text(bmx + 16, mb + 8, BM[i], PAL_TEXT);
-        bmx += k_strlen(BM[i]) * 8 + 36;
+    if(k==0){k_strcpy(browser_status,"Missing HTTPS hostname.");return;}
+    hostname[k]=0;
+    i32 n=0;
+    if(p[k]=='/'||p[k]=='?'){
+        if(p[k]=='?')path[n++]='/';
+        while(p[k]&&p[k]!='#'&&n<300)path[n++]=p[k++];
+    }else path[n++]='/';
+    path[n]=0;
+    k_strcpy(browser_status,"Connecting: DNS / TCP / TLS / CA certificate...");
+    /* User-triggered and synchronous; slow networks can delay this UI.
+     * Never execute a network operation while rendering each frame. */
+    if(!native_https_get(hostname,path,browser_result,sizeof browser_result)){
+        k_strcpy(browser_status,
+            "HTTPS failed: TLS certificate, network, timeout or size limit.");
+        return;
     }
-
-    /* ---- page content (per-tab) --------------------------------------- */
-    i32 px = wx + 24, py = wy + 132, pw = ww - 48;
-    gfx_round_rect_a(px, py, pw, 200, 12, PAL_PANEL, 255);
-    gfx_round_outline(px, py, pw, 200, 12, PAL_HAIRLINE);
-
-    if (chrome_active_tab == 0) {
-        /* Google-style landing page. */
-        i32 cx = px + pw / 2;
-        gfx_text_lg_centered(cx - 70, py + 28, "G", 0x4285F4);
-        gfx_text_lg_centered(cx - 38, py + 28, "o", 0xEA4335);
-        gfx_text_lg_centered(cx -  6, py + 28, "o", 0xFBBC04);
-        gfx_text_lg_centered(cx + 26, py + 28, "g", 0x4285F4);
-        gfx_text_lg_centered(cx + 58, py + 28, "l", 0x34A853);
-        gfx_text_lg_centered(cx + 90, py + 28, "e", 0xEA4335);
-
-        /* search box */
-        gfx_round_rect_a(cx - 200, py + 80, 400, 36, 18, PAL_PANEL_DEEP, 255);
-        gfx_round_outline(cx - 200, py + 80, 400, 36, 18, PAL_HAIRLINE);
-        gfx_circle(cx - 184, py + 98, 6, PAL_TEXT_DIM);
-        gfx_text(cx - 168, py + 92, "Search Google or type a URL",
-                 PAL_TEXT_DIM);
-
-        /* search / lucky buttons */
-        gfx_round_rect_a(cx - 90, py + 134, 80, 28, 6, PAL_PANEL_DEEP, 255);
-        gfx_text_centered(cx - 50, py + 138, "Search", PAL_TEXT);
-        gfx_round_rect_a(cx + 10, py + 134, 80, 28, 6, PAL_PANEL_DEEP, 255);
-        gfx_text_centered(cx + 50, py + 138, "I'm Lucky", PAL_TEXT);
-    } else if (chrome_active_tab == 1) {
-        gfx_text_lg(px + 16, py + 12, "FalconOS Docs", PAL_TEXT);
-        gfx_text(px + 16, py + 56,
-                 "Bare-metal x86_64 OS with multi-user, PBKDF2 hashing,",
-                 PAL_TEXT);
-        gfx_text(px + 16, py + 76,
-                 "antialiased UI text and a Linux-derived ATA / HID layer.",
-                 PAL_TEXT);
-        gfx_text(px + 16, py + 110, "  - make run        run in QEMU",
-                 PAL_TEXT_DIM);
-        gfx_text(px + 16, py + 130, "  - make run-disk   persistent disk",
-                 PAL_TEXT_DIM);
-        gfx_text(px + 16, py + 150, "  - F1              toggle dev kernel",
-                 PAL_TEXT_DIM);
-        gfx_text(px + 16, py + 170, "  - F2              Launchpad",
-                 PAL_TEXT_DIM);
-    } else {
-        gfx_text_lg(px + 16, py + 12, "github.com/hanefimert2016-oss/FalconOS",
-                    PAL_TEXT);
-        const char *FILES[5] = {
-            "kernel/", "linux/", "boot/", "tools/", "README.md"
-        };
-        for (i32 i = 0; i < 5; i++)
-            gfx_text(px + 16, py + 60 + i * 20, FILES[i], PAL_TEXT);
+    browser_page_from_http();
+}
+static void chrome_input_key(i32 key){
+    if(key==KEY_UP){if(browser_scroll>0)browser_scroll--;return;}
+    if(key==KEY_DOWN){if(browser_scroll<190)browser_scroll++;return;}
+    if(key==KEY_TAB){browser_address_focus=!browser_address_focus;return;}
+    if(key==KEY_F5){browser_load();return;}
+    if(key==KEY_ENTER){browser_load();browser_address_focus=false;return;}
+    if(!browser_address_focus)return;
+    if(key==KEY_BACKSPACE){
+        sh_buf_pop_utf8(browser_address,&browser_address_len);return;
     }
-
-    /* ---- status hint --------------------------------------------------- */
-    gfx_text(wx + 24, wy + 350,
-             "Tab: switch tabs   Esc: close   (no network stack)",
-             PAL_TEXT_FAINT);
+    if(browser_address_len>=220)return;
+    (void)sh_buf_append_key(browser_address,&browser_address_len,
+                            sizeof browser_address,key);
+}
+static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    (void)frame;
+    i32 margin=18,bar=wy+54;
+    gfx_rect(wx,wy,ww,44,PAL_PANEL_DEEP);
+    gfx_round_rect_a(wx+margin,wy+7,170,32,9,PAL_PANEL,255);
+    gfx_text(wx+margin+12,wy+15,"Falcon Browser",PAL_ACCENT);
+    gfx_text(wx+205,wy+16,"HTTPS  /  LIVE  /  TEXT",PAL_TEXT_DIM);
+    gfx_rect(wx,wy+45,ww,56,PAL_PANEL_HI);
+    i32 sx=wx+margin,sy=bar,sw=ww-margin*2;
+    gfx_round_rect_a(sx,sy,sw,34,10,PAL_PANEL,255);
+    gfx_round_outline(sx,sy,sw,34,10,
+                      browser_address_focus?PAL_ACCENT:PAL_HAIRLINE);
+    gfx_circle(sx+15,sy+17,5,COL_OK);
+    gfx_text(sx+27,sy+11,browser_address,PAL_TEXT);
+    gfx_rect(wx,wy+102,ww,34,PAL_PANEL_DEEP);
+    gfx_text(wx+margin,wy+113,browser_status,
+             browser_loaded?COL_OK:PAL_TEXT_DIM);
+    i32 py=wy+146;
+    i32 height=wh-184;
+    if(height<70)height=70;
+    gfx_round_rect_a(sx,py,sw,height,10,PAL_PANEL,255);
+    gfx_round_outline(sx,py,sw,height,10,PAL_HAIRLINE);
+    if(!browser_loaded){
+        gfx_text_lg(sx+20,py+26,"Falcon Browser",PAL_TEXT);
+        gfx_text(sx+20,py+76,"Open a real HTTPS page using Enter.",PAL_TEXT);
+        gfx_text(sx+20,py+102,
+            "Certificates validated by BearSSL, no HTTP fallback.",PAL_TEXT_DIM);
+        gfx_text(sx+20,py+128,
+            "Supports limited HTML-to-text, not CSS/JS or full websites.",PAL_TEXT_DIM);
+    }else{
+        i32 chars=(sw-40)/8;
+        if(chars<15)chars=15;
+        if(chars>120)chars=120;
+        i32 rows=(height-24)/19;
+        if(rows>60)rows=60;
+        char line[128];
+        const char *p=browser_text;
+        i32 line_no=0,row=0,col=0;
+        for(i32 i=0;p[i]&&row<rows;i++){
+            char c=p[i];
+            if(c=='\n'||col>=chars){
+                line[col]=0;
+                if(line_no>=browser_scroll){
+                    gfx_text(sx+18,py+14+row*19,line,PAL_TEXT);
+                    row++;
+                }
+                col=0;line_no++;
+                if(c=='\n')continue;
+            }
+            if(col<126)line[col++]=c;
+        }
+        if(row<rows&&col&&line_no>=browser_scroll){
+            line[col]=0;gfx_text(sx+18,py+14+row*19,line,PAL_TEXT);
+        }
+    }
+    gfx_text(wx+margin,wy+wh-26,
+        "Enter: load  |  Tab: address focus  |  F5: reload  |  Up/Down: scroll",
+        PAL_TEXT_FAINT);
 }
 
 /* --- Video (software demo player) ---------------------------------------- */
