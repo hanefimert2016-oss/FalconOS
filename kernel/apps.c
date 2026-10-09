@@ -3129,6 +3129,238 @@ static void render_heroic(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
              PAL_TEXT_FAINT);
 }
 
+
+/* ---- Marketplace: actual release catalogue + verified FAPP/1 script launch --- */
+static i32 market_cursor;
+static void market_launch(i32 i)
+{
+    const char *script = market_script(i);
+    if (!script) return;
+    term_init();
+    term_push("Marketplace: running verified FAPP/1 script");
+    while (*script) {
+        char line[184];
+        i32 n = 0;
+        while (script[n] && script[n] != '\n' && n < 182) n++;
+        if (script[n] && script[n] != '\n') {
+            term_push("Marketplace: invalid script line"); break;
+        }
+        for (i32 j = 0; j < n; j++) line[j] = script[j];
+        line[n] = 0;
+        if (n && line[0] != '#') {
+            if (!market_line_allowed(line, n)) {
+                term_push("Marketplace: unsafe command rejected");
+                break;
+            }
+            sh_run_line(line);
+        }
+        script += n;
+        if (*script == '\n') script++;
+    }
+    apps_open(5); /* real Terminal output, no arbitrary ELF execution */
+}
+static void market_input_key(i32 key)
+{
+    i32 n = market_count();
+    if (key == 'r' || key == 'R' || key == KEY_F5) {
+        market_refresh(); market_cursor = 0; return;
+    }
+    if (key == 'c' || key == 'C') {
+        apps_open(18); return; /* CodeDium Studio */
+    }
+    if (key == KEY_UP && market_cursor > 0) market_cursor--;
+    if (key == KEY_DOWN && market_cursor < n-1) market_cursor++;
+    if (key == KEY_ENTER && n > 0) {
+        if (market_installed(market_cursor)) market_launch(market_cursor);
+        else market_download(market_cursor);
+    }
+}
+static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+{
+    (void)frame;
+    section(wx, wy, "FalconOS Marketplace", "GitHub Releases  |  .app.pkg  |  SHA-256");
+    gfx_text(wx + 24, wy + 42, "R: refresh  |  Enter: download / run  |  C: CodeDium", PAL_TEXT_DIM);
+    gfx_text(wx + 24, wy + 63, market_status(), PAL_ACCENT);
+    i32 mx, my; bool held; mouse_get(&mx, &my, &held); (void)held;
+    bool clicked = mouse_peek_click();
+    if (clicked && mx >= wx + 24 && mx <= wx + ww - 24 &&
+        my >= wy + 36 && my <= wy + 56) {
+        market_refresh(); (void)mouse_consume_click(); clicked = false;
+    }
+    i32 n = market_count();
+    if (n == 0) {
+        gfx_round_rect_a(wx + 24, wy + 103, ww - 48, 90, 14, PAL_PANEL_DEEP, 255);
+        gfx_text(wx + 42, wy + 133, "No releases loaded. Run make market-bridge, press R.", PAL_TEXT);
+    }
+    for (i32 i = 0; i < n && i < 12; i++) {
+        i32 y = wy + 102 + i * 33;
+        if (y + 30 > wy + wh - 42) break;
+        bool selected = i == market_cursor;
+        gfx_round_rect_a(wx + 24, y, ww - 48, 29, 8,
+                         selected ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
+        gfx_round_outline(wx + 24, y, ww - 48, 29, 8,
+                          selected ? PAL_ACCENT : PAL_HAIRLINE);
+        gfx_circle(wx + 40, y + 14, 6, selected ? PAL_ACCENT : COL_OK);
+        gfx_text(wx + 57, y + 6, market_name(i), PAL_TEXT);
+        gfx_text(wx + ww / 2, y + 6, market_version(i), PAL_TEXT_FAINT);
+        gfx_text(wx + ww - 140, y + 6,
+                 market_installed(i) ? "RUN" : "GET", market_installed(i) ? COL_OK : PAL_ACCENT);
+        if (clicked && mx >= wx + 24 && mx < wx + ww - 24 &&
+            my >= y && my <= y + 29) {
+            market_cursor = i;
+            if (market_installed(i)) market_launch(i);
+            else market_download(i);
+            (void)mouse_consume_click(); clicked = false;
+        }
+    }
+    gfx_text(wx + 24, wy + wh - 27,
+             "FAPP/1 script packages | Host-assisted HTTPS | Guest files in RAM", PAL_TEXT_FAINT);
+}
+
+/* ---- CodeDium: native editable FAPP/1 source, file save and script preview --- */
+#define CODE_CAP 2048
+static char code_text[CODE_CAP];
+static i32 code_len, code_cursor;
+static bool code_ready;
+static const char *code_status = "F5 Save  |  F6 Run  |  F7 Export .app.pkg";
+static void code_init(void)
+{
+    if (code_ready) return;
+    code_ready = true;
+    shfs_init();
+    shfs_ent_t *file = shfs_lookup("/home/falcon/Desktop/project.fsh");
+    const char *sample = "# CodeDium Studio\nclear\necho Hello from CodeDium\nuname\n";
+    const char *source = (file && !file->is_dir) ? file->data : sample;
+    i32 n = k_strlen(source);
+    if (n >= CODE_CAP) n = CODE_CAP - 1;
+    k_memcpy(code_text, source, n);
+    code_text[n] = 0;
+    code_cursor = code_len = n;
+}
+static void code_save(void)
+{
+    shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/project.fsh", false);
+    if (!file) { code_status = "Save error: RAM file system is full"; return; }
+    k_memcpy(file->data, code_text, code_len + 1);
+    file->len = code_len;
+    code_status = "Saved: /home/falcon/Desktop/project.fsh (RAM)";
+}
+static void code_run(void)
+{
+    term_init();
+    for (i32 at = 0; at < code_len;) {
+        char line[184]; i32 n = 0;
+        while (at + n < code_len && code_text[at + n] != '\n' && n < 182) n++;
+        if (at + n < code_len && code_text[at + n] != '\n') {
+            code_status = "Script line exceeds 182 chars"; return;
+        }
+        k_memcpy(line, code_text + at, n); line[n] = 0;
+        if (n && line[0] != '#') {
+            if (!market_line_allowed(line, n)) {
+                code_status = "Unsafe command denied (FAPP/1 allowlist)"; return;
+            }
+            sh_run_line(line);
+        }
+        at += n;
+        if (at < code_len && code_text[at] == '\n') at++;
+    }
+    code_status = "Executed in built-in Terminal";
+    apps_open(5);
+}
+static void code_export(void)
+{
+    const char *header =
+        "FAPP/1\nid=codedium-demo\nname=CodeDium Demo\n"
+        "version=1.0.0\nsummary=Created inside FalconOS CodeDium\n\n";
+    i32 n = k_strlen(header);
+    if (n + code_len >= SHFS_FBYTES) {
+        code_status = "Export error: package is too large"; return;
+    }
+    shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/code.app.pkg", false);
+    if (!file) { code_status = "Export failed: RAM file system full"; return; }
+    k_memcpy(file->data, header, n);
+    k_memcpy(file->data + n, code_text, code_len);
+    if (!code_len || code_text[code_len - 1] != '\n')
+        file->data[n + code_len++] = '\n';
+    file->len = n + code_len;
+    file->data[file->len] = 0;
+    code_status = "Exported code.app.pkg to Desktop (guest RAM)";
+}
+static void code_input_key(i32 key)
+{
+    code_init();
+    if (key == KEY_F5) { code_save(); return; }
+    if (key == KEY_F6) { code_run(); return; }
+    if (key == KEY_F7) { code_export(); return; }
+    if ((kbd_mod_state() & KMOD_CTRL) && (key == 's' || key == 'S')) {
+        code_save(); return;
+    }
+    if (key == KEY_LEFT && code_cursor > 0) { code_cursor--; return; }
+    if (key == KEY_RIGHT && code_cursor < code_len) { code_cursor++; return; }
+    if (key == KEY_HOME) {
+        while (code_cursor > 0 && code_text[code_cursor - 1] != '\n') code_cursor--;
+        return;
+    }
+    if (key == KEY_END) {
+        while (code_cursor < code_len && code_text[code_cursor] != '\n') code_cursor++;
+        return;
+    }
+    if (key == KEY_BACKSPACE && code_cursor > 0) {
+        for (i32 i = code_cursor - 1; i < code_len; i++) code_text[i] = code_text[i+1];
+        code_len--; code_cursor--; return;
+    }
+    if (key == KEY_DEL && code_cursor < code_len) {
+        for (i32 i = code_cursor; i < code_len; i++) code_text[i] = code_text[i+1];
+        code_len--; return;
+    }
+    char c = 0;
+    if (key == KEY_ENTER) c = '\n';
+    else if (key == KEY_TAB) c = ' ';
+    else if (key >= 32 && key < 127) c = (char)key;
+    if (c && code_len + 1 < CODE_CAP) {
+        for (i32 i = code_len; i >= code_cursor; i--) code_text[i+1] = code_text[i];
+        code_text[code_cursor++] = c; code_len++;
+    }
+}
+static void render_codedium(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+{
+    (void)frame;
+    code_init();
+    section(wx, wy, "CodeDium Studio", "Native FAPP/1 script editor, protected command execution");
+    gfx_round_rect(wx + 18, wy + 45, ww - 36, wh - 92, 10, 0x101A2C);
+    gfx_rect(wx + 20, wy + 46, 36, wh - 95, 0x1B2942);
+    i32 line = 0, col = 0, cursor_line = 0, cursor_col = 0;
+    for (i32 j = 0; j < code_cursor; j++) {
+        if (code_text[j] == '\n') { cursor_line++; cursor_col = 0; }
+        else cursor_col++;
+    }
+    /* Keep the cursor in view: render a vertical window of source lines. */
+    i32 visible = (wh - 116) / 19;
+    if (visible < 1) visible = 1;
+    i32 first = cursor_line >= visible ? cursor_line - visible + 1 : 0;
+    char buf[115];
+    i32 bi = 0;
+    for (i32 pos = 0; pos <= code_len; pos++) {
+        char ch = code_text[pos];
+        if (ch != '\n' && ch != 0 && bi < (i32)sizeof buf - 1) {
+            buf[bi++] = ch; continue;
+        }
+        buf[bi] = 0;
+        if (line >= first && line < first + visible) {
+            i32 y = wy + 54 + (line - first) * 19;
+            char num[12]; k_itoa(line + 1, num, 10);
+            gfx_text(wx + 27, y, num, PAL_TEXT_FAINT);
+            gfx_text(wx + 66, y, buf, buf[0] == '#' ? 0x78B69A : 0xDDE7FF);
+            if (line == cursor_line) {
+                i32 x = wx + 66 + cursor_col * 8;
+                if (x < wx + ww - 27) gfx_rect(x, y + 15, 8, 2, PAL_ACCENT);
+            }
+        }
+        bi = 0; line++;
+    }
+    gfx_text(wx + 22, wy + wh - 37, code_status, PAL_TEXT_DIM);
+}
+
 /* ===== app table & dispatch ============================================= */
 typedef void (*app_render_fn)(i32 x, i32 y, i32 w, i32 h, u32 f);
 typedef void (*app_input_fn)(i32 key);
@@ -3145,7 +3377,7 @@ typedef struct {
 static app_def_t APPS[] = {
     { "Home",       "quick links",         0x3070FF, render_home,     NULL,             icon_home     },
     { "Files",      "in-memory tree",      0xF59F1A, render_files,    NULL,             icon_files    },
-    { "Store",      "prg packages",        0x2BB673, render_store,    store_input_key,  icon_store    },
+    { "Store",      "GitHub Releases apps",  0x2BB673, render_market,   market_input_key, icon_store    },
     { "Settings",   "system + theme",      0x6E7884, render_settings, set_input_key,    icon_settings },
     { "Sistem Güncellemeleri", "prg + FalconFS özeti", 0x05B897, render_updates,
       updates_input_key, icon_updates },
@@ -3162,6 +3394,8 @@ static app_def_t APPS[] = {
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
+    { "CodeDium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
+    { "Packages",   "legacy prg catalogue",0x2BB673, render_store,   store_input_key,  icon_store    },
 };
 
 i32 apps_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
