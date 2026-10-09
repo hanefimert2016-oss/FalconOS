@@ -8,7 +8,7 @@
 #include "shfs.h"
 
 #define PORT 0x3F8
-#define MARKET_MAX 12
+#define MARKET_MAX 48
 #define PKG_MAX 4096
 #define LINE_MAX 196
 typedef struct {

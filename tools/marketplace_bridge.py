@@ -116,7 +116,7 @@ def serve(sock):
         try:
             if command == "LIST":
                 cache = releases()
-                for app_id, entry in list(cache.items())[:12]:
+                for app_id, entry in list(cache.items())[:48]:
                     asset = entry["asset"]
                     name = entry["release"].get("name", app_id)
                     name = re.sub(r"[^A-Za-z0-9 .,_-]", "", name)[:38] or app_id

@@ -3212,9 +3212,14 @@ static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         gfx_round_rect_a(wx + 24, wy + 103, ww - 48, 90, 14, PAL_PANEL_DEEP, 255);
         gfx_text(wx + 42, wy + 133, "No releases loaded. Run make market-bridge, press R.", PAL_TEXT);
     }
-    for (i32 i = 0; i < n && i < 12; i++) {
-        i32 y = wy + 102 + i * 33;
-        if (y + 30 > wy + wh - 42) break;
+    i32 visible = (wh - 146) / 33;
+    if (visible < 1) visible = 1;
+    i32 first = market_cursor - visible / 2;
+    if (first < 0) first = 0;
+    if (first > n - visible) first = n - visible;
+    if (first < 0) first = 0;
+    for (i32 i = first; i < n && i < first + visible; i++) {
+        i32 y = wy + 102 + (i - first) * 33;
         bool selected = i == market_cursor;
         gfx_round_rect_a(wx + 24, y, ww - 48, 29, 8,
                          selected ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
