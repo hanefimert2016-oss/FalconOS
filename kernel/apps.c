@@ -4016,6 +4016,8 @@ const char *apps_display_name(i32 i)
 {
     if (i < 0 || i >= apps_count()) return "?";
     if (i >= builtin_app_count()) return market_name(i - builtin_app_count());
+    /* User-facing brand: Keşfet / Discover; stable internal ID remains Store. */
+    if (i == 2) return T("Discover","Kesfet");
     if (SET.lang != LANG_TR)
         return APPS[i].name;
     switch (i) {
@@ -4300,7 +4302,7 @@ static void wm_paint_window(u32 frame,bool focused) {
     const app_def_t *a=&APPS[active_app];
     i32 wx,wy,ww,wh;
     if(!wm_window_rect(&wx,&wy,&ww,&wh))return;
-    if(focused && !wm_dragging && !wm_resizing) {
+    if(focused && SET.animations && !wm_dragging && !wm_resizing) {
         u32 dt=pit_ms()-open_at_ms;
         if(dt>200)dt=200;
         wy+=(i32)((200-dt)*60/200);
