@@ -494,6 +494,13 @@ void long_start(u64 magic, u64 info_ptr)
     pic_unmask(2);   /* cascade  */
     pic_unmask(12);  /* mouse    */
     __asm__ volatile ("sti");
+#ifdef FALCON_RING3_TEST
+    {
+        extern bool ring3_probe(void);
+        outb(0xE9,'E');
+        outb(0xE9,ring3_probe()?'R':'r');
+    }
+#endif
 
 #ifdef FALCON_QEMU_NET_TEST
     /* CI-only: a real packet exchange, not a mocked socket or fake ping. */
