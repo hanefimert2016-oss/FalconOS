@@ -24,9 +24,13 @@ jobs:
           mkdir -p build
           gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/jfs_dynamic_test.c kernel/jfs_dynamic.c -o build/jfs-test
           ./build/jfs-test
+      - name: Install animation baker for original GLB
+        run: |
+          python3 -m pip install --user --break-system-packages 'numpy<3' trimesh opencv-python-headless pillow
+          python3 tools/bake_boot_intro.py --frames 24
       - name: Build safe pre-release preview ISO
         run: |
-          make iso
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1
           grub-file --is-x86-multiboot2 build/falcon.elf
           cp build/FalconOS.iso build/FalconOS-preview-QEMU.iso
       - name: Verify bootable safe preview
@@ -41,7 +45,8 @@ jobs:
       - name: Build and exercise Ring3 ELF64 developer preview
         run: |
           make clean
-          make iso ENABLE_RING3_TEST=1 EXTRA_CFLAGS='-DFALCON_QEMU_ELF_TEST -DFALCON_QEMU_SCHED_TEST'
+          python3 tools/bake_boot_intro.py --frames 24
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 ENABLE_RING3_TEST=1 EXTRA_CFLAGS='-DFALCON_QEMU_ELF_TEST -DFALCON_QEMU_SCHED_TEST'
           python3 tools/qemu_ring3_sched_e2e.py
           python3 tools/qemu_elf_ring3_e2e.py
           cp build/FalconOS.iso build/FalconOS-preview-Ring3-ELF64.iso
