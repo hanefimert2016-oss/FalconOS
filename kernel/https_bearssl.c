@@ -66,13 +66,21 @@ static int tcp_read_cb(void *ctx,unsigned char *dest,size_t len){
     (void)ctx;
     if(!len)return -1;
     u32 n=(u32)(len>4096?4096:len);
-    return native_tcp_read(dest,n,1000u);
+    int got=native_tcp_read(dest,n,1000u);
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,got>0?'r':got==0?'0':'!');
+#endif
+    return got;
 }
 static int tcp_write_cb(void *ctx,const unsigned char *data,size_t len){
     (void)ctx;
     if(!len)return -1;
     u32 n=(u32)(len>4096?4096:len);
-    return native_tcp_write(data,n);
+    int written=native_tcp_write(data,n);
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,written>0?'w':'?');
+#endif
+    return written;
 }
 static bool valid_host(const char *host){
     if(!host)return false;
@@ -191,6 +199,13 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
         }
     }
 end:
+#ifdef FALCON_QEMU_TLS_TEST
+    {
+       unsigned e=(unsigned)br_ssl_engine_last_error(&CLIENT.eng);
+       outb(0xE9,'e');outb(0xE9,(u8)('A'+(e&15u)));
+       outb(0xE9,(u8)('A'+((e>>4)&15u)));
+    }
+#endif
     /* All TLS records are verified by BearSSL prior to becoming plaintext. */
     if(!result_ok)result[0]=0;
     native_tcp_close();
