@@ -258,7 +258,10 @@ bool prg_install(i32 i)
 {
     init_once();
     if (i < 0 || i >= N_CATALOG) return false;
-    if (SET.prg_installed[i]) return true;          /* already installed */
+    /* Legacy catalog entries are NOT downloadable binaries. Never pretend
+     * they were installed: use the real Release-backed Store instead. */
+    if (!CATALOG[i].builtin) return false;
+    if (SET.prg_installed[i]) return true;
 
     /* Resolve a single depends-edge recursively (catalog uses one direct
      * dependency string per package). Depth guard prevents accidental cycles

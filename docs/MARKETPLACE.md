@@ -40,3 +40,9 @@ The guest storage format is not a general-purpose file system, and
 are not supported. Apps can currently run only restricted built-in
 shell commands. No third-party native code is run in ring 3.
 Do not treat a successful ISO compile as proof of QEMU desktop usability.
+
+## Legacy prg compatibility
+The old compile-time prg catalog is retained as internal metadata, but
+unavailable non-built-in entries are no longer permitted to claim successful
+installation. The graphical Store is exclusively Release-backed. Package
+publication means reviewed FAPP/1 sources followed by an immutable Release.

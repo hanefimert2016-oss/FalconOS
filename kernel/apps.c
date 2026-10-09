@@ -3420,7 +3420,6 @@ static app_def_t APPS[] = {
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
     { "CodeDium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
-    { "Packages",   "legacy prg catalogue",0x2BB673, render_store,   store_input_key,  icon_store    },
 };
 
 i32 apps_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
