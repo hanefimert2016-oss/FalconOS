@@ -503,6 +503,10 @@ void long_start(u64 magic, u64 info_ptr)
         outb(0xE9, native_net_ping(gateway) ? 'N' : 'n');
         u8 remote[4];
         outb(0xE9, native_net_dns_query("example.com", remote) ? 'D' : 'd');
+#ifdef FALCON_QEMU_DHCP_TEST
+        outb(0xE9,(net_dhcp() &&
+            k_strcmp(net_ip_addr(),"10.0.2.15")==0)?'B':'b');
+#endif
 #ifdef FALCON_QEMU_TCP_TEST
         char http[512];
         outb(0xE9,native_http_get_port("10.0.2.2",18080,"/falcon-test",http,sizeof(http)) ? 'T' : 't');
