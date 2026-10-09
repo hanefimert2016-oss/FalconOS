@@ -14,6 +14,7 @@ def main():
     p.add_argument("--iso",default="build/FalconOS.iso")
     p.add_argument("--timeout",type=float,default=40)
     p.add_argument("--require-dns",action="store_true")
+    p.add_argument("--require-dhcp",action="store_true")
     args=p.parse_args()
     debug=Path("build/net-smoke-debug.log")
     pcap=Path("build/net-smoke.pcap")
@@ -64,8 +65,14 @@ def main():
                     print("PASS native RTL8139 -> ARP -> IPv4 -> ICMP echo reply")
                     return
                 if b"D" in data:
-                    print("PASS native RTL8139 ARP/ICMP and DNS-over-UDP response")
-                    return
+                    if not args.require_dhcp:
+                        print("PASS native RTL8139 ARP/ICMP and DNS-over-UDP response")
+                        return
+                    if b"B" in data:
+                        print("PASS native RTL8139 ARP + ICMP + DNS and DHCP DORA lease")
+                        return
+                    if b"b" in data:
+                        raise RuntimeError("Guest DHCP DORA failed; "+repr(data)+"; "+summary())
                 if b"d" in data:
                     raise RuntimeError("Native DNS query failed; debug "+repr(data)+"; "+summary())
             if b"n" in data:
