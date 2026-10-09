@@ -2931,144 +2931,131 @@ static void render_gallery(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     }
 }
 
-/* --- Falco (native Falcon browser/search surface) ------------------------
- *  Falco is a first-party browser shell designed for FalconOS. With no
- *  network stack yet, it runs a real indexed search over curated web cards
- *  and ships API-ready connectors (DuckDuckGo / Wikipedia / HN) that can be
- *  wired to HTTP once net drivers are live.                                  */
-typedef struct {
-    const char *title;
-    const char *url;
-    const char *desc;
-} falco_doc_t;
-
-static const falco_doc_t FALCO_INDEX[] = {
-    { "FalconOS repository", "https://github.com/hanefimert2016-oss/FalconOS", "Source, issues, roadmap and docs." },
-    { "DuckDuckGo Instant API", "https://duckduckgo.com/api", "Free JSON endpoint for search snippets." },
-    { "Wikipedia API", "https://www.mediawiki.org/wiki/API:Main_page", "Open encyclopedia API for summaries." },
-    { "Stack Exchange API", "https://api.stackexchange.com/docs", "Developer Q&A endpoint with public quotas." },
-    { "GitHub REST API", "https://docs.github.com/rest", "Repository and release metadata API." },
-    { "Heroic Games Launcher", "https://heroicgameslauncher.com/", "Open launcher for Epic/GOG libraries." },
-    { "Google Chrome", "https://www.google.com/chrome/", "Browser compatibility target package." },
-    { "QEMU documentation", "https://www.qemu.org/docs/master/", "Virtual machine setup and acceleration." },
-    { "Kernel Dev Notes", "falco://docs/kernel", "Local Falcon docs bundle for OS internals." },
-    { "Falcon package index", "falco://packages", "Installed + available prg packages." },
-};
-
-static char falco_query[80] = "FalconOS";
-static i32  falco_query_len = 8;
-static i32  falco_sel = 0;
-
-static void falco_set_query(const char *q)
-{
-    falco_query_len = 0;
-    falco_query[0] = 0;
-    if (!q) return;
-    while (q[falco_query_len] && falco_query_len < 79) {
-        falco_query[falco_query_len] = q[falco_query_len];
+/* Falco Search — live Wikipedia API via explicitly verified host HTTPS.
+ * No fabricated result cards or static fake search engine.
+ * Guest-to-host NAT hop is plain TCP; real TLS is validated on trusted host.
+ */
+static char falco_query[80]="FalconOS";
+static i32 falco_query_len=8;
+static i32 falco_sel=0;
+static char falco_http[4096],falco_results[3100];
+static char falco_status[128]="Enter searches live Wikipedia, via HTTPS host gateway.";
+static bool falco_has_results;
+static bool falco_dhcp_done;
+static void falco_set_query(const char *q){
+    falco_query_len=0;
+    while(q&&q[falco_query_len]&&falco_query_len<79){
+        falco_query[falco_query_len]=q[falco_query_len];
         falco_query_len++;
     }
-    falco_query[falco_query_len] = 0;
-    falco_sel = 0;
+    falco_query[falco_query_len]=0;
+    falco_sel=0;
+    falco_has_results=false;
 }
-
-static i32 falco_collect_hits(i32 out_idx[], i32 cap)
-{
-    i32 n = 0;
-    i32 total = (i32)(sizeof(FALCO_INDEX) / sizeof(FALCO_INDEX[0]));
-    bool empty = (falco_query[0] == 0);
-    for (i32 i = 0; i < total && n < cap; i++) {
-        if (empty ||
-            sh_contains_ci(FALCO_INDEX[i].title, falco_query) ||
-            sh_contains_ci(FALCO_INDEX[i].url,   falco_query) ||
-            sh_contains_ci(FALCO_INDEX[i].desc,  falco_query)) {
-            out_idx[n++] = i;
-        }
-    }
-    return n;
-}
-
-static void falco_input_key(i32 key)
-{
-    if (key == KEY_BACKSPACE) {
-        sh_buf_pop_utf8(falco_query, &falco_query_len);
+static void falco_search(void){
+    falco_has_results=false;
+    if(!falco_query_len)return;
+    if(!net_present()){
+        k_strcpy(falco_status,"No RTL8139 network card is active");
         return;
     }
-    if (key == KEY_UP && falco_sel > 0) { falco_sel--; return; }
-    if (key == KEY_DOWN) { falco_sel++; return; }
-    if (key == KEY_ENTER) return;
-    (void)sh_buf_append_key(falco_query, &falco_query_len, 80, key);
+    if(!falco_dhcp_done){falco_dhcp_done=true;(void)net_dhcp();}
+    char path[300];i32 i=0;
+    const char *prefix="/search/";
+    for(i32 j=0;prefix[j];j++)path[i++]=prefix[j];
+    static const char hex[]="0123456789ABCDEF";
+    for(i32 j=0;j<falco_query_len && i<270;j++){
+        u8 c=(u8)falco_query[j];
+        if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+           (c>='0'&&c<='9')||c=='-'){
+            path[i++]=(char)c;
+        }else{
+            path[i++]='%';path[i++]=hex[c>>4];path[i++]=hex[c&15u];
+        }
+    }
+    path[i]=0;
+    k_strcpy(falco_status,"Searching Wikipedia HTTPS...");
+    if(!native_http_get_port(net_gateway(),18444,path,falco_http,sizeof falco_http)||
+       !sh_contains_ci(falco_http,"X-Falcon-Host-HTTPS-Verified: yes")){
+        k_strcpy(falco_status,
+          "HTTPS host gateway unavailable. Start falcon_https_gateway.py");
+        return;
+    }
+    const char *body=falco_http;
+    while(body[0]&&!(body[0]=='\r'&&body[1]=='\n'&&
+                      body[2]=='\r'&&body[3]=='\n'))body++;
+    if(!body[0]){
+        k_strcpy(falco_status,"Malformed search response");return;
+    }
+    body+=4;
+    i32 n=0;
+    while(body[n]&&n<(i32)sizeof falco_results-1){
+        u8 c=(u8)body[n];
+        falco_results[n]=(c<32&&c!='\n')?' ':((c>126)?'?':(char)c);
+        n++;
+    }
+    falco_results[n]=0;
+    falco_sel=0;falco_has_results=true;
+    k_strcpy(falco_status,
+         "Live Wikipedia results - host certificate verified");
 }
-
-static void render_falco(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
+static void falco_input_key(i32 key){
+    if(key==KEY_ENTER||key==KEY_F5){falco_search();return;}
+    if(key==KEY_UP){if(falco_sel>0)falco_sel--;return;}
+    if(key==KEY_DOWN){if(falco_sel<40)falco_sel++;return;}
+    if(key==KEY_BACKSPACE){
+        sh_buf_pop_utf8(falco_query,&falco_query_len);
+        return;
+    }
+    (void)sh_buf_append_key(falco_query,&falco_query_len,80,key);
+}
+static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;
-    section(wx, wy, "Falco",
-            T("Local index search — virtio-net ile tam web araması planlanır",
-              "Yerel indeks araması — tam internet araması için virtio-net planlanır"));
-
-    /* provider chips */
-    {
-        const char *chips[3] = { "DuckDuckGo API", "Wikipedia API", "HN API" };
-        i32 x = wx + 24, y = wy + 42;
-        for (i32 i = 0; i < 3; i++) {
-            i32 cw = gfx_text_width(chips[i]) + 18;
-            gfx_round_rect_a(x, y, cw, 20, 10, PAL_PANEL_DEEP, 255);
-            gfx_round_outline(x, y, cw, 20, 10, PAL_HAIRLINE);
-            gfx_text(x + 9, y + 5, chips[i], PAL_TEXT_DIM);
-            x += cw + 8;
+    i32 x=wx+22,w=ww-44;
+    gfx_round_rect_a(x,wy+12,w,84,20,0xDBEAFE,240);
+    gfx_round_rect(x+14,wy+26,48,48,16,0x2269D9);
+    gfx_text_lg_centered(x+38,wy+34,"F",0xFFFFFF);
+    gfx_text_lg(x+80,wy+31,"Falco Search",0x16355F);
+    gfx_text(x+80,wy+62,"Live results, not an offline demo index",0x597698);
+    gfx_round_rect_a(x,wy+109,w,51,18,PAL_PANEL,255);
+    gfx_round_outline(x,wy+109,w,51,18,PAL_ACCENT);
+    gfx_circle_outline(x+23,wy+134,8,0x487CCA);
+    gfx_line(x+28,wy+139,x+35,wy+146,0x487CCA);
+    gfx_text(x+51,wy+127,falco_query_len?falco_query:"Search Wikipedia...",PAL_TEXT);
+    gfx_round_rect(x+w-110,wy+117,100,35,13,0x246DE8);
+    gfx_text_centered(x+w-60,wy+128,"Enter",0xFFFFFF);
+    gfx_text(x+4,wy+179,falco_status,0x4B779E);
+    gfx_round_rect_a(x,wy+204,w,wh-264,19,PAL_PANEL,240);
+    gfx_round_outline(x,wy+204,w,wh-264,19,PAL_HAIRLINE);
+    if(!falco_has_results){
+        gfx_text_lg(x+26,wy+232,"Discover something new",PAL_TEXT);
+        gfx_text(x+26,wy+283,"Type a topic and press Enter.",PAL_TEXT_DIM);
+        gfx_text(x+26,wy+312,
+            "HTTPS is verified on the Arch host (not inside FalconOS).",PAL_TEXT_DIM);
+        gfx_text(x+26,wy+341,
+            "Run the companion gateway first; nothing is simulated.",PAL_TEXT_FAINT);
+    }else{
+        char line[116];i32 col=0,row=0,logical=0;
+        i32 rows=(wh-302)/21;if(rows>19)rows=19;
+        i32 max_chars=(w-44)/8;
+        if(max_chars>106)max_chars=106;
+        for(i32 i=0;falco_results[i]&&row<rows;i++){
+            char c=falco_results[i];
+            if(c=='\n'||col>=max_chars){
+                line[col]=0;
+                if(logical>=falco_sel)
+                    gfx_text(x+22,wy+225+(row++)*21,line,PAL_TEXT);
+                logical++;col=0;
+                if(c=='\n')continue;
+            }
+            if(col<115)line[col++]=c;
+        }
+        if(col && row<rows && logical>=falco_sel){
+            line[col]=0;
+            gfx_text(x+22,wy+225+row*21,line,PAL_TEXT);
         }
     }
-
-    /* search box */
-    i32 sx = wx + 24, sy = wy + 70, sw = ww - 48;
-    gfx_round_rect_a(sx, sy, sw, 34, 17, PAL_PANEL_DEEP, 255);
-    gfx_round_outline(sx, sy, sw, 34, 17, PAL_ACCENT);
-    gfx_circle(sx + 16, sy + 17, 6, PAL_ACCENT);
-    if (falco_query_len == 0) {
-        gfx_text(sx + 30, sy + 10,
-                 T("Search local index… (no live internet in this build)",
-                   "Yerel indekste ara… (bu sürümde canlı internet yok)"),
-                 PAL_TEXT_FAINT);
-    } else {
-        gfx_text(sx + 30, sy + 10, falco_query, PAL_TEXT);
-    }
-    if ((g_ticks / 50) & 1) {
-        i32 cx = sx + 30 + gfx_text_width(falco_query);
-        gfx_rect(cx, sy + 8, 2, 18, PAL_ACCENT);
-    }
-
-    i32 hits[12];
-    i32 hn = falco_collect_hits(hits, 12);
-    if (hn <= 0) falco_sel = 0;
-    else if (falco_sel >= hn) falco_sel = hn - 1;
-
-    i32 ry = sy + 42;
-    if (hn == 0) {
-        gfx_round_rect_a(sx, ry, sw, 32, 8, PAL_PANEL_DEEP, 255);
-        gfx_round_outline(sx, ry, sw, 32, 8, PAL_HAIRLINE);
-        gfx_text(sx + 12, ry + 9,
-                 T("No local hit. Real web search needs virtio-net/TCP (not bundled).",
-                   "Yerel sonuç yok. Gerçek web araması virtio-net/TCP gerektirir (bu sürümde yok)."),
-                 PAL_TEXT_DIM);
-    } else {
-        i32 rows = (wh - 140) / 44;
-        if (rows < 1) rows = 1;
-        if (rows > hn) rows = hn;
-        for (i32 i = 0; i < rows; i++) {
-            i32 idx = hits[i];
-            bool sel = (i == falco_sel);
-            i32 y = ry + i * 44;
-            gfx_round_rect_a(sx, y, sw, 38, 8, sel ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
-            gfx_round_outline(sx, y, sw, 38, 8, sel ? PAL_ACCENT : PAL_HAIRLINE);
-            gfx_text(sx + 10, y + 7,  FALCO_INDEX[idx].title, PAL_TEXT);
-            gfx_text(sx + 10, y + 22, FALCO_INDEX[idx].url,   PAL_TEXT_DIM);
-        }
-        if (falco_sel >= 0 && falco_sel < hn) {
-            const falco_doc_t *d = &FALCO_INDEX[hits[falco_sel]];
-            gfx_text(wx + 24, wy + wh - 24, d->desc, PAL_TEXT_FAINT);
-        }
-    }
+    gfx_text(x+5,wy+wh-36,"Enter search | Up/Down scroll | Host HTTPS only",PAL_TEXT_FAINT);
 }
 
 /* --- Falcon Browser: actual guest TCP + authenticated HTTPS only ---------
