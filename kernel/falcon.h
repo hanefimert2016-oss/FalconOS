@@ -134,6 +134,9 @@ u32 PAL(u8 role);
 /* ---- gfx primitives ------------------------------------------------------- */
 void gfx_init(void *p, u32 w, u32 h, u32 pitch, u8 bpp);
 void gfx_present(void);
+#ifdef FALCON_BOOT_GLB
+void boot_glb_splash(void);
+#endif
 void gfx_clear(u32 c);
 void gfx_gradient_v(u32 top, u32 bot);
 void gfx_wallpaper(void);
