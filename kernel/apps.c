@@ -2492,6 +2492,8 @@ typedef enum {
 } set_row_t;
 
 static i32 set_row = 0;
+static i32 settings_scroll=0;
+static i32 settings_view_min=0,settings_view_max=0;
 static const char *VIEWPORT_NAMES[] = {
     "native", "1280x800", "1920x1080", "2560x1440", "1024x768",
 };
@@ -2547,6 +2549,7 @@ static void set_input_key(i32 key)
 
     if (key == KEY_UP   && set_row > 0)             set_row--;
     if (key == KEY_DOWN && set_row < SR_COUNT - 1)  set_row++;
+    if(set_row<settings_scroll)settings_scroll=set_row;
 
     if (key == KEY_LEFT || key == KEY_RIGHT || key == KEY_ENTER || key == ' ') {
         i32 d = (key == KEY_LEFT) ? -1 : 1;
@@ -2601,9 +2604,9 @@ static void set_input_key(i32 key)
               SET.viewport_h = VIEWPORT_H[v]; }
             break;
         case SR_PASSWORD:
-            set_pwd_editing = true;
-            set_pwd_len = 0;
-            set_pwd[0] = 0;
+            /* Never write plaintext passwords into persistent settings.
+             * User credentials are PBKDF2-hashed during first-run setup.
+             * Password changes require a future authenticated account UI. */
             break;
         case SR_USERS:
             /* cycle which user is "default" (auto-focused on next boot)   */
@@ -2629,22 +2632,38 @@ static void set_input_key(i32 key)
 static void s_row(i32 x, i32 y, i32 w, const char *label, const char *val,
                   bool active, u32 valcolor)
 {
-    gfx_round_rect_a(x, y, w, SR_BOX_H, 9,
-                     active ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
-    gfx_round_outline(x, y, w, SR_BOX_H, 9, active ? PAL_ACCENT : PAL_HAIRLINE);
+    y-=settings_scroll*36;
+    if(y<settings_view_min||y+SR_BOX_H>settings_view_max)return;
+    gfx_round_rect_a(x, y, w, SR_BOX_H, 11,
+                     active ? 0xDBE9FFu : PAL_PANEL_DEEP, 255);
+    gfx_round_outline(x, y, w, SR_BOX_H, 11,
+                      active ? 0x337DF6u : PAL_HAIRLINE);
     gfx_text(x + 14, y + 9, label, PAL_TEXT);
     gfx_text(x + w - gfx_text_width(val) - 14, y + 9, val, valcolor);
 }
 
 static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
-    (void)frame; (void)wh;
-    section(wx, wy, T("Settings", "Ayarlar"),
-                    T("up/down  pick row    left/right  change",
-                      "yukarı/aşağı  satır   sol/sağ  değiştir"));
-
-    i32 sx = wx + 24, sy = wy + 56, sw = ww - 48;
-    i32 step = 36;     /* row vertical pitch                            */
+    (void)frame;
+    i32 sx=wx+22,sw=ww-44;
+    gfx_round_rect_a(sx,wy+7,sw,100,19,0xE2EEFFu,255);
+    gfx_round_rect(sx+18,wy+24,49,49,16,0x3476E9u);
+    gfx_circle_outline(sx+43,wy+48,14,0xFFFFFFu);
+    gfx_circle(sx+43,wy+48,5,0xFFFFFFu);
+    gfx_text_lg(sx+85,wy+22,T("Settings","Ayarlar"),0x173C72u);
+    gfx_text(sx+85,wy+60,
+        "Personalization  |  Accounts  |  Device  |  Security",0x6284A9u);
+    i32 sy=wy+124;
+    i32 step=36;
+    settings_view_min=sy-1;
+    settings_view_max=wy+wh-42;
+    i32 visible=(settings_view_max-settings_view_min)/step;
+    if(visible<2)visible=2;
+    if(set_row>=settings_scroll+visible)
+        settings_scroll=set_row-visible+1;
+    if(set_row<settings_scroll)settings_scroll=set_row;
+    gfx_text(wx+ww-192,wy+112,
+      "Up/Down   Left/Right",PAL_TEXT_DIM);     /* row vertical pitch                            */
     char val[40];
 
     /* Theme ------------------------------------------------------------ */
@@ -2730,7 +2749,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
             masked[set_pwd_len] = 0;
             p = masked;
         } else {
-            p = (k_strlen(SET.password) ? T("set", "var") : T("none", "yok"));
+            p = "Protected by account login";
         }
         s_row(sx, sy + SR_PASSWORD * step, sw,
               T("Password", "Parola"), p,
