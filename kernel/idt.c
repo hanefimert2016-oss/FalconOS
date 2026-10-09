@@ -104,6 +104,10 @@ void isr_handler(regs_t *r)
     isr_debug_hex(r->err,16u);
     outb(0xE9,':');
     isr_debug_hex(r->rip,16u);
+    outb(0xE9,':');
+    u64 cr2;
+    __asm__ volatile("mov %%cr2,%0":"=r"(cr2));
+    isr_debug_hex(cr2,16u);
     outb(0xE9,';');
 #endif
     extern volatile bool g_panic;
