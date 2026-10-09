@@ -1049,7 +1049,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
             "touch cp mv mkdir rmdir basename dirname more less xxd file "
             "echo printf yes seq expr test [ env set unset alias export "
-            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm "
+            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm dns ping "
             "groups who w users hostname uptime cal date reboot shutdown "
             "which type prg pkg open chrome falco heroic video search "
             "update man | > >>");
@@ -1277,6 +1277,33 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         }
         k_strcpy(out, "prg: unknown subcommand");
         return 1;
+    }
+
+    /* Native QEMU network tools: responses originate from NIC RX packets. */
+    if (k_strcmp(cmd,"dns")==0 || k_strcmp(cmd,"ping")==0) {
+        if(argc<2) {
+            k_strcpy(out,"usage: dns <hostname> | ping <IPv4-or-hostname>");
+            return 1;
+        }
+        u8 address[4];
+        if(!native_net_parse_ipv4(argv[1],address) &&
+           !native_net_dns_query(argv[1],address)) {
+            k_strcpy(out,"network: DNS resolution failed or timed out");
+            return 1;
+        }
+        if(k_strcmp(cmd,"ping")==0) {
+            bool success=native_net_ping(address);
+            k_strcpy(out,success?"ping: ICMP reply received":"ping: timeout/no ICMP reply");
+            return success?0:1;
+        }
+        out[0]=0;
+        char number[16];
+        for(i32 i=0;i<4;i++){
+            k_itoa(address[i],number,10);
+            k_strcat(out,number);
+            if(i<3)k_strcat(out,".");
+        }
+        return 0;
     }
     if (k_strcmp(cmd,"vm")==0) {
         if (argc<2 || k_strcmp(argv[1],"list")==0) {
