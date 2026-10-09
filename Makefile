@@ -76,10 +76,12 @@ VRAM          ?= 256
 DISK_CAPACITY ?= 4G
 
 QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
+                 -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display sdl -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
 HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
+                 -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display none -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
