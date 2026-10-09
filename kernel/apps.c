@@ -1049,7 +1049,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
             "touch cp mv mkdir rmdir basename dirname more less xxd file "
             "echo printf yes seq expr test [ env set unset alias export "
-            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm dns ping http https xfile hwcheck "
+            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm dns ping http https xfile hwcheck jfs "
             "groups who w users hostname uptime cal date reboot shutdown "
             "which type prg pkg open chrome falco heroic video search "
             "update man | > >>");
@@ -1322,6 +1322,59 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 0;
     }
 
+
+    if(k_strcmp(cmd,"jfs")==0){
+        if(!jfs_ready()){
+            k_strcpy(out,"jfs: journal unavailable or write-protected (use QEMU 0xFA test disk)");
+            return 1;
+        }
+        if(argc<2 || k_strcmp(argv[1],"stat")==0){
+            char n[16];k_strcpy(out,"JFS2 journal | files=");
+            k_itoa(jfs_file_count(),n,10);k_strcat(out,n);
+            k_strcat(out,"/128 | remaining sectors=");
+            k_itoa(jfs_free_sectors(),n,10);k_strcat(out,n);
+            return 0;
+        }
+        if(k_strcmp(argv[1],"fsck")==0){
+            u32 files=0,invalid=0;
+            if(!jfs_fsck(&files,&invalid)){
+                k_strcpy(out,"jfs: read-only recovery scan failed");return 1;
+            }
+            char n[16];k_strcpy(out,"JFS2 recovered ");
+            k_itoa(files,n,10);k_strcat(out,n);
+            k_strcat(out," files; incomplete transactions=");
+            k_itoa(invalid,n,10);k_strcat(out,n);
+            return invalid?1:0;
+        }
+        if(argc<3){
+            k_strcpy(out,"jfs: stat | fsck | write <absolute-path> <text> | cat <absolute-path> | rm <absolute-path>");
+            return 1;
+        }
+        if(k_strcmp(argv[1],"write")==0 && argc>=4){
+            u32 len=(u32)k_strlen(argv[3]);
+            bool ok=jfs_write(argv[2],(const u8*)argv[3],len);
+            k_strcpy(out,ok?"jfs: committed to transactional journal":"jfs: rejected path, full journal or write failed");
+            return ok?0:1;
+        }
+        if(k_strcmp(argv[1],"rm")==0){
+            bool ok=jfs_remove(argv[2]);
+            k_strcpy(out,ok?"jfs: removed with committed tombstone":"jfs: remove failed");
+            return ok?0:1;
+        }
+        if(k_strcmp(argv[1],"cat")==0){
+            static u8 bytes[131072u];
+            i32 len=jfs_read(argv[2],bytes,sizeof bytes);
+            if(len<0){k_strcpy(out,"jfs: file absent or corrupt");return 1;}
+            if(len>=cap){k_strcpy(out,"jfs: larger than terminal buffer; use a file reader");return 1;}
+            for(i32 j=0;j<len;j++)
+                if(bytes[j]<0x20u&&bytes[j]!='\n'&&bytes[j]!='\t'){
+                    k_strcpy(out,"jfs: binary file; cannot display as text");
+                    return 1;
+                }
+            k_memcpy(out,bytes,(u32)len);out[len]=0;return 0;
+        }
+        k_strcpy(out,"jfs: unknown command");return 1;
+    }
     if(k_strcmp(cmd,"xfile")==0) {
         if(!xfs_ready()){
             k_strcpy(out,"xfile: 32KiB volume unavailable (safe disk needed)");
