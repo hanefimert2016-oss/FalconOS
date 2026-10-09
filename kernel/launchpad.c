@@ -1,184 +1,174 @@
-/* =============================================================================
- *  FalconOS — Launchpad (full-screen app grid, F2)
- * -----------------------------------------------------------------------------
- *  macOS-style Launchpad: dim the desktop with a translucent layer, pop a
- *  4 × 3 grid of every registered app (12 slots), animate scale-in over
- *  ~200 ms, dispatch keyboard / mouse to launch.
+/* FalconOS Shelf Launcher — Chromebook-inspired app workspace.
  *
- *  Hot keys (only when launchpad is open):
- *      arrows   move grid cursor
- *      Enter    launch selected app  (closes launchpad)
- *      Esc, F2  close launchpad
- *      mouse    hover lifts tile, click launches
- * ============================================================================= */
+ * Home: 9 functional favorites. System: settings and real diagnostics.
+ * All: functional built-ins and installed package IDs; demo apps hidden.
+ * Typed search filters names. Arrow/Enter/mouse open real app IDs.
+ *
+ * No per-frame heap allocation, GPU or browser dependency.
+ */
 #include "falcon.h"
+#define DRAW_COLS 4
+#define DRAW_ROWS 3
+#define DRAW_PAGE (DRAW_COLS*DRAW_ROWS)
+#define MAX_VISIBLE 80
+static bool is_open;
+static i32 section_id,selected,page;
+static char search_term[40];
+static i32 search_length;
+static u32 opened_at;
 
-#define LP_COLS 5
-#define LP_ROWS 5
-#define LP_MAX  (LP_COLS * LP_ROWS)
-
-static bool g_open      = false;
-static u32  g_open_at   = 0;
-static i32  g_cursor    = 0;
-
-bool launchpad_is_open(void)  { return g_open; }
-
-void launchpad_open(void)
-{
-    g_open    = true;
-    g_open_at = pit_ms();
-    /* keep g_cursor where it was so user can resume */
+static bool hit(i32 mx,i32 my,i32 x,i32 y,i32 w,i32 h){
+    return mx>=x&&my>=y&&mx<x+w&&my<y+h;
 }
-
-void launchpad_close(void)
-{
-    g_open = false;
+static bool has_ci(const char *s,const char *term){
+    if(!term||!*term)return true;
+    for(u32 i=0;s&&s[i];i++){
+        u32 j=0;
+        while(term[j]&&s[i+j]){
+            char a=s[i+j],b=term[j];
+            if(a>='A'&&a<='Z')a+=32;
+            if(b>='A'&&b<='Z')b+=32;
+            if(a!=b)break;
+            j++;
+        }
+        if(!term[j])return true;
+    }
+    return false;
 }
-
-static void clamp_cursor(void)
-{
-    i32 n = apps_count();
-    if (g_cursor < 0)      g_cursor = 0;
-    if (g_cursor > n - 1)  g_cursor = n - 1;
+static i32 visible[MAX_VISIBLE],visible_count;
+static void refresh(void){
+    visible_count=0;
+    i32 n=apps_launcher_count(section_id);
+    for(i32 i=0;i<n&&visible_count<MAX_VISIBLE;i++){
+        i32 id=apps_launcher_id(section_id,i);
+        if(id>=0 && has_ci(apps_display_name(id),search_term))
+            visible[visible_count++]=id;
+    }
+    if(selected<0)selected=0;
+    if(selected>=visible_count)selected=visible_count?visible_count-1:0;
+    page=selected/DRAW_PAGE;
 }
-
-void launchpad_input(i32 key)
-{
-    if (key == KEY_ESC || key == KEY_F2) { launchpad_close(); return; }
-
-    if (key == KEY_LEFT)  g_cursor--;
-    if (key == KEY_RIGHT) g_cursor++;
-    if (key == KEY_UP)    g_cursor -= LP_COLS;
-    if (key == KEY_DOWN)  g_cursor += LP_COLS;
-    if (key == KEY_PGDN) g_cursor += LP_MAX;
-    if (key == KEY_PGUP) g_cursor -= LP_MAX;
-    clamp_cursor();
-
-    /* `p` / `P`  — toggle desktop pin for the highlighted app           */
-    if (key == 'p' || key == 'P') {
-        desktop_pin_toggle(g_cursor);
+bool launchpad_is_open(void){return is_open;}
+void launchpad_open(void){
+    is_open=true;opened_at=pit_ms();
+    refresh();
+}
+void launchpad_close(void){is_open=false;}
+i32 launchpad_cursor(void){return selected;}
+void launchpad_input(i32 key){
+    if(key==KEY_ESC||key==KEY_F2){launchpad_close();return;}
+    if(key==KEY_TAB){
+        section_id=(section_id+1)%3;
+        selected=0;refresh();return;
+    }
+    if(key==KEY_LEFT)selected--;
+    else if(key==KEY_RIGHT)selected++;
+    else if(key==KEY_UP)selected-=DRAW_COLS;
+    else if(key==KEY_DOWN)selected+=DRAW_COLS;
+    else if(key==KEY_PGUP)selected-=DRAW_PAGE;
+    else if(key==KEY_PGDN)selected+=DRAW_PAGE;
+    else if(key==KEY_BACKSPACE){
+        if(search_length>0)search_term[--search_length]=0;
+        selected=0;refresh();return;
+    }else if(key==KEY_ENTER){
+        if(visible_count){apps_open(visible[selected]);launchpad_close();}
+        return;
+    }else if(key=='p'&&visible_count){
+        desktop_pin_toggle(visible[selected]);return;
+    }else{
+        char bytes[4];i32 count=key_to_utf8(key,bytes);
+        if(count>0&&search_length+count<(i32)sizeof search_term){
+            for(i32 j=0;j<count;j++)search_term[search_length++]=bytes[j];
+            search_term[search_length]=0;
+            selected=0;refresh();
+        }
         return;
     }
-
-    if (key == KEY_ENTER || key == ' ') {
-        apps_open(g_cursor);
-        launchpad_close();
-    }
+    if(selected<0)selected=0;
+    if(selected>=visible_count)selected=visible_count?visible_count-1:0;
+    page=selected/DRAW_PAGE;
 }
-
-i32 launchpad_cursor(void) { return g_cursor; }
-
-void launchpad_render(u32 frame)
-{
-    /* dim the desktop */
-    gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 130);
-
-    /* Aero — blur the entire desktop behind the launchpad so the
-     * tiles float over a soft, readable wash of wallpaper. We do
-     * the blur in horizontal strips to stay within the BLUR scratch.
-     * Flat overlay fallback for users with Aero off.                  */
-    if (SET.aero_enabled) {
-        i32 W = (i32)FB.width;
-        i32 H = (i32)FB.height;
-        i32 strip = 320;
-        for (i32 y = 0; y < H; y += strip) {
-            i32 sh = (y + strip > H) ? H - y : strip;
-            gfx_blur_rect(0, y, W, sh, 8);
-        }
-        gfx_rect_a(0, 0, W, H, PAL_PANEL, 80);
-    } else {
-        /* very-soft frosted overlay (light/dark-aware tint to keep it readable) */
-        gfx_rect_a(0, 0, FB.width, FB.height, PAL_PANEL, 35);
-    }
-
-    /* scale-in animation: ~200 ms */
-    u32 dt = pit_ms() - g_open_at;
-    if (dt > 200) dt = 200;
-    /* scale 0.85 → 1.00 over the animation */
-    i32 scale = 85 + (i32)(dt * 15 / 200);          /* percent */
-
-    i32 n = apps_count();
-    clamp_cursor();
-    i32 page = g_cursor / LP_MAX;
-    i32 first = page * LP_MAX;
-    i32 end = first + LP_MAX;
-    if (end > n) end = n;
-
-    /* tile sizing (relative to FB so 1080p / 2K look good) */
-    i32 tile_base = (i32)FB.height / 7;             /* ~155 at 1080p */
-    if (tile_base < 110) tile_base = 110;
-    if (tile_base > 220) tile_base = 220;
-    i32 gap = tile_base / 4;
-    i32 grid_w = LP_COLS * tile_base + (LP_COLS - 1) * gap;
-    i32 grid_h = LP_ROWS * tile_base + (LP_ROWS - 1) * gap;
-    i32 grid_x = ((i32)FB.width  - grid_w) / 2;
-    i32 grid_y = ((i32)FB.height - grid_h) / 2;
-
-    /* title */
-    gfx_text_centered((i32)FB.width / 2, grid_y - 60, "Launchpad", PAL_TEXT);
-    char pages_label[64], a[12], b[12];
-    k_strcpy(pages_label, "Page ");
-    k_itoa((u32)(page + 1), a, 10);
-    k_strcat(pages_label, a);
-    k_strcat(pages_label, " / ");
-    k_itoa((u32)((n + LP_MAX - 1) / LP_MAX), b, 10);
-    k_strcat(pages_label, b);
-    gfx_text_centered((i32)FB.width / 2, grid_y - 83, pages_label, PAL_TEXT_DIM);
-    gfx_text_centered((i32)FB.width / 2, grid_y - 36,
-                      T("arrows + Enter to open, click to launch, P pins to desktop, Esc closes",
-                        "ok ile gez Enter ile aç, tıkla, P masaüstüne sabitler, Esc kapatır"),
-                      PAL_TEXT_DIM);
-
-    i32 mx, my; bool ml; mouse_get(&mx, &my, &ml); (void)ml;
-    bool clicked = mouse_consume_click();
-
-    for (i32 i = first; i < end; i++) {
-        i32 slot = i - first;
-        i32 r = slot / LP_COLS, c = slot % LP_COLS;
-        i32 cx = grid_x + c * (tile_base + gap) + tile_base / 2;
-        i32 cy = grid_y + r * (tile_base + gap) + tile_base / 2;
-
-        /* apply scale */
-        i32 tile = tile_base * scale / 100;
-        i32 rad  = tile * 38 / 100;            /* tile rounded-rect feel  */
-
-        bool hov_m = (mx >= cx - tile / 2 && mx <= cx + tile / 2 &&
-                      my >= cy - tile / 2 && my <= cy + tile / 2);
-        bool hov_k = (i == g_cursor);
-        bool hov   = hov_m || hov_k;
-
-        /* shadow */
-        gfx_round_rect_a(cx - tile / 2 + 4, cy - tile / 2 + 10,
-                         tile, tile, rad, COL_SHADOW, 60);
-        /* tile background */
-        u32 t = apps_tint(i);
-        gfx_round_rect_a(cx - tile / 2, cy - tile / 2,
-                         tile, tile, rad, t, 255);
-        /* gloss highlight on top half */
-        gfx_round_rect_a(cx - tile / 2 + 6, cy - tile / 2 + 6,
-                         tile - 12, tile / 3, rad - 6, 0xFFFFFF, 60);
-        /* glyph drawn at ~1.4× icon scale */
-        apps_draw_icon(i, cx, cy - 4);
-        /* selection ring */
-        if (hov) {
-            gfx_round_outline(cx - tile / 2 - 4, cy - tile / 2 - 4,
-                              tile + 8, tile + 8, rad + 4, PAL_ACCENT);
-        }
-        /* pinned indicator */
-        if (desktop_pin_is_pinned(i)) {
-            gfx_circle(cx + tile / 2 - 12, cy - tile / 2 + 12, 6, COL_OK);
-            gfx_circle_outline(cx + tile / 2 - 12, cy - tile / 2 + 12, 6, 0xFFFFFF);
-        }
-        /* label below tile */
-        i32 ly = cy + tile / 2 + 16;
-        gfx_text_centered(cx, ly,     apps_display_name(i),     PAL_TEXT);
-        gfx_text_centered(cx, ly + 18, apps_display_subtitle(i), PAL_TEXT_DIM);
-
-        if (hov_m && clicked) {
-            apps_open(i);
-            launchpad_close();
-        }
-    }
-
+void launchpad_render(u32 frame){
     (void)frame;
+    if(!is_open)return;
+    i32 W=(i32)FB.width,H=(i32)FB.height;
+    gfx_rect_a(0,30,W,H-30,0x101C37,130);
+    i32 panel_w= W-72;
+    if(panel_w>930)panel_w=930;
+    i32 panel_h=H-180;
+    if(panel_h>710)panel_h=710;
+    if(panel_h<420)panel_h=420;
+    i32 x=(W-panel_w)/2,y=(H-panel_h)/2-10;
+    if(y<40)y=40;
+    gfx_round_rect_a(x+7,y+14,panel_w,panel_h,28,0x020818,84);
+    gfx_round_rect(x,y,panel_w,panel_h,28,0xF8FAFF);
+    gfx_round_outline(x,y,panel_w,panel_h,28,0xD4E1F2);
+    gfx_round_rect(x+24,y+20,48,48,17,0x2662DF);
+    gfx_text_lg_centered(x+48,y+25,"F",0xFFFFFF);
+    gfx_text_lg(x+88,y+24,"Apps",0x192945);
+    gfx_text(x+89,y+57,"Your FalconOS workspace",0x65758D);
+    i32 search_y=y+90;
+    gfx_round_rect(x+26,search_y,panel_w-52,48,19,0xECF3FF);
+    gfx_round_outline(x+26,search_y,panel_w-52,48,19,0xC9DAF5);
+    gfx_circle_outline(x+50,search_y+22,8,0x4977BC);
+    gfx_line(x+56,search_y+28,x+62,search_y+34,0x4977BC);
+    gfx_text(x+77,search_y+17,search_length?search_term:
+        "Search installed apps...",search_length?0x132E54:0x8495AA);
+    if(((pit_ms()-opened_at)/450u)&1u)
+        gfx_rect(x+80+gfx_text_width(search_term),search_y+13,2,21,0x396CD8);
+    const char *tabs[]={"Essentials","System","All apps"};
+    i32 tabs_y=search_y+66;
+    for(i32 i=0;i<3;i++){
+        i32 tx=x+27+i*148;
+        gfx_round_rect(tx,tabs_y,138,36,15,i==section_id?0x286BE5:0xE9EEF8);
+        gfx_text_centered(tx+69,tabs_y+11,tabs[i],i==section_id?0xFFFFFF:0x61748F);
+    }
+    i32 start=page*DRAW_PAGE,end=start+DRAW_PAGE;
+    if(end>visible_count)end=visible_count;
+    i32 grid_top=tabs_y+62;
+    i32 tile_w=(panel_w-64-3*14)/4;
+    i32 tile_h=(panel_h-(grid_top-y)-80)/3;
+    if(tile_h>136)tile_h=136;
+    if(tile_h<78)tile_h=78;
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    bool click=mouse_peek_click();
+    if(click&&hit(mx,my,x+20,tabs_y,3*148,38)){
+        i32 tab=(mx-x-27)/148;
+        if(tab>=0&&tab<3){
+            section_id=tab;selected=0;refresh();
+            (void)mouse_consume_click();
+            click=false;
+        }
+    }
+    for(i32 k=start;k<end;k++){
+        i32 slot=k-start,col=slot%4,row=slot/4;
+        i32 tx=x+32+col*(tile_w+14),ty=grid_top+row*(tile_h+10);
+        bool hover=hit(mx,my,tx,ty,tile_w,tile_h);
+        bool focus=k==selected;
+        gfx_round_rect(tx,ty,tile_w,tile_h,18,
+            focus||hover?0xE4EDFF:0xF0F4FB);
+        if(focus||hover)gfx_round_outline(tx,ty,tile_w,tile_h,18,0x94B9FB);
+        i32 id=visible[k];
+        u32 tint=apps_tint(id);
+        i32 cx=tx+tile_w/2;
+        gfx_round_rect(cx-26,ty+9,52,52,17,tint);
+        apps_draw_icon(id,cx,ty+35);
+        const char *name=apps_display_name(id);
+        gfx_text_centered(cx,ty+73,name,0x1B3151);
+        if(desktop_pin_is_pinned(id))
+            gfx_circle(cx+29,ty+15,4,0x24B785);
+        if(hover&&click){
+            (void)mouse_consume_click();
+            apps_open(id);launchpad_close();
+            return;
+        }
+    }
+    if(!visible_count)gfx_text_centered(x+panel_w/2,grid_top+80,
+        "No app found. Try another search.",0x5E7394);
+    gfx_rect(x+27,y+panel_h-51,panel_w-54,1,0xDFE7F4);
+    char count[12];k_itoa((u32)visible_count,count,10);
+    gfx_text(x+31,y+panel_h-33,count,0x285EBD);
+    gfx_text(x+56,y+panel_h-33,
+        "apps    Tab categories   Arrows navigate   Enter open   Esc close",
+        0x697C99);
 }
