@@ -460,7 +460,13 @@ static void modal_loop(pred_fn done, render_fn ren, key_fn ki)
  * already in RDI / RSI per System-V.  We promote to u64 for clarity.        */
 void long_start(u64 magic, u64 info_ptr)
 {
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,'0'); /* physical kernel entry */
+#endif
     parse_multiboot(magic, info_ptr);
+#ifdef FALCON_QEMU_TLS_TEST
+    outb(0xE9,'1'); /* framebuffer parsed */
+#endif
 
     if (!FB.pixels) for (;;) __asm__ volatile ("hlt");
 
@@ -501,6 +507,7 @@ void long_start(u64 magic, u64 info_ptr)
 #ifdef FALCON_QEMU_TLS_TEST
     {
         extern bool native_https_ci_smoke(void);
+        outb(0xE9,'J'); /* before TLS */
         outb(0xE9,native_https_ci_smoke()?'Z':'z');
     }
 #endif
