@@ -22,8 +22,11 @@ static bool shfs_starts_with(const char *s, const char *pref)
     return true;
 }
 
+static bool g_shfs_initialized = false;
 void shfs_init(void)
 {
+    if (g_shfs_initialized) return;
+    g_shfs_initialized = true;
     for (i32 i = 0; i < SHFS_MAX_ENTRIES; i++) {
         G[i].used   = false;
         G[i].is_dir = false;

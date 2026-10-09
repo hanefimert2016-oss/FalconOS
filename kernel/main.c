@@ -474,6 +474,7 @@ void long_start(u64 magic, u64 info_ptr)
      * see attached disks and try to restore SET from LBA0 superblock.     */
     linux_compat_init();
     settings_init();
+    market_init();
     apps_pkg_sync_receipts_from_state();   /* mirror prg install flags → shfs     */
 
     pic_unmask(0);   /* PIT      */
@@ -509,6 +510,7 @@ void long_start(u64 magic, u64 info_ptr)
     /* main loop: paced to PIT — wait for at least 1 tick before next frame */
     u32 last = g_ticks;
     for (;;) {
+        market_poll(); /* bounded COM1 input: no blocking network I/O */
         if (g_panic) { render_panic_overlay(); gfx_present();
                        for (;;) __asm__ volatile ("hlt"); }
 

@@ -59,13 +59,13 @@ static void uart_write(const char *s) {
 }
 static void ack(void) { uart_write("ACK\n"); }
 static bool app_meta(const char *p, const char *id) {
-    if (k_strncmp(p, "FAPP/1\nid=", 14) != 0) return false;
-    const char *beg = p + 14;
+    if (k_strncmp(p, "FAPP/1\nid=", 10) != 0) return false;
+    const char *beg = p + 10;
     i32 len = k_strlen(id);
     if (k_strncmp(beg, id, len) != 0 || beg[len] != '\n') return false;
     return true;
 }
-static bool command_allowed(const char *line, i32 size) {
+bool market_line_allowed(const char *line, i32 size) {
     static const char *allowed[] = {
         "echo", "date", "uname", "uptime", "whoami", "pwd", "ls",
         "help", "cal", "hwinfo", "free", "df", "clear", NULL
@@ -106,7 +106,7 @@ static bool check_package(void) {
         if (*p != '\n') continue;
         i32 n = (i32)(p - line);
         if (n > 0 && line[0] != '#') {
-            if (!command_allowed(line, n)) return false;
+            if (!market_line_allowed(line, n)) return false;
             has_cmd = true;
         }
         line = p + 1;
@@ -202,16 +202,13 @@ void market_init(void) {
     outb(PORT + 2, 0xC7);
     outb(PORT + 4, 3);
 }
+void market_consume_byte(char c);
 void market_poll(void) {
     i32 budget = 256;
     while (budget-- > 0 && (inb(PORT + 5) & 1)) {
         char c = (char)inb(PORT);
         if (c == '\r') continue;
-        if (c == '\n') {
-            rx_line[rx_used < 0 ? 0 : 0] = rx_line[0]; /* no-op; protocol state independent */
-        }
         /* Input line cursor is independent from package byte cursor. */
-        extern void market_consume_byte(char c);
         market_consume_byte(c);
     }
 }

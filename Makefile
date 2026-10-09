@@ -75,11 +75,11 @@ CPUS          ?= 6
 VRAM          ?= 256
 DISK_CAPACITY ?= 4G
 
-QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -serial stdio \
+QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
                  -display sdl -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
-HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -serial stdio \
+HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
                  -display none -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
@@ -121,6 +121,12 @@ $(ISO): $(KERNEL) boot/grub.cfg
 	@echo "[OK] ISO   $@  (ARCH=$(ARCH), single ISO supports HD/FHD/2K via GRUB menu)"
 
 # ---- run ----------------------------------------------------------------------
+# Run FalconOS first, then start this in a second terminal to enable
+# GitHub Releases downloads through the opt-in COM1 bridge.
+.PHONY: market-bridge
+market-bridge:
+	python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock
+
 run: run-disk
 
 run-cdrom: $(ISO)

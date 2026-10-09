@@ -337,6 +337,19 @@ void mode_personal_input(i32 key);
 void mode_developer_render(u32 frame);
 void mode_developer_input(i32 key);
 
+/* GitHub Releases FAPP/1 Marketplace over host-assisted COM1 (QEMU). */
+void market_init(void);
+void market_poll(void);
+void market_refresh(void);
+i32 market_count(void);
+const char *market_name(i32 i);
+const char *market_version(i32 i);
+const char *market_status(void);
+bool market_installed(i32 i);
+const char *market_script(i32 i);
+void market_download(i32 i);
+bool market_line_allowed(const char *line, i32 size);
+
 /* ---- application framework (Personal kernel) ------------------------------ */
 i32          apps_count(void);
 const char  *apps_name(i32 i);

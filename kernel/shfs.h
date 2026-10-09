@@ -4,8 +4,8 @@
 
 #include "falcon.h"
 
-#define SHFS_MAX_ENTRIES 48
-#define SHFS_FBYTES      512
+#define SHFS_MAX_ENTRIES 64
+#define SHFS_FBYTES      4096
 #define SHFS_PATH       56
 
 typedef struct {
