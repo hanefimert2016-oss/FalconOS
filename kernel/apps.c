@@ -26,6 +26,9 @@ static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
 static i32 minimized_app = -1; /* last app sent to dock by yellow light */
 static void falco_set_query(const char *q);
+static void falco_open_site(const char *address);
+static void chrome_input_key(i32 key);
+static void render_browser(i32 x,i32 y,i32 w,i32 h,u32 frame);
 static void market_launch(i32 i);
 static i32 builtin_app_count(void);
 
@@ -352,48 +355,132 @@ static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     }
 }
 
-/* --- Files --------------------------------------------------------------- */
-/* Files: actual RAM-backed SHFS listing, not a mocked source tree. */
-static i32 files_scroll = 0;
-static void files_input_key(i32 key)
-{
-    if (key == KEY_UP && files_scroll > 0) files_scroll--;
-    if (key == KEY_DOWN && files_scroll < SHFS_MAX_ENTRIES-1) files_scroll++;
+/* --- Files: live SHFS browser with real folders and a searchable list. ---
+ * This UI never fabricates files; only SHFS enumerated entries are displayed.
+ * F4 search, Left/Right locations, Up/Down scroll. The same exact file state
+ * is shared with Notes, CodeDium and downloaded FAPP/1 packages. */
+static i32 files_scroll, files_scope;
+static bool files_search_mode;
+static char files_filter[40];
+static i32 files_filter_len;
+static const char *FILES_ROOTS[4] = {
+    "", "/home/falcon", "/home/falcon/Desktop", "/home/falcon/apps"
+};
+static const char *FILES_LABELS[4] = { "All files", "Home", "Desktop", "Apps" };
+static bool files_matches(const char *path) {
+    const char *root=FILES_ROOTS[files_scope];
+    i32 root_len=k_strlen(root);
+    if(root_len && k_strncmp(path,root,root_len)!=0)return false;
+    if(!files_filter_len)return true;
+    for(i32 i=0;path[i];i++) {
+        i32 j=0;
+        while(files_filter[j]&&path[i+j]) {
+            char a=path[i+j],b=files_filter[j];
+            if(a>='A'&&a<='Z')a+=32;
+            if(b>='A'&&b<='Z')b+=32;
+            if(a!=b)break;
+            j++;
+        }
+        if(!files_filter[j])return true;
+    }
+    return false;
 }
-typedef struct { i32 x, y, w, limit, row, seen; } file_draw_ctx_t;
-static void files_row(const char *path, bool is_dir, u32 len, void *ud)
-{
-    file_draw_ctx_t *c = (file_draw_ctx_t *)ud;
-    if (c->seen++ < files_scroll || c->row >= c->limit) return;
-    i32 y = c->y + c->row * 28;
-    gfx_round_rect_a(c->x, y, c->w, 25, 6,
-                     (c->row & 1) ? PAL_PANEL : PAL_PANEL_DEEP, 255);
-    gfx_text(c->x + 12, y + 5, is_dir ? "[D]" : "[F]", is_dir ? COL_OK : PAL_ACCENT);
-    gfx_text(c->x + 47, y + 5, path, PAL_TEXT);
-    if (!is_dir) {
-        char num[12];
-        k_itoa(len, num, 10);
-        gfx_text(c->x + c->w - 80, y + 5, num, PAL_TEXT_DIM);
+static void files_input_key(i32 key) {
+    if(key==KEY_F4){files_search_mode=!files_search_mode;return;}
+    if(files_search_mode){
+        if(key==KEY_BACKSPACE){
+            if(files_filter_len>0)files_filter[--files_filter_len]=0;
+            files_scroll=0;
+        }else{
+            char bytes[4];i32 n=key_to_utf8(key,bytes);
+            if(n>0&&files_filter_len+n<(i32)sizeof files_filter){
+                for(i32 i=0;i<n;i++)files_filter[files_filter_len++]=bytes[i];
+                files_filter[files_filter_len]=0;files_scroll=0;
+            }
+        }
+        return;
+    }
+    if(key==KEY_LEFT){files_scope=(files_scope+3)%4;files_scroll=0;}
+    if(key==KEY_RIGHT){files_scope=(files_scope+1)%4;files_scroll=0;}
+    if(key==KEY_UP&&files_scroll>0)files_scroll--;
+    if(key==KEY_DOWN&&files_scroll<SHFS_MAX_ENTRIES-1)files_scroll++;
+}
+typedef struct {i32 x,y,w,limit,row,seen,files,dirs;} file_draw_ctx_t;
+static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
+    file_draw_ctx_t *c=(file_draw_ctx_t *)ud;
+    if(!files_matches(path))return;
+    if(is_dir)c->dirs++;else c->files++;
+    if(c->seen++<files_scroll||c->row>=c->limit)return;
+    i32 y=c->y+c->row*37;
+    gfx_round_rect_a(c->x,y,c->w,34,10,
+        (c->row&1)?PAL_PANEL:PAL_PANEL_DEEP,255);
+    gfx_round_rect(c->x+9,y+7,24,20,6,
+        is_dir?0xF3BC5Du:0x548FEBu);
+    gfx_text_centered(c->x+21,y+10,is_dir?"D":"F",0xFFFFFFu);
+    const char *name=path;
+    for(i32 i=0;path[i];i++)if(path[i]=='/'&&path[i+1])name=path+i+1;
+    char clipped[53];i32 max=(c->w-135)/8;
+    if(max<10)max=10;if(max>52)max=52;
+    i32 k=0;while(name[k]&&k<max){clipped[k]=name[k];k++;}
+    clipped[k]=0;
+    gfx_text(c->x+42,y+10,clipped,PAL_TEXT);
+    if(!is_dir){
+        char digits[16];k_itoa(len,digits,10);
+        gfx_text(c->x+c->w-83,y+10,digits,PAL_TEXT_DIM);
+        gfx_text(c->x+c->w-44,y+10,"B",PAL_TEXT_FAINT);
     }
     c->row++;
 }
-static void render_files(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
-    (void)frame;
-    shfs_init();
-    section(wx, wy, T("Files", "Dosyalar"),
-            T("Live guest RAM filesystem - arrows scroll", "Gercek RAM dosya sistemi - oklarla kaydir"));
-    file_draw_ctx_t ctx = {
-        wx + 22, wy + 58, ww - 44, (wh - 110) / 28, 0, 0
-    };
-    if (ctx.limit < 1) ctx.limit = 1;
-    shfs_foreach_path(files_row, &ctx);
-    if (ctx.seen == 0) gfx_text(wx + 36, wy + 74, "No files", PAL_TEXT_DIM);
-    gfx_text(wx + 24, wy + wh - 24,
-             "Desktop/project.fsh and downloaded apps appear here.", PAL_TEXT_FAINT);
+static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    (void)frame;shfs_init();
+    i32 margin=18,sidebar=122,top=91,bottom=45;
+    i32 sx=wx+margin,main_x=sx+sidebar+14;
+    i32 main_w=ww-2*margin-sidebar-14;
+    gfx_round_rect_a(sx,wy+10,ww-2*margin,65,16,PAL_PANEL_DEEP,255);
+    gfx_round_rect(sx+14,wy+23,36,36,11,0xF3BC5Du);
+    gfx_text_centered(sx+32,wy+33,"F",0xFFFFFFu);
+    gfx_text_lg(sx+62,wy+16,T("Files","Dosyalar"),PAL_TEXT);
+    gfx_text(sx+62,wy+51,
+        T("Your actual FalconOS files","FalconOS dosyalarin"),PAL_TEXT_DIM);
+    gfx_round_rect_a(sx,wy+top,sidebar,wh-top-bottom,13,PAL_PANEL_DEEP,255);
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    bool clicked=wm_click_enabled();
+    for(i32 i=0;i<4;i++){
+        i32 sy=wy+top+13+i*43;
+        bool chosen=i==files_scope;
+        gfx_round_rect(sx+7,sy,sidebar-14,36,11,
+            chosen?PAL_ACCENT_DIM:PAL_PANEL);
+        gfx_text(sx+19,sy+11,FILES_LABELS[i],chosen?PAL_ACCENT:PAL_TEXT_DIM);
+        if(clicked&&mx>=sx+7&&mx<sx+sidebar-7&&my>=sy&&my<sy+36){
+            files_scope=i;files_scroll=0;
+            (void)mouse_consume_click();clicked=false;
+        }
+    }
+    gfx_text(sx+13,wy+wh-76,"SHFS / RAM",PAL_TEXT_DIM);
+    gfx_text(sx+13,wy+wh-56,"Real storage",PAL_TEXT_FAINT);
+    gfx_round_rect_a(main_x,wy+top,main_w,38,11,PAL_PANEL_DEEP,255);
+    gfx_circle_outline(main_x+19,wy+top+18,7,PAL_ACCENT);
+    gfx_line(main_x+24,wy+top+23,main_x+30,wy+top+29,PAL_ACCENT);
+    gfx_text(main_x+38,wy+top+12,
+        files_filter_len?files_filter:(files_search_mode?"Type to search...":"F4: Search files"),
+        files_filter_len?PAL_TEXT:PAL_TEXT_DIM);
+    if(clicked&&mx>=main_x&&mx<main_x+main_w&&my>=wy+top&&my<wy+top+38){
+        files_search_mode=true;(void)mouse_consume_click();
+    }
+    file_draw_ctx_t ctx={main_x,wy+top+49,main_w,
+        (wh-top-bottom-53)/37,0,0,0,0};
+    if(ctx.limit<1)ctx.limit=1;
+    shfs_foreach_path(files_row,&ctx);
+    if(ctx.seen==0)
+        gfx_text(main_x+16,wy+top+89,
+            files_filter_len?"No matching files":"No files in this location",PAL_TEXT_DIM);
+    gfx_rect(sx,wy+wh-36,ww-2*margin,1,PAL_HAIRLINE);
+    char count[16];k_itoa(ctx.files,count,10);
+    gfx_text(sx+4,wy+wh-26,count,PAL_ACCENT);
+    gfx_text(sx+35,wy+wh-26,"files  |  F4 search  |  Left/Right folders  |  Up/Down scroll",
+        PAL_TEXT_DIM);
 }
 
-/* --- Clock: analog dial -------------------------------------------------- */
 static void render_clock(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
@@ -3031,6 +3118,7 @@ static char falco_http[4096],falco_results[3100];
 static char falco_status[128]="Enter searches live Wikipedia, via HTTPS host gateway.";
 static bool falco_has_results;
 static bool falco_dhcp_done;
+static bool falco_web_view;
 static void falco_set_query(const char *q){
     falco_query_len=0;
     while(q&&q[falco_query_len]&&falco_query_len<79){
@@ -3040,10 +3128,21 @@ static void falco_set_query(const char *q){
     falco_query[falco_query_len]=0;
     falco_sel=0;
     falco_has_results=false;
+    falco_web_view=false;
 }
 static void falco_search(void){
     falco_has_results=false;
     if(!falco_query_len)return;
+    /* A URL in Falco is a navigation, not a Wikipedia search. */
+    bool has_dot=false,has_space=false;
+    for(i32 j=0;j<falco_query_len;j++){
+        if(falco_query[j]=='.')has_dot=true;
+        if(falco_query[j]==' '||falco_query[j]=='\n')has_space=true;
+    }
+    if(!has_space && (has_dot || k_strncmp(falco_query,"https://",8)==0 ||
+                      k_strncmp(falco_query,"http://",7)==0)){
+        falco_open_site(falco_query);return;
+    }
     if(!net_present()){
         k_strcpy(falco_status,"No RTL8139 network card is active");
         return;
@@ -3089,6 +3188,11 @@ static void falco_search(void){
          "Live Wikipedia results - host certificate verified");
 }
 static void falco_input_key(i32 key){
+    if(falco_web_view){
+        if(key==KEY_F3){falco_web_view=false;return;}
+        chrome_input_key(key);return;
+    }
+    if(key==KEY_F6){falco_open_site("https://falconos.tech/");return;}
     if(key==KEY_F4){
         falco_query[0]=0;falco_query_len=0;
         falco_has_results=false;falco_sel=0;return;
@@ -3103,6 +3207,7 @@ static void falco_input_key(i32 key){
     (void)sh_buf_append_key(falco_query,&falco_query_len,80,key);
 }
 static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    if(falco_web_view){render_browser(wx,wy,ww,wh,frame);return;}
     (void)frame;
     i32 x=wx+22,w=ww-44;
     gfx_round_rect_a(x,wy+12,w,84,20,0xDBEAFE,240);
@@ -3148,7 +3253,9 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             gfx_text(x+22,wy+225+row*21,line,PAL_TEXT);
         }
     }
-    gfx_text(x+5,wy+wh-36,"F4 clear | Enter search | Up/Down scroll | Verified Host HTTPS",PAL_TEXT_FAINT);
+    gfx_text(x+5,wy+wh-36,
+        "F4 clear | Enter: search/URL | F6: falconos.tech | F3: back from web",
+        PAL_TEXT_FAINT);
 }
 
 /* --- Falcon Browser: actual guest TCP + authenticated HTTPS only ---------
@@ -3277,6 +3384,34 @@ static void browser_load(void){
             "HOST-verified HTTPS | local VM link plaintext | read-only");
 
 }
+/* Native text-web view is shared by Falco and the Browser, not simulated.
+ * F6 in Falco loads the requested site with the same certificate checks.
+ * Only HTTPS URLs are allowed; no HTTP downgrade. */
+static void falco_open_site(const char *address){
+    const char *prefix="https://";
+    const char *url=address;
+    char normalized[224];
+    if(k_strncmp(address,"http://",7)==0){
+        k_strcpy(falco_status,"HTTPS only. HTTP navigation rejected.");
+        return;
+    }
+    if(k_strncmp(address,prefix,8)!=0){
+        k_strcpy(normalized,prefix);
+        if(k_strlen(address)>206){
+            k_strcpy(falco_status,"Address too long.");return;
+        }
+        k_strcat(normalized,address);url=normalized;
+    }
+    if(k_strlen(url)>=sizeof browser_address){
+        k_strcpy(falco_status,"Address too long.");return;
+    }
+    k_strcpy(browser_address,url);
+    browser_address_len=k_strlen(browser_address);
+    browser_address_focus=true;
+    browser_host_gateway=false; /* explicit opt-in only; never silently proxy */
+    browser_load();
+    falco_web_view=true;
+}
 static void chrome_input_key(i32 key){
     if(key==KEY_F4){
         browser_address[0]=0;
@@ -3311,7 +3446,7 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     i32 margin=18,bar=wy+54;
     gfx_rect(wx,wy,ww,44,PAL_PANEL_DEEP);
     gfx_round_rect_a(wx+margin,wy+7,170,32,9,PAL_PANEL,255);
-    gfx_text(wx+margin+12,wy+15,"Falcon Browser",PAL_ACCENT);
+    gfx_text(wx+margin+12,wy+15,active_app==13?"Falco Web":"Falcon Browser",PAL_ACCENT);
     gfx_text(wx+205,wy+16,
         browser_host_gateway?"HOST HTTPS / LOCAL LINK":"NATIVE HTTPS / BEARSSL",PAL_TEXT_DIM);
     gfx_rect(wx,wy+45,ww,56,PAL_PANEL_HI);
