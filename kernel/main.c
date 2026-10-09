@@ -624,6 +624,7 @@ void long_start(u64 magic, u64 info_ptr)
 
         gfx_present();
         g_tick++;
+        native_net_poll(); /* native RTL8139 ARP/IPv4 receiver, bounded polling */
         /* One bounded copy-on-write SHFS record at most every 0.1 seconds. */
         if ((g_tick % 5u) == 0u) pfs_sync_step();
 
