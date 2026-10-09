@@ -1,7 +1,7 @@
 name: FalconOS safe storage and ISO
 on:
   push:
-    branches: [FalconOS-1-release, 'fix/**']
+    branches: [FalconOS-1-release, 'fix/**', 'feature/core-storage-net-usermode']
   pull_request:
     branches: [FalconOS-1-release]
 jobs:
@@ -36,6 +36,10 @@ jobs:
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/codedium_package_test.c kernel/codedium_pkg.c kernel/market_version.c kernel/fapp_policy.c -o build/test-codedium-pkg
           ./build/test-codedium-pkg
+      - name: Test durable SHFS PFS1 records
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/pfs_test.c kernel/shfs.c kernel/pfs.c -o build/test-pfs
+          ./build/test-pfs
       - name: Compile ISO
         run: make iso
       - name: Validate Multiboot2 kernel
