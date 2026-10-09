@@ -7,6 +7,7 @@ from pathlib import Path
 import argparse
 import socket
 import ssl
+import struct
 import subprocess
 import threading
 import time
@@ -56,10 +57,31 @@ def main():
     threading.Thread(target=server.run,daemon=True).start()
     debug=Path("build/tls-smoke-debug.log")
     if debug.exists():debug.unlink()
+    pcap=Path("build/tls-smoke.pcap")
+    if pcap.exists():pcap.unlink()
+    def traffic():
+        try:
+            blob=pcap.read_bytes()
+            off=24; found=[]
+            while off+16<=len(blob):
+                n=struct.unpack_from("<I",blob,off+8)[0];off+=16
+                if n<14 or off+n>len(blob):break
+                eth=blob[off:off+n];off+=n
+                if eth[12:14]!=b"\x08\x00" or len(eth)<54:continue
+                ihl=(eth[14]&15)*4
+                if eth[23]!=6 or len(eth)<14+ihl+20:continue
+                seg=eth[14+ihl:]
+                hdr=(seg[12]>>4)*4
+                found.append({"port":(int.from_bytes(seg[0:2],"big"),
+                                      int.from_bytes(seg[2:4],"big")),
+                              "flags":hex(seg[13]),"payload":max(0,len(seg)-hdr)})
+            return str(found[:36])
+        except OSError:return "pcap unavailable"
     cmd=["qemu-system-x86_64","-accel","tcg","-cpu","max",
          "-m","1024","-smp","1","-cdrom",args.iso,
          "-display","none","-vga","std",
          "-netdev","user,id=net0","-device","rtl8139,netdev=net0",
+         "-object",f"filter-dump,id=tlswatch,netdev=net0,file={pcap}",
          "-serial","none","-monitor","none",
          "-debugcon",f"file:{debug}","-global","isa-debugcon.iobase=0xe9",
          "-no-reboot"]
@@ -84,7 +106,7 @@ def main():
             time.sleep(.2)
         raise TimeoutError("Native TLS test timed out; debug="+repr(
             debug.read_bytes() if debug.exists() else b"")+
-            " server="+repr(server.error))
+            " server="+repr(server.error)+" traffic="+traffic())
     finally:
         proc.terminate()
         try:proc.communicate(timeout=4)
