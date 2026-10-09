@@ -3082,6 +3082,7 @@ static i32 browser_address_len=20;
 static bool browser_address_focus=true;
 /* F6 enables a clearly labeled host-validated TLS proxy, never automatic. */
 static bool browser_host_gateway=false;
+static bool browser_dhcp_attempted=false;
 static char browser_result[4096];
 static char browser_text[4096];
 static char browser_status[120]="Type an HTTPS address, then press Enter to load.";
@@ -3120,6 +3121,10 @@ static void browser_load(void){
     if(!net_present()){
         k_strcpy(browser_status,"No RTL8139 NIC. Set Virt-Manager network model to rtl8139.");
         return;
+    }
+    if(!browser_dhcp_attempted){
+        browser_dhcp_attempted=true;
+        (void)net_dhcp(); /* QEMU user NAT and libvirt virbr0 both offer DHCP */
     }
     const char *p=browser_address;
     const char *https="https://";
