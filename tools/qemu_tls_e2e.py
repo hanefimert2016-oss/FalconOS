@@ -126,6 +126,8 @@ def main():
         while time.monotonic()<deadline:
             if proc.poll() is not None:raise RuntimeError("QEMU terminated")
             data=debug.read_bytes() if debug.exists() else b""
+            if b"@" in data:
+                raise AssertionError("TLS caused kernel CPU exception: "+repr(data))
             if data.count(b"w")>=2 and time.monotonic()-last_probe>5:
                 sampled.append(read_regs())
                 last_probe=time.monotonic()
