@@ -136,8 +136,25 @@ static bool secure_response_complete(const char *response,u32 n){
     if(!found || expected>4096u || (u64)header+expected!=(u64)n)return false;
     return true;
 }
+/* Browser-only bounded snippet. This does NOT prove HTTP entity completeness.
+ * TLS records and certificate/hostname have already been verified by BearSSL,
+ * but a peer without Content-Length/explicit framing can truncate a page.
+ * Never use this result as executable code, package metadata or downloads. */
+static bool secure_response_preview(const char *response,u32 n){
+    if(n<64 || response[0]!='H'||response[1]!='T'||
+       response[2]!='T'||response[3]!='P'||response[8]!=' '||
+       response[9]!='2'||response[10]!='0'||response[11]!='0')
+       return false;
+    for(u32 i=12;i+4<n && i<2048;i++){
+        if(response[i]=='\r'&&response[i+1]=='\n'&&
+           response[i+2]=='\r'&&response[i+3]=='\n'){
+            return n>i+4u+16u;
+        }
+    }
+    return false;
+}
 static bool https_request(const char *host,const char *path,char *result,u32 cap,
-                          const u8 *override_addr,u16 dest_port){
+                          const u8 *override_addr,u16 dest_port,bool allow_preview){
     if(result && cap)result[0]=0;
     if(!result||cap<128||cap>4096||!valid_host(host)||!valid_path(path) ||
        falcon_tls_anchor_count==0){
@@ -222,7 +239,7 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
     outb(0xE9,'X'); /* TLS write+flush succeeded */
 #endif
     u32 received=0;
-    for(u32 i=0;i<16 && received+1<cap;i++){
+    for(u32 i=0;i<24 && received+1<cap;i++){
         int n=br_sslio_read(&SSLIO,result+received,cap-received-1u);
         if(n<1)break;
         received+=(u32)n;
@@ -231,6 +248,11 @@ static bool https_request(const char *host,const char *path,char *result,u32 cap
             result_ok=true;break;
         }
     }
+    /* Preview is a separate API: do not turn an unframed/partial body into
+     * a successful strict request. Valid authenticated HTML snippets can be
+     * read without requiring Content-Length (common real-world servers). */
+    if(!result_ok && allow_preview)
+        result_ok=secure_response_preview(result,received);
 end:
 #ifdef FALCON_QEMU_TLS_PUBLIC_TEST
     /* Bounded, sanitized test-only HTTP response diagnostics. No secrets
@@ -259,7 +281,12 @@ end:
     return result_ok;
 }
 bool native_https_get(const char *host,const char *path,char *response,u32 capacity){
-    return https_request(host,path,response,capacity,NULL,443);
+    return https_request(host,path,response,capacity,NULL,443,false);
+}
+bool native_https_get_preview(const char *host,const char *path,
+                              char *response,u32 capacity){
+    /* Authentication is real, entity completeness is NOT guaranteed. */
+    return https_request(host,path,response,capacity,NULL,443,true);
 }
 #if defined(FALCON_QEMU_TLS_TEST) || defined(FALCON_QEMU_TLS_PUBLIC_TEST)
 bool native_https_ci_smoke(void){
@@ -268,7 +295,7 @@ bool native_https_ci_smoke(void){
     const u8 qemu_host[4]={10,0,2,2};
     char response[256];
     bool ok=https_request("falcon.test","/falcon-test",response,sizeof response,
-                          qemu_host,18443);
+                          qemu_host,18443,false);
     return ok;
 }
 #endif
