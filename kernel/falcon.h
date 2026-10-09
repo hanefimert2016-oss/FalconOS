@@ -347,6 +347,7 @@ const char *market_version(i32 i);
 const char *market_status(void);
 bool market_installed(i32 i);
 bool market_has_update(i32 i);
+i32 market_version_compare(const char *a, const char *b);
 const char *market_script(i32 i);
 void market_download(i32 i);
 bool market_line_allowed(const char *line, i32 size);

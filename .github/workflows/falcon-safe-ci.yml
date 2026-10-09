@@ -26,8 +26,12 @@ jobs:
           ./build/test-market-cache
       - name: Test native Marketplace serial protocol
         run: |
-          gcc -std=gnu11 -Wall -Wextra -Ikernel tests/market_protocol_test.c kernel/marketplace.c kernel/shfs.c -o build/test-market-protocol
+          gcc -std=gnu11 -Wall -Wextra -Ikernel tests/market_protocol_test.c kernel/marketplace.c kernel/shfs.c kernel/market_version.c -o build/test-market-protocol
           ./build/test-market-protocol
+      - name: Test SemVer precedence
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/market_version_test.c kernel/market_version.c -o build/test-semver
+          ./build/test-semver
       - name: Compile ISO
         run: make iso
       - name: Validate Multiboot2 kernel

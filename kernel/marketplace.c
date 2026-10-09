@@ -349,5 +349,5 @@ bool market_has_update(i32 i)
     if (!f) return false;
     char installed_version[25];
     return manifest_field(f->data, "version", installed_version, sizeof installed_version) &&
-           k_strcmp(installed_version, APP[i].version) != 0;
+           market_version_compare(APP[i].version, installed_version) > 0;
 }
