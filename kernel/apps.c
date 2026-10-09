@@ -2801,26 +2801,41 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 
 /* --- Notes --------------------------------------------------------------- */
 #define NOTES_MAX 256
-static char  notes_buf[NOTES_MAX] = "Welcome to Notes.\n\nType freely, this buffer\nlives in BSS until reboot.\n\n- ";
-static i32   notes_len = 0;
-static void  notes_init_once(void) {
-    if (notes_len == 0) notes_len = k_strlen(notes_buf);
+#define NOTES_FILE "/home/falcon/Desktop/Notes.txt"
+static char notes_buf[NOTES_MAX] = "Notes - FalconOS\n\n";
+static i32 notes_len = 0;
+static bool notes_loaded;
+static void notes_init_once(void) {
+    if(notes_loaded)return;
+    notes_loaded=true;
+    shfs_ent_t *saved=shfs_lookup(NOTES_FILE);
+    if(saved&&!saved->is_dir&&saved->len<NOTES_MAX){
+        k_memcpy(notes_buf,saved->data,saved->len);
+        notes_len=(i32)saved->len;
+        notes_buf[notes_len]=0;
+    }else notes_len=k_strlen(notes_buf);
+}
+static void notes_save(void){
+    shfs_ent_t *f=shfs_open_w_abs(NOTES_FILE,false);
+    if(!f)return;
+    k_memcpy(f->data,notes_buf,(u32)notes_len);
+    f->len=(u32)notes_len;f->data[notes_len]=0;
+    /* PFS copy-on-write writeback occurs in the kernel main loop. */
 }
 static void notes_input_key(i32 key)
 {
     notes_init_once();
     if (key == KEY_BACKSPACE) {
         sh_buf_pop_utf8(notes_buf, &notes_len);
-        return;
-    }
-    if (key == KEY_ENTER) {
+    } else if (key == KEY_ENTER) {
         if (notes_len < NOTES_MAX - 1) {
             notes_buf[notes_len++] = '\n';
             notes_buf[notes_len] = 0;
         }
-        return;
+    } else {
+        (void)sh_buf_append_key(notes_buf, &notes_len, NOTES_MAX, key);
     }
-    (void)sh_buf_append_key(notes_buf, &notes_len, NOTES_MAX, key);
+    notes_save();
 }
 static void render_notes(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
