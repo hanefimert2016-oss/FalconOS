@@ -26,6 +26,8 @@ static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
 static i32 minimized_app = -1; /* last app sent to dock by yellow light */
 static void falco_set_query(const char *q);
+static void market_launch(i32 i);
+static i32 builtin_app_count(void);
 
 /* ----- window manager state (FalconOS 1) ---------------------------------
  * The dispatcher used to centre every app window on every frame. With
@@ -45,7 +47,19 @@ static bool wm_resizing = false;
 static i32  wm_resize_grab_x = 0, wm_resize_grab_y = 0;
 static i32  wm_resize_start_w = 0, wm_resize_start_h = 0;
 
-void apps_open(i32 i)  { active_app = i; minimized_app = -1; open_at_ms = pit_ms(); }
+void apps_open(i32 i)
+{
+    if (i < 0 || i >= apps_count()) return;
+    if (i >= builtin_app_count()) {
+        i32 index = i - builtin_app_count();
+        if (market_installed(index)) market_launch(index);
+        else { active_app = 2; market_download(index); }
+        return;
+    }
+    active_app = i;
+    minimized_app = -1;
+    open_at_ms = pit_ms();
+}
 void apps_close(void)  { active_app = -1; wm_max = false;
                           wm_dragging = false; wm_resizing = false; }
 i32  apps_active(void) { return active_app; }
@@ -3459,13 +3473,22 @@ static app_def_t APPS[] = {
     { "CodeDium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
 };
 
-i32 apps_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
-const char *apps_name(i32 i)     { return APPS[i].name; }
-const char *apps_subtitle(i32 i) { return APPS[i].subtitle; }
+static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
+i32 apps_count(void) { return builtin_app_count() + market_count(); }
+const char *apps_name(i32 i) {
+    if (i < 0 || i >= apps_count()) return "?";
+    return i < builtin_app_count() ? APPS[i].name : market_name(i - builtin_app_count());
+}
+const char *apps_subtitle(i32 i) {
+    if (i < 0 || i >= apps_count()) return "";
+    return i < builtin_app_count() ? APPS[i].subtitle :
+        (market_installed(i - builtin_app_count()) ? "Downloaded FAPP app" : "Download from Store");
+}
 
 const char *apps_display_name(i32 i)
 {
     if (i < 0 || i >= apps_count()) return "?";
+    if (i >= builtin_app_count()) return market_name(i - builtin_app_count());
     if (SET.lang != LANG_TR)
         return APPS[i].name;
     switch (i) {
@@ -3494,6 +3517,9 @@ const char *apps_display_name(i32 i)
 const char *apps_display_subtitle(i32 i)
 {
     if (i < 0 || i >= apps_count()) return "";
+    if (i >= builtin_app_count())
+        return market_installed(i - builtin_app_count())
+            ? T("Installed FAPP/1", "Yuklu FAPP/1") : T("Get app from Store", "Magazadan indir");
     if (SET.lang != LANG_TR)
         return APPS[i].subtitle;
     switch (i) {
@@ -3519,10 +3545,14 @@ const char *apps_display_subtitle(i32 i)
     }
 }
 
-u32         apps_tint(i32 i)     { return APPS[i].tint; }
-
+u32 apps_tint(i32 i) {
+    if (i < 0 || i >= apps_count()) return 0x2BB673;
+    return i < builtin_app_count() ? APPS[i].tint : 0x2BB673;
+}
 void apps_draw_icon(i32 i, i32 cx, i32 cy)
 {
+    if (i < 0 || i >= apps_count()) return;
+    if (i >= builtin_app_count()) { icon_term(cx, cy); return; }
     if (APPS[i].draw_icon) APPS[i].draw_icon(cx, cy);
 }
 
