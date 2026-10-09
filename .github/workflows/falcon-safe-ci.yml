@@ -202,7 +202,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: FalconOS-real-public-HTTPS
-          path: build/native-public-https.log
+          path: |
+            build/native-public-https.log
+            build/native-public-https.pcap
           if-no-files-found: ignore
 
   hardware-probe:
