@@ -11,6 +11,13 @@
 #include "falcon.h"
 #ifdef FALCON_BEARSSL
 #include "bearssl.h"
+/* No Linux /dev/urandom exists inside FalconOS. Randomness is injected
+ * explicitly after CPU RDRAND health/capability checks, before TLS reset. */
+br_prng_seeder br_prng_seeder_system(const char **name){
+    if(name)*name="falcon-rdrand-explicit";
+    return (br_prng_seeder)0;
+}
+
 
 extern const br_x509_trust_anchor falcon_tls_anchors[];
 extern const size_t falcon_tls_anchor_count;
