@@ -160,8 +160,8 @@ void lockscreen_render(u32 frame)
     gfx_gradient_v(0xD9EBFFu,0x8EB8E8u);
     i32 W=(i32)FB.width,H=(i32)FB.height;
     i32 cx=W/2,cy=H/2;
-    gfx_circle_a(W/4,H/3,120,0xEAF4FFu,72);
-    gfx_circle_a(W*3/4,H*3/4,165,0x286FE8u,42);
+    gfx_round_rect_a(W/7,H/4,160,55,22,0xEAF4FFu,42);
+    gfx_round_rect_a(W*3/4,H*3/4,160,55,22,0x286FE8u,32);
     gfx_round_rect_a(cx-296,cy-153,592,373,28,
         SET.theme==THEME_DARK?0x253753u:0xFAFCFFu,229);
     gfx_round_outline(cx-296,cy-153,592,373,28,
