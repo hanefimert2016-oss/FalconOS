@@ -171,6 +171,9 @@ saved_ring_r12:   resq 1
 saved_ring_r13:   resq 1
 saved_ring_r14:   resq 1
 saved_ring_r15:   resq 1
+global ring3_saved_user_frame
+ring3_saved_user_frame: resq 20
+
 
 section .text
 global ring3_enter
@@ -215,6 +218,8 @@ ring3_syscall_int80:
     cld
     call ring3_syscall_dispatch
     mov rsp, rbx
+    cmp rax, 2
+    je .yield_ring3
     cmp rax, 1
     je .leave_ring3         ; syscall 2 (exit)
     mov [rsp+112], rax
@@ -222,6 +227,41 @@ ring3_syscall_int80:
     iretq
 .invalid:
     mov qword [rsp+112], -38
+    POPA64
+    iretq
+.yield_ring3:
+    ; Copy complete syscall context (15 GPRs + IRETQ frame) for a
+    ; cooperative scheduler. EAX gets 0 when userland is resumed.
+    lea rdi, [rel ring3_saved_user_frame]
+    mov rsi, rsp
+    mov ecx, 20
+    cld
+    rep movsq
+    mov qword [rel ring3_saved_user_frame + 112], 0
+    jmp .leave_ring3
+
+global ring3_resume
+ring3_resume:
+    ; Resume a previously yielded CPL3 context without executing user code
+    ; at CPL0. Preserve the host ABI identically to ring3_enter.
+    mov [rel saved_ring_rsp], rsp
+    mov [rel saved_ring_rbx], rbx
+    mov [rel saved_ring_rbp], rbp
+    mov [rel saved_ring_r12], r12
+    mov [rel saved_ring_r13], r13
+    mov [rel saved_ring_r14], r14
+    mov [rel saved_ring_r15], r15
+    sub rsp, 160
+    lea rsi, [rel ring3_saved_user_frame]
+    mov rdi, rsp
+    mov ecx, 20
+    cld
+    rep movsq
+    mov ax, 0x23
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
     POPA64
     iretq
 .leave_ring3:
