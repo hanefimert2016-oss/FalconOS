@@ -5,7 +5,7 @@ on:
       - feature/core-storage-net-usermode
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: falcon-preview-${{ github.ref }}
   cancel-in-progress: true
@@ -57,3 +57,24 @@ jobs:
           path: build/FalconOS-preview-Ring3-ELF64.iso
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish direct ISO downloads on isolated preview branch (not Release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="preview-iso-$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
+          mkdir -p /tmp/falcon-verified-isos
+          cp build/FalconOS-preview-QEMU.iso /tmp/falcon-verified-isos/FalconOS-GLB-HTTPS-Preview.iso
+          cp build/FalconOS-preview-Ring3-ELF64.iso /tmp/falcon-verified-isos/FalconOS-GLB-HTTPS-Ring3-Preview.iso
+          sha256sum /tmp/falcon-verified-isos/*.iso
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan "$branch"
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          cp /tmp/falcon-verified-isos/*.iso .
+          git add FalconOS-GLB-HTTPS-Preview.iso FalconOS-GLB-HTTPS-Ring3-Preview.iso
+          git commit -m "preview: QEMU-verified GLB boot and HTTPS experimental ISOs"
+          git push origin "HEAD:refs/heads/$branch"
+          echo "### Direct ISO download (no GitHub Release)" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$branch/FalconOS-GLB-HTTPS-Preview.iso" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$branch/FalconOS-GLB-HTTPS-Ring3-Preview.iso" >> "$GITHUB_STEP_SUMMARY"
