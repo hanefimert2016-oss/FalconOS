@@ -60,7 +60,7 @@ ifeq ($(ENABLE_NATIVE_MARKET),1)
 ifneq ($(ENABLE_BEARSSL),1)
 $(error Native Marketplace requires ENABLE_BEARSSL=1; insecure fetch is forbidden)
 endif
-EXTRA_CFLAGS += -DFALCON_NATIVE_MARKET
+NATIVE_MARKET_FLAGS := -DFALCON_NATIVE_MARKET
 endif
 TLS_CA_BUNDLE ?= /etc/ssl/certs/ca-certificates.crt
 TLS_PATH := third_party/bearssl
@@ -78,7 +78,7 @@ CFLAGS      := $(CFLAGS_ARCH) -ffreestanding -fno-pic -fno-stack-protector \
                -fno-builtin -nostdlib -nostdinc \
                -Wall -Wextra -Wno-unused-parameter \
                -O2 -Ikernel -Ilinux \
-               -DFB_W=$(FB_W) -DFB_H=$(FB_H) -DARCH_$(ARCH)=1 $(EXTRA_CFLAGS) $(TLS_FLAGS)
+               -DFB_W=$(FB_W) -DFB_H=$(FB_H) -DARCH_$(ARCH)=1 $(EXTRA_CFLAGS) $(TLS_FLAGS) $(NATIVE_MARKET_FLAGS)
 LDFLAGS     := $(LDFLAGS_ARCH) -T linker.ld -nostdlib -z noexecstack
 NASMFLAGS   := -f $(NASMFMT) -DFB_W=$(FB_W) -DFB_H=$(FB_H)
 
