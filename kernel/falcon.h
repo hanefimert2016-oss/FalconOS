@@ -359,6 +359,9 @@ bool market_line_allowed(const char *line, i32 size);
 
 /* ---- application framework (Personal kernel) ------------------------------ */
 i32          apps_count(void);
+/* Filtered launcher catalog; IDs remain the real app registry indexes. */
+i32          apps_launcher_count(i32 section);
+i32          apps_launcher_id(i32 section,i32 slot);
 const char  *apps_name(i32 i);
 const char  *apps_display_name(i32 i);     /* localized label for LANG_TR UI   */
 const char  *apps_display_subtitle(i32 i);
