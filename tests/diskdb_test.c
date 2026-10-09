@@ -69,5 +69,15 @@ int main(void) {
     SET.installed = false;
     diskdb_load();
     if (diskdb_present() || SET.installed) return 12;
+    reset();
+    part(0, 0xFA, 2048, 100);
+    u8 blob[5120];
+    k_memset(blob, 0xBA, sizeof(blob));
+    if (!diskdb_store_io(16, blob, 10, true) || last_lba != 2064) return 13;
+    if (disk[510] != 0x55 || disk[450] != 0xFA) return 14;
+    part(0, 0xFA, 2048, 20);
+    if (diskdb_store_io(16, blob, 10, true)) return 15; /* crosses partition */
+    SET.install_disk = -1;
+    if (diskdb_store_io(16, blob, 1, true)) return 16;
     return 0;
 }

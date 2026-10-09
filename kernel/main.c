@@ -535,11 +535,11 @@ void long_start(u64 magic, u64 info_ptr)
             if (helppanel_is_open() && k != KEY_F1 && k != KEY_F2 && k != KEY_F12) {
                 helppanel_handle_key(k); continue;
             }
-            /* F1 kernel switching disabled in FalconOS 1.1 release */
+            /* F1: switch between Personal and Developer shells. */
             if (k == KEY_F1) {
-                /* Kernel mode switching is now disabled for stability.
-                 * Users stay in Personal mode for the best experience.
-                 * Developer mode can be enabled via Settings app.       */
+                if (apps_active() >= 0) apps_close();
+                if (launchpad_is_open()) launchpad_close();
+                g_mode = (g_mode == MODE_PERSONAL) ? MODE_DEVELOPER : MODE_PERSONAL;
                 continue;
             }
             if (k == KEY_F2 && g_mode == MODE_PERSONAL) {

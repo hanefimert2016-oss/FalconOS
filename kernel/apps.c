@@ -291,25 +291,44 @@ static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 }
 
 /* --- Files --------------------------------------------------------------- */
-static const char *FAKE_FILES[] = {
-    "README.md",       "boot/multiboot2.asm",  "kernel/main.c",
-    "kernel/gfx.c",    "kernel/personal.c",    "kernel/dev.c",
-    "kernel/idt.c",    "kernel/apps.c",        "kernel/launchpad.c",
-    "kernel/repl.c",   "Makefile",             "linker.ld",
-};
+/* Files: actual RAM-backed SHFS listing, not a mocked source tree. */
+static i32 files_scroll = 0;
+static void files_input_key(i32 key)
+{
+    if (key == KEY_UP && files_scroll > 0) files_scroll--;
+    if (key == KEY_DOWN && files_scroll < SHFS_MAX_ENTRIES-1) files_scroll++;
+}
+typedef struct { i32 x, y, w, limit, row, seen; } file_draw_ctx_t;
+static void files_row(const char *path, bool is_dir, u32 len, void *ud)
+{
+    file_draw_ctx_t *c = (file_draw_ctx_t *)ud;
+    if (c->seen++ < files_scroll || c->row >= c->limit) return;
+    i32 y = c->y + c->row * 28;
+    gfx_round_rect_a(c->x, y, c->w, 25, 6,
+                     (c->row & 1) ? PAL_PANEL : PAL_PANEL_DEEP, 255);
+    gfx_text(c->x + 12, y + 5, is_dir ? "[D]" : "[F]", is_dir ? COL_OK : PAL_ACCENT);
+    gfx_text(c->x + 47, y + 5, path, PAL_TEXT);
+    if (!is_dir) {
+        char num[12];
+        k_itoa(len, num, 10);
+        gfx_text(c->x + c->w - 80, y + 5, num, PAL_TEXT_DIM);
+    }
+    c->row++;
+}
 static void render_files(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
-    (void)frame; (void)ww; (void)wh;
+    (void)frame;
+    shfs_init();
     section(wx, wy, T("Files", "Dosyalar"),
-            T("/ (sample tree)", "/ (örnek ağaç)"));
-    i32 n = (i32)(sizeof FAKE_FILES / sizeof *FAKE_FILES);
-    for (i32 i = 0; i < n; i++) {
-        i32 y = wy + 60 + i * 22;
-        if (i % 2 == 0)
-            gfx_round_rect_a(wx + 22, y - 2, ww - 44, 20, 6, PAL_PANEL_DEEP, 255);
-        gfx_circle(wx + 36, y + 8, 5, PAL_ACCENT);
-        gfx_text(wx + 50, y + 2, FAKE_FILES[i], PAL_TEXT);
-    }
+            T("Live guest RAM filesystem - arrows scroll", "Gercek RAM dosya sistemi - oklarla kaydir"));
+    file_draw_ctx_t ctx = {
+        wx + 22, wy + 58, ww - 44, (wh - 110) / 28, 0, 0
+    };
+    if (ctx.limit < 1) ctx.limit = 1;
+    shfs_foreach_path(files_row, &ctx);
+    if (ctx.seen == 0) gfx_text(wx + 36, wy + 74, "No files", PAL_TEXT_DIM);
+    gfx_text(wx + 24, wy + wh - 24,
+             "Desktop/project.fsh and downloaded apps appear here.", PAL_TEXT_FAINT);
 }
 
 /* --- Clock: analog dial -------------------------------------------------- */
@@ -3168,6 +3187,7 @@ static void market_input_key(i32 key)
     if (key == 'c' || key == 'C') {
         apps_open(18); return; /* CodeDium Studio */
     }
+    if ((key == 'u' || key == 'U') && n > 0) { market_download(market_cursor); return; }
     if (key == KEY_UP && market_cursor > 0) market_cursor--;
     if (key == KEY_DOWN && market_cursor < n-1) market_cursor++;
     if (key == KEY_ENTER && n > 0) {
@@ -3179,7 +3199,7 @@ static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
     section(wx, wy, "FalconOS Marketplace", "GitHub Releases  |  .app.pkg  |  SHA-256");
-    gfx_text(wx + 24, wy + 42, "R: refresh  |  Enter: download / run  |  C: CodeDium", PAL_TEXT_DIM);
+    gfx_text(wx + 24, wy + 42, "R: refresh  |  U: update  |  Enter: get/run  |  C: CodeDium", PAL_TEXT_DIM);
     gfx_text(wx + 24, wy + 63, market_status(), PAL_ACCENT);
     i32 mx, my; bool held; mouse_get(&mx, &my, &held); (void)held;
     bool clicked = mouse_peek_click();
@@ -3376,7 +3396,7 @@ typedef struct {
 
 static app_def_t APPS[] = {
     { "Home",       "quick links",         0x3070FF, render_home,     NULL,             icon_home     },
-    { "Files",      "in-memory tree",      0xF59F1A, render_files,    NULL,             icon_files    },
+    { "Files",      "live guest RAM files", 0xF59F1A, render_files,    files_input_key,  icon_files    },
     { "Store",      "GitHub Releases apps",  0x2BB673, render_market,   market_input_key, icon_store    },
     { "Settings",   "system + theme",      0x6E7884, render_settings, set_input_key,    icon_settings },
     { "Sistem Güncellemeleri", "prg + FalconFS özeti", 0x05B897, render_updates,
@@ -3437,7 +3457,7 @@ const char *apps_display_subtitle(i32 i)
         return APPS[i].subtitle;
     switch (i) {
         case 0:  return "Hızlı bağlantılar";
-        case 1:  return "Örnek dosya listesi";
+        case 1:  return "Gerçek RAM dosyaları";
         case 2:  return "prg paket merkezi";
         case 3:  return "sistem + tema";
         case 4:  return "prg + FalconFS özeti";
