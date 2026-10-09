@@ -35,6 +35,7 @@ jobs:
         id: falco
         continue-on-error: true
         run: |
+          make clean
           make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_BROWSER_TEST
           timeout 170s python3 tools/qemu_falco_website.py --iso build/FalconOS.iso
       - name: Upload actual guest screenshots
