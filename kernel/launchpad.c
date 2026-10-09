@@ -73,7 +73,7 @@ void launchpad_input(i32 key){
     }else if(key==KEY_ENTER){
         if(visible_count){apps_open(visible[selected]);launchpad_close();}
         return;
-    }else if(key=='p'&&visible_count){
+    }else if(key==KEY_F3&&visible_count){
         desktop_pin_toggle(visible[selected]);return;
     }else{
         char bytes[4];i32 count=key_to_utf8(key,bytes);
