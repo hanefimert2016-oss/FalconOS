@@ -103,3 +103,20 @@ void rtl8139_stats(u32 *tx,u32 *rx,u32 *txb,u32 *rxb,u32 *txe,u32 *rxe){
     if(txb)*txb=tx_bytes;if(rxb)*rxb=rx_bytes;
     if(txe)*txe=tx_errors;if(rxe)*rxe=rx_errors;
 }
+
+#ifdef FALCON_QEMU_NET_TEST
+static void debug_hex(u8 n) {
+    outb(0xE9,(u8)"0123456789ABCDEF"[n>>4]);
+    outb(0xE9,(u8)"0123456789ABCDEF"[n&15]);
+}
+void rtl8139_debug_dump(void) {
+    outb(0xE9,'[');
+    debug_hex(inb(io_base+0x37)); /* CR */
+    debug_hex((u8)inw(io_base+0x3E)); /* ISR */
+    debug_hex((u8)inw(io_base+0x3A)); /* CBR */
+    debug_hex((u8)inw(io_base+0x38)); /* CAPR */
+    debug_hex(rx_mem[0]);debug_hex(rx_mem[1]);
+    debug_hex(rx_mem[2]);debug_hex(rx_mem[3]);
+    outb(0xE9,']');
+}
+#endif
