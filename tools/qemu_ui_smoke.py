@@ -78,6 +78,7 @@ def main():
             sock.settimeout(5)
             sock.connect(str(monitor))
             before = screenshot(sock, first)
+            ppm_to_png(first,root/"FalconOS-Aura-Setup.png")
             # Synchronize with real guest step transitions. A fixed sleep can
             # send characters while GLB intro/GRUB still owns the keyboard.
             wait_for_marker(debug,b"L",timeout=30)
@@ -101,6 +102,7 @@ def main():
             # press Enter. Require kernel debugcon events as evidence.
             command(sock, "sendkey esc", .4)
             before = screenshot(sock, first)
+            ppm_to_png(first,root/"FalconOS-Aura-Desktop.png")
             command(sock, "sendkey f2", .8)
             launcher=screenshot(sock, root/"aura-launcher.ppm")
             ppm_to_png(root/"aura-launcher.ppm",root/"FalconOS-Aura-Launcher.png")
@@ -108,6 +110,25 @@ def main():
             for _ in range(7): command(sock, "sendkey right", .17)
             command(sock, "sendkey ret", 1.5)
             after = screenshot(sock, last)
+            # Real framebuffer shots for native functional apps, not mockups.
+            current=7
+            for target,name in ((0,"Files"),(1,"Browser"),(2,"Falco"),
+                                (3,"Calculator"),(4,"Notes"),(5,"Settings")):
+                command(sock,"sendkey esc",.18)
+                command(sock,"sendkey f2",.35)
+                while current>target:
+                    command(sock,"sendkey left",.07)
+                    current-=1
+                while current<target:
+                    command(sock,"sendkey right",.07)
+                    current+=1
+                command(sock,"sendkey ret",.5)
+                ppm=root/("FalconOS-Aura-"+name+".ppm")
+                shot=screenshot(sock,ppm)
+                if picture_difference(before,shot)<40:
+                    raise AssertionError("No visual change after launching "+name)
+                ppm_to_png(ppm,root/("FalconOS-Aura-"+name+".png"))
+                print("PASS: QEMU rendered actual app window",name)
         score = picture_difference(before, after)
         ppm_to_png(last, args.output)
         events = debug.read_bytes() if debug.exists() else b""
