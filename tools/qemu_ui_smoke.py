@@ -49,10 +49,13 @@ def main():
     monitor = (root / "ui-monitor.sock").absolute()
     first = (root / "ui-before.ppm").absolute()
     last = (root / "ui-after.ppm").absolute()
+    debug = (root / "ui-debugcon.log").absolute()
+    if debug.exists(): debug.unlink()
     if monitor.exists(): monitor.unlink()
     cmd = ["qemu-system-x86_64", "-accel", "tcg", "-m", "1024", "-smp", "1",
            "-cdrom", args.iso, "-boot", "d", "-display", "none", "-vga", "std",
            "-serial", "none", "-monitor", "unix:" + str(monitor) + ",server=on,wait=off",
+           "-debugcon", "file:" + str(debug), "-global", "isa-debugcon.iobase=0xe9",
            "-no-reboot"]
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -76,15 +79,22 @@ def main():
             command(sock, "sendkey ret", 1)
             # lock screen without password
             command(sock, "sendkey ret", 1.5)
-            # First boot Help drawer -> close; activate Store from dock (index 2)
+            # Open Launchpad (F2), move Home -> Files -> Store,
+            # press Enter. Require kernel debugcon events as evidence.
             command(sock, "sendkey esc", .4)
-            command(sock, "sendkey ret", 1)
+            before = screenshot(sock, first)
+            command(sock, "sendkey f2", .8)
+            command(sock, "sendkey right", .3)
+            command(sock, "sendkey right", .3)
+            command(sock, "sendkey ret", 1.5)
             after = screenshot(sock, last)
         score = picture_difference(before, after)
         ppm_to_png(last, args.output)
-        if score < 100:
-            raise RuntimeError("No significant GUI transition detected: " + str(score))
-        print("PASS: QEMU handled GUI keyboard walkthrough; changed pixels", score)
+        events = debug.read_bytes() if debug.exists() else b""
+        if score < 100 or b"S" not in events or b"M" not in events:
+            raise RuntimeError("Store not verified: image difference=" + str(score) +
+                               ", debug events=" + repr(events[-200:]))
+        print("PASS: QEMU Store opened AND rendered (debug markers S/M), changed pixels", score)
     finally:
         proc.terminate()
         try: proc.wait(timeout=3)
