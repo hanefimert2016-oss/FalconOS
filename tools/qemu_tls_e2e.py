@@ -5,6 +5,7 @@ No host COM1/HTTPS bridge participates.
 """
 from pathlib import Path
 import argparse
+import json
 import socket
 import re
 import ssl
@@ -70,19 +71,24 @@ def main():
     def read_regs():
         try:
             with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as con:
-                con.settimeout(2)
+                con.settimeout(3)
                 con.connect(str(monitor))
-                con.recv(4096)
-                con.sendall(b"info registers\n")
-                response=con.recv(20000).decode(errors="replace")
+                f=con.makefile("rwb",buffering=0)
+                _=json.loads(f.readline())
+                f.write(b'{"execute":"qmp_capabilities"}\\n')
+                _=json.loads(f.readline())
+                f.write(b'{"execute":"human-monitor-command",'
+                        b'"arguments":{"command-line":"info registers"}}\\n')
+                result=json.loads(f.readline())
+            response=result.get("return","")
             match=re.search(r"RIP=([0-9a-fA-F]+)",response)
-            if not match:return response[-700:]
+            if not match:return response[-350:] or str(result)[:350]
             ip="0x"+match.group(1)
             decoded=subprocess.run(["addr2line","-fip","-e","build/falcon.elf",ip],
                 text=True,capture_output=True,timeout=4).stdout.strip()
             return f"{ip} {decoded}"
-        except (OSError,subprocess.TimeoutExpired) as exc:
-            return f"probe unavailable: {exc}"
+        except (OSError,ValueError,subprocess.TimeoutExpired) as exc:
+            return f"QMP sample unavailable: {exc}"
     def traffic():
         try:
             blob=pcap.read_bytes()
@@ -109,7 +115,8 @@ def main():
          "-display","none","-vga","std",
          "-netdev","user,id=net0","-device","rtl8139,netdev=net0",
          "-object",f"filter-dump,id=tlswatch,netdev=net0,file={pcap}",
-         "-serial","none","-monitor",f"unix:{monitor},server=on,wait=off",
+         "-serial","none","-monitor","none",
+         "-qmp",f"unix:{monitor},server=on,wait=off",
          "-debugcon",f"file:{debug}","-global","isa-debugcon.iobase=0xe9",
          "-no-reboot"]
     proc=subprocess.Popen(cmd,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
