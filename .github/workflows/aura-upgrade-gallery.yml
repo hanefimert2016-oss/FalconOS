@@ -31,13 +31,13 @@ jobs:
       - name: Capture desktop, launchpad, apps, CodeDium and native multiwindows
         id: ui
         run: timeout 170s python3 tools/qemu_ui_smoke.py --iso build/FalconOS.iso
-      - name: Open falconos.tech inside real Falco and capture PNG
+      - name: Open falconos.tech in Falco with explicit host-verified HTTPS and capture PNG
         id: falco
         continue-on-error: true
         run: |
           make clean
           make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_BROWSER_TEST
-          timeout 170s python3 tools/qemu_falco_website.py --iso build/FalconOS.iso
+          timeout 170s python3 tools/qemu_falco_website.py --iso build/FalconOS.iso --via-host
       - name: Upload actual guest screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,7 +76,7 @@ jobs:
           # FalconOS Aura QEMU captures
           Source commit: $GITHUB_SHA
           Captures: real QEMU framebuffer, not generated interface concepts.
-          Falco live HTTPS result: ${{ steps.falco.outcome }}.
+          Falco host-verified HTTPS result: ${{ steps.falco.outcome }}.
           A PNG showing a TLS error is not evidence that the target site loaded.
           EOF
           git config user.name 'github-actions[bot]'
