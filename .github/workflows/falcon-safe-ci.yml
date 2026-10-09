@@ -263,3 +263,24 @@ jobs:
           name: FalconOS-NVMe-Admin-Identify
           path: build/nvme-admin-debug.log
           if-no-files-found: ignore
+
+  xhci-command:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU xHCI and kernel tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86
+      - name: Build isolated USB3 xHCI host test ISO
+        run: make iso EXTRA_CFLAGS=-DFALCON_QEMU_XHCI_CMD_TEST
+      - name: Execute real controller No-op command and event ring
+        run: python3 tools/qemu_xhci_e2e.py
+      - name: Upload controller trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-USB3-xHCI-Command
+          path: build/xhci-command-debug.log
+          if-no-files-found: ignore
