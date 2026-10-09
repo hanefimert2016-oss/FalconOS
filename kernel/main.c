@@ -529,6 +529,30 @@ void long_start(u64 magic, u64 info_ptr)
     }
 #endif
 
+#ifdef FALCON_QEMU_TCP_MULTI_TEST
+    {
+        const u8 gateway[4]={10,0,2,2};
+        i32 a=native_tcp_socket_open(gateway,18081);
+        i32 b=native_tcp_socket_open(gateway,18082);
+        bool good=a>=1&&b>=1&&a!=b;
+        static const u8 first[]="first";
+        static const u8 second[]="second";
+        u8 ra[32],rb[32];
+        if(good){
+            good=native_tcp_socket_write(a,first,sizeof(first)-1)==5 &&
+                 native_tcp_socket_write(b,second,sizeof(second)-1)==6;
+        }
+        if(good){
+            i32 n1=native_tcp_socket_read(a,ra,sizeof ra,250);
+            i32 n2=native_tcp_socket_read(b,rb,sizeof rb,250);
+            good=n1>0&&n2>0&&ra[0]=='1'&&rb[0]=='2';
+        }
+        if(a>=1)(void)native_tcp_socket_close(a);
+        if(b>=1)(void)native_tcp_socket_close(b);
+        outb(0xE9,good?'Q':'q');
+    }
+#endif
+
     boot_splash();
 
     /* installer: only on the very first boot                                */
