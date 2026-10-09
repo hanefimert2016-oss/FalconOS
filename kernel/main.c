@@ -491,6 +491,12 @@ void long_start(u64 magic, u64 info_ptr)
         outb(0xE9,nvme_qemu_identify()?'I':'i');
     }
 #endif
+#ifdef FALCON_QEMU_XHCI_CMD_TEST
+    {
+        extern bool xhci_qemu_noop(void);
+        outb(0xE9,xhci_qemu_noop()?'X':'x');
+    }
+#endif
     settings_init();
     /* Installer may choose secure RAM-only mode or an explicit 0xFA partition.
      * Defer app and persistent file loading until AFTER installer decision. */
