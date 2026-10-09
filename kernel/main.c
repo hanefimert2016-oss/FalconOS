@@ -522,6 +522,7 @@ void long_start(u64 magic, u64 info_ptr)
 
     shfs_init();
     pfs_mount();              /* replay checksum-verified durable user files */
+    (void)xfs_mount();         /* separate 32-KiB large-object COW volume */
     market_init();            /* restore downloaded apps after PFS replay */
     apps_pkg_sync_receipts_from_state();
 
