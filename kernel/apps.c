@@ -3804,11 +3804,12 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
         market_query_len?market_query:(market_search_mode?
             "Type app name...":"F4  Search apps"),
         market_query_len?PAL_TEXT:PAL_TEXT_DIM);
-    if(clicked&&mx>=wx+24&&mx<wx+ww-24&&my>=wy+138&&my<wy+172){
+    /* Do not let the search hit-area steal category-filter clicks. */
+    i32 cat_x=wx+ww-158;
+    if(clicked&&mx>=wx+24&&mx<cat_x-4&&my>=wy+138&&my<wy+172){
         market_search_mode=true;(void)mouse_consume_click();clicked=false;
     }
     static const char *catname[]={"All apps","Installed","Updates"};
-    i32 cat_x=wx+ww-158;
     gfx_round_rect(cat_x,wy+144,129,23,8,PAL_ACCENT_DIM);
     gfx_text(cat_x+9,wy+149,catname[market_category],PAL_ACCENT);
     if(clicked&&mx>=cat_x&&mx<cat_x+129&&my>=wy+144&&my<wy+167){
