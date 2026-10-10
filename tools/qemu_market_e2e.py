@@ -136,16 +136,22 @@ def test_gui(args):
                 prior = len(debug.read_bytes())
                 hmp(mon, "sendkey ret", 0.7)   # passwordless login
                 wait_for_marker(debug, b"H", after=prior, timeout=12)
-                hmp(mon, "sendkey esc", 0.4)
-                hmp(mon, "sendkey f2", 0.8)
-                # Search by real display name. Positional navigation may drop
-                # repeated key events under TCG software rendering.
-                # Setup chose Turkish; apps_display_name(2) is "Kesfet".
-                for letter in "kesfet":
-                    hmp(mon, "sendkey " + letter, 0.31)
-                hmp(mon, "sendkey ret", 1.1)
+                # The first desktop starts with the Help drawer. Give its
+                # close/paint event time to settle before opening Launchpad:
+                # sendkey acknowledgements are host-side, not proof a guest
+                # widget has consumed the event.
+                hmp(mon, "sendkey esc", 1.8)
+                hmp(mon, "sendkey f2", 1.4)
+                # Store is the 8th Essentials tile (0-based index 7).
+                # Navigate slowly under the software-rendered 2K framebuffer,
+                # exactly as the passing native UI gallery does.
+                for _ in range(7):
+                    hmp(mon, "sendkey right", 0.34)
+                prior = len(debug.read_bytes())
+                hmp(mon, "sendkey ret", 1.5)
                 try:
-                    wait_for_marker(debug, b"M", timeout=15)
+                    wait_for_marker(debug, b"zCn1", after=prior, timeout=35)
+                    wait_for_marker(debug, b"M", after=prior, timeout=35)
                 except AssertionError:
                     # Capture failing GUI state to distinguish lost keys from
                     # serial/device setup regressions. The CI artifact remains.
