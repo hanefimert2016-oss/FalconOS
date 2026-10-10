@@ -121,12 +121,18 @@ def mouse(c):
     shot(c,'FalconOS-VNC-Pointer-Before-Close')
     if any(abs(g-v)>14 for g,v in zip(goal,latest_pos())):
         raise AssertionError('Cannot aim guest pointer at close hitbox: '+str(latest_pos()))
+    off=len(raw())
     got=click(c)
     RES['mouse']['pressed_in_ps2']=b'mL' in got
-    RES['mouse']['window_close_event']=b'kX' in got
+    if b'mL' not in got:
+        raise AssertionError('RFB button did not reach PS/2 driver')
+    # A 2560x1440 software framebuffer can take seconds per repaint.
+    # mL is an IRQ event; WM kP/kX must be observed AFTER a subsequent UI frame.
+    mark(b'kP',off,deadline=25)
+    mark(b'kX',off,deadline=25)
+    RES['mouse']['window_close_event']=True
+    pause(1.0)
     shot(c,'FalconOS-VNC-Window-Closed')
-    if b'mL' not in got: raise AssertionError('RFB button did not reach PS/2 driver')
-    if b'kX' not in got: raise AssertionError('RFB button reached guest but missed WM Close')
     RES['result']='PASS: RFB keyboard, notes, pointer motion and Close'
 
 def main():
