@@ -18,6 +18,46 @@
       ~~~~~~~~~~~
 ```
 
+## Aura desktop: multiwindow, Falco, original GLB intro
+
+The native desktop supports up to **six concurrently running built-in app
+windows**. Press **F2** to open a second app without closing the first, or
+use the dock to focus/restore apps. **Alt+Tab** cycles the window stack.
+The upper-right titlebar controls close, maximise/restore and minimise;
+minimise now retains the open window and its geometry rather than closing it.
+Window resizing uses a bottom-right drag handle. The first-run Help drawer
+no longer covers the upper-right controls; open Help from the top bar.
+
+Falco's search field and Submit button are clickable. The action row has
+explicit buttons for live-site HTTPS, host HTTPS, GitHub docs fallback and
+search. The page-view toolbar offers Back, Reload, HTTPS mode and a clickable
+address field. **Ctrl+L** starts a new URL, **Ctrl+R** reloads, and
+**Alt+Left** returns from a Falco page to search. Browser rendering remains
+bounded text-only HTML with no JavaScript engine.
+
+The exact user's Drive file `falconos_boot_intro_animation (1).glb` is now
+stored as `assets/boot/falconos_boot_intro_animation.glb` (3,036,412 bytes,
+SHA-256 `094a8de5cc4fec713b0442eba51ece8ac56e708c361db4f790e5918ca323a304`).
+`tools/bake_boot_intro.py` bakes animated glTF keyframes from this file.
+`ENABLE_BOOT_GLB=1` is the default when building the kernel. No runtime GLB
+parser runs with kernel privileges. When the host lacks numpy, trimesh,
+OpenCV or Pillow, the Makefile installs build-only dependencies in its own
+`build/boot-intro-venv` directory; first build may need internet access.
+
+To run the desktop and **download verified Marketplace packages** on Arch:
+```bash
+cd ~/FalconOS-Publisher
+git pull --ff-only
+make run-market RAM=4096 CPUS=4
+```
+Open **Keşfet/Discover**, refresh the release list with **R**, and search
+for `FalconOS Test App` (release tag `app-falcon-test-v1.0.0`). Enter
+downloads/installs a validated FAPP/1 script from a real GitHub Release.
+This uses an opt-in host COM1 network bridge; `make run-disk` starts the
+OS without the Marketplace download bridge. The sample release and SHA-256
+are at
+https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/tag/app-falcon-test-v1.0.0.
+
 ## Marketplace + Codedium (experimental)
 The native Store now lists actual GitHub Releases FAPP/1 packages, verifies
 SHA-256 and launches allowlisted commands through Terminal. Run `make run-market`
