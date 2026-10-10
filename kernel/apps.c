@@ -99,6 +99,9 @@ bool apps_is_open(i32 app) {
 }
 void apps_open(i32 app) {
     if(app<0||app>=apps_count())return;
+    /* Never allow a translucent help sheet to consume the next click
+     * intended for the opened window's titlebar traffic lights. */
+    if(helppanel_is_open())helppanel_close();
     if(app>=builtin_app_count()) {
         i32 idx=app-builtin_app_count();
         if(market_installed(idx))market_launch(idx);
