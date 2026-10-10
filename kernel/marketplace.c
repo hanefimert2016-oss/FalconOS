@@ -24,6 +24,8 @@ static char rx_digest[65];
 static char pending_id[33];
 static void market_rebuild_cached(void);
 static const char *status_text = "Bridge offline. Press R to refresh.";
+static bool publish_busy;
+static const char *publish_status="P: prepare upload, F10: confirm";
 
 static bool safe_id(const char *s) {
     i32 n = 0;
@@ -216,8 +218,6 @@ static void on_line(char *line) {
  * The GH login always lives on the host and is never sent to the VM.
  * Nothing is published merely by opening a file or launching CodeDium.
  */
-static bool publish_busy;
-static const char *publish_status="P: prepare upload, F10: confirm";
 const char *market_publish_status(void) { return publish_status; }
 
 static bool publish_header(const char *p,u32 bytes,char *id,char *version)
