@@ -3500,6 +3500,13 @@ static void falco_navigate(const char *address,bool use_host){
 static void falco_open_site(const char *address){falco_navigate(address,false);}
 static void falco_open_site_host(const char *address){falco_navigate(address,true);}
 static void chrome_input_key(i32 key){
+    if((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
+        browser_address_focus=true;return;
+    }
+    if((kbd_mod_state() & (1u<<1)) && (key=='r'||key=='R')) {
+        browser_load();return;
+    }
+    if(key==KEY_ESC){browser_address_focus=false;return;}
     if(key==KEY_F4){
         browser_address[0]=0;
         browser_address_len=0;
@@ -3531,11 +3538,37 @@ static void chrome_input_key(i32 key){
 static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;
     i32 margin=18,bar=wy+54;
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    if(wm_click_enabled()&&mx>=wx+margin&&mx<wx+ww-margin){
+        if(my>=wy+7&&my<wy+41){
+            (void)mouse_consume_click();
+            if(mx<wx+100){
+                if(active_app==13)falco_web_view=false;
+                else {browser_loaded=false;browser_address_focus=true;}
+            }else if(mx<wx+196)browser_load();
+            else if(mx>=wx+ww-160){
+                browser_host_gateway=!browser_host_gateway;
+                k_strcpy(browser_status,browser_host_gateway?
+                    "HOST TLS via companion bridge enabled":
+                    "NATIVE TLS (BearSSL) enabled");
+            }else browser_address_focus=true;
+            return;
+        }
+        if(my>=bar&&my<bar+34){
+            (void)mouse_consume_click();
+            browser_address_focus=true;
+            return;
+        }
+    }
     gfx_rect(wx,wy,ww,44,PAL_PANEL_DEEP);
-    gfx_round_rect_a(wx+margin,wy+7,170,32,9,PAL_PANEL,255);
-    gfx_text(wx+margin+12,wy+15,active_app==13?"Falco Web":"Falcon Browser",PAL_ACCENT);
-    gfx_text(wx+205,wy+16,
-        browser_host_gateway?"HOST HTTPS / LOCAL LINK":"NATIVE HTTPS / BEARSSL",PAL_TEXT_DIM);
+    gfx_round_rect_a(wx+margin,wy+7,80,32,9,PAL_PANEL,255);
+    gfx_text(wx+margin+10,wy+15,"< Back",PAL_TEXT);
+    gfx_round_rect_a(wx+104,wy+7,88,32,9,PAL_PANEL,255);
+    gfx_text(wx+114,wy+15,"Reload",PAL_TEXT);
+    gfx_text(wx+211,wy+16,active_app==13?"Falco Web":"Falcon Browser",PAL_ACCENT);
+    gfx_round_rect_a(wx+ww-160,wy+7,141,32,9,PAL_PANEL,255);
+    gfx_text(wx+ww-150,wy+15,
+        browser_host_gateway?"HOST HTTPS":"NATIVE HTTPS",PAL_TEXT_DIM);
     gfx_rect(wx,wy+45,ww,56,PAL_PANEL_HI);
     i32 sx=wx+margin,sy=bar,sw=ww-margin*2;
     gfx_round_rect_a(sx,sy,sw,34,10,PAL_PANEL,255);
@@ -3585,7 +3618,7 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
     }
     gfx_text(wx+margin,wy+wh-26,
-        "F4 new URL | Enter load | F5 reload | F6 HTTPS mode | Up/Down scroll",
+        "Ctrl+L URL | Enter load | F5 reload | Esc exit URL | Up/Down scroll",
         PAL_TEXT_FAINT);
 }
 
