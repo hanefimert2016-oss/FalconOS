@@ -169,9 +169,13 @@ def test_gui(args):
                 hmp(mon, "screendump " + str(root / "market-search.ppm"), 0.6)
                 ppm_to_png(root / "market-search.ppm",
                            root / "FalconOS-Discover-Search.png")
-                hmp(mon, "sendkey f4", 0.4)  # back to Install/Run mode
+                hmp(mon, "sendkey f4", 0.65)  # close search input
+                hmp(mon, "sendkey f9", 0.55)  # clear filters, select real app
                 prior = len(debug.read_bytes())
-                hmp(mon, "sendkey ret", 0.5)
+                hmp(mon, "sendkey f5", 0.6)  # prove normal mode is active
+                wait_for_marker(debug, b"C", after=prior, timeout=20)
+                prior = len(debug.read_bytes())
+                hmp(mon, "sendkey ret", 0.9)
                 wait_for_marker(debug, b"I", after=prior, timeout=35)
                 # Selected installed package -> explicit P -> F10 -> host publisher.
                 prior = len(debug.read_bytes())
