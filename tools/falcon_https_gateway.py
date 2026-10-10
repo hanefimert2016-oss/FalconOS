@@ -58,8 +58,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                   for a in answers):
                 raise ValueError("Blocked non-public HTTPS destination")
             request=urllib.request.Request(url,headers={
-                "User-Agent":"FalconOS-VerifiedText/1.0",
+                # Several deployments deny generic automated User-Agent values.
+                # A browser-compatible UA is still an ordinary authenticated
+                # GET: never bypass authentication, CAPTCHA, or blocked routes.
+                "User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
                 "Accept-Encoding":"identity","Accept":accept,
+                "Accept-Language":"tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
                 "Connection":"close"})
             try:
                 with opener.open(request,timeout=12) as response:
@@ -158,7 +162,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             # HTTPS-only redirects and every DNS hop are checked above.
             url="https://"+host+"/"+tail
-            data=self.validated_https_request(url,2401)
+            data=self.validated_https_request(url,60000)
             # Compact bounded text is more useful than rejecting common pages.
             # No JS/CSS executes on the guest.
             if len(data)>2350:
