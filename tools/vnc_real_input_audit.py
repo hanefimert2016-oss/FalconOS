@@ -52,7 +52,7 @@ def notes(c):
     shot(c,'FalconOS-VNC-Files')
     RES['keyboard'].append('Files: launch')
     k(c,'f2')
-    for _ in range(8):k(c,'backspace')
+    for _ in range(8):k(c,'bsp')
     t(c,'Notlar')
     off=len(raw())
     k(c,'enter')
