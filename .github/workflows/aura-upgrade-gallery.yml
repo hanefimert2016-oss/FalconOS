@@ -33,6 +33,10 @@ jobs:
       - name: Capture desktop, launchpad, apps, Codedium and native multiwindows
         id: ui
         run: timeout 225s python3 tools/qemu_ui_smoke.py --iso build/FalconOS.iso
+      - name: Diagnose actual QMP PS/2 click on Close titlebar button
+        id: pointer
+        continue-on-error: true # explicit test outcome; do not suppress bootable ISO
+        run: timeout 225s python3 tools/qemu_ui_smoke.py --iso build/FalconOS.iso --verify-mouse --output build/FalconOS-Mouse-UI.png
       - name: Verify real Discover search, install and GitHub upload in QEMU
         id: marketplace
         continue-on-error: true # real guest result still reported; don't block visual regression tests
