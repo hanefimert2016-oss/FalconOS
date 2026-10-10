@@ -374,6 +374,7 @@ void         apps_draw_icon(i32 i, i32 cx, i32 cy);
 void         apps_open(i32 i);
 void         apps_close(void);
 i32          apps_active(void);
+i32          apps_window_count(void);  /* visible and minimized windows */
 i32          apps_minimized(void);
 bool         apps_is_open(i32 app); /* any visible native window */
 void         apps_render_active(u32 frame);
