@@ -1,0 +1,52 @@
+name: FalconOS full Aura Marketplace live-verified ISO
+on:
+  push:
+    branches: [fix/marketplace-falco-live-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-market-full-iso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup QEMU and original dragon model bake
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 ca-certificates python3-venv
+          python3 -m venv /tmp/falcon-full
+          /tmp/falcon-full/bin/pip -q install 'numpy<3' trimesh opencv-python-headless pillow vncdotool
+      - name: Build real FalconOS Aura + dragon + BearSSL
+        run: |
+          /tmp/falcon-full/bin/python tools/bake_boot_intro.py --frames 48
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY -DFALCON_QEMU_BROWSER_TEST'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+          sha256sum build/FalconOS.iso > build/full-iso-sha256.txt
+      - name: Verify current real GitHub Marketplace through native guest VNC
+        id: e2e
+        continue-on-error: true
+        run: timeout 370s /tmp/falcon-full/bin/python tools/vnc_marketplace_live_e2e.py
+      - name: Publish full ISO only after REAL Marketplace install and launch passed
+        if: steps.e2e.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Aura-Marketplace-Live-Verified-Full-ISO
+          path: |
+            build/FalconOS.iso
+            build/full-iso-sha256.txt
+          retention-days: 14
+      - name: Publish individual guest screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Aura-Full-Marketplace-Live-PNG
+          path: |
+            build/FalconOS-Market-*.png
+            build/market-vnc-results.json
+            build/market-vnc-kernel.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Do not declare a passing ISO if live Marketplace failed
+        if: steps.e2e.outcome != 'success'
+        run: exit 1
