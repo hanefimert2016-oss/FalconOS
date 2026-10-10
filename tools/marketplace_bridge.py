@@ -161,7 +161,7 @@ def publish_release(raw, metadata):
                            encoding="ascii")
         cmd = ["gh", "release", "create", tag, str(pkg), str(sidecar),
                "--repo", REPO, "--title", metadata["name"],
-               "--notes", "FAPP/1 script published from FalconOS CodeDium/Discover.",
+               "--notes", "FAPP/1 script published from FalconOS Codedium/Discover.",
                "--latest=false"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=70)
         if result.returncode:
