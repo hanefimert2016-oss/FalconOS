@@ -34,6 +34,12 @@ jobs:
       - name: Verify real Discover search and SHA-256 .app.pkg install in QEMU
         id: marketplace
         run: timeout 175s python3 tools/qemu_market_e2e.py --iso build/FalconOS.iso --output build/FalconOS-Marketplace-Install.png
+      - name: Verify explicit Falco GitHub README fallback with real QEMU
+        id: falco_fallback
+        run: |
+          make clean
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          timeout 170s python3 tools/qemu_falco_website.py --iso build/FalconOS.iso --via-host --github-docs
       - name: Open falconos.tech in Falco with explicit host-verified HTTPS and capture PNG
         id: falco
         run: |
@@ -95,6 +101,7 @@ jobs:
           # FalconOS Aura QEMU captures
           Source commit: $GITHUB_SHA
           Captures: real QEMU framebuffer, not generated interface concepts.
+          Falco GitHub README fallback (not falconos.tech): ${{ steps.falco_fallback.outcome }}.
           Falco host-verified HTTPS result: ${{ steps.falco.outcome }}.
           A PNG showing a TLS error is not evidence that the target site loaded.
           EOF
