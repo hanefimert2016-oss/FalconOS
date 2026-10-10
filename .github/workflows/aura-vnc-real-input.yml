@@ -26,6 +26,13 @@ jobs:
         continue-on-error: true
         run: |
           timeout 300s /tmp/falcon-vnc-env/bin/python tools/vnc_real_input_audit.py
+      - name: Publish tested bootable FalconOS ISO
+        if: steps.input.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Aura-verified-real-input-ISO
+          path: build/FalconOS.iso
+          retention-days: 14
       - name: Publish actual guest PNG individually inside evidence artifact
         if: always()
         uses: actions/upload-artifact@v4
