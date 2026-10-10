@@ -3869,7 +3869,7 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 #define CODE_CAP 4096
 static char code_text[CODE_CAP];
 static i32 code_len, code_cursor;
-static bool code_ready;
+static bool code_ready,code_dirty;
 static const char *code_status = "F5 Save  |  F6 Run  |  F7 Export .app.pkg";
 static void code_init(void)
 {
@@ -3893,6 +3893,7 @@ static void code_save(void)
     if (!file) { code_status = "Save error: RAM file system is full"; return; }
     k_memcpy(file->data, code_text, code_len + 1);
     file->len = code_len;
+    code_dirty=false;
     code_status = codedium_project_save(code_text, code_len)
         ? "Saved project to RAM and safe FalconOS disk"
         : "Saved in RAM only (no safe disk selected)";
@@ -3980,11 +3981,11 @@ static void code_input_key(i32 key)
     }
     if (key == KEY_BACKSPACE && code_cursor > 0) {
         for (i32 i = code_cursor - 1; i < code_len; i++) code_text[i] = code_text[i+1];
-        code_len--; code_cursor--; return;
+        code_len--; code_cursor--; code_dirty=true; return;
     }
     if (key == KEY_DEL && code_cursor < code_len) {
         for (i32 i = code_cursor; i < code_len; i++) code_text[i] = code_text[i+1];
-        code_len--; return;
+        code_len--; code_dirty=true; return;
     }
     char c = 0;
     if (key == KEY_ENTER) c = '\n';
@@ -3992,48 +3993,87 @@ static void code_input_key(i32 key)
     else if (key >= 32 && key < 127) c = (char)key;
     if (c && code_len + 1 < CODE_CAP) {
         for (i32 i = code_len; i >= code_cursor; i--) code_text[i+1] = code_text[i];
-        code_text[code_cursor++] = c; code_len++;
+        code_text[code_cursor++] = c; code_len++; code_dirty=true;
     }
 }
-static void render_codedium(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 {
     (void)frame;
     code_init();
-    section(wx, wy, "CodeDium Studio", "Native FAPP/1 script editor, protected command execution");
-    gfx_round_rect(wx + 18, wy + 45, ww - 36, wh - 92, 10, 0x101A2C);
-    gfx_rect(wx + 20, wy + 46, 36, wh - 95, 0x1B2942);
-    i32 line = 0, col = 0, cursor_line = 0, cursor_col = 0;
-    for (i32 j = 0; j < code_cursor; j++) {
-        if (code_text[j] == '\n') { cursor_line++; cursor_col = 0; }
+    section(wx,wy,"CodeDium Studio","FAPP/1 editor  |  sandboxed commands only");
+    /* Toolbar performs real actions; not placeholder or static artwork. */
+    const char *names[]={"Save  F5","Run  F6","Export  F7"};
+    const u32 tones[]={0x3478E6u,0x19A680u,0x8862D7u};
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    bool clicked=wm_click_enabled();
+    for(i32 i=0;i<3;i++){
+        i32 x=wx+21+i*123, y=wy+47;
+        bool hover=mx>=x&&mx<x+113&&my>=y&&my<y+34;
+        gfx_round_rect_a(x,y,113,34,11,hover?PAL_ACCENT:tones[i],255);
+        gfx_text_centered(x+56,y+11,names[i],0xFFFFFFu);
+        if(clicked&&hover){
+            (void)mouse_consume_click();clicked=false;
+            if(i==0)code_save();
+            else if(i==1)code_run();
+            else code_export();
+        }
+    }
+    if(ww>=650){
+        gfx_text(wx+ww-240,wy+58,"Desktop/project.fsh",PAL_TEXT_DIM);
+        gfx_circle(wx+ww-24,wy+64,5,code_dirty?COL_WARN:COL_OK);
+    }
+    i32 top=wy+91;
+    i32 area=wh-149;if(area<90)area=90;
+    gfx_round_rect(wx+18,top,ww-36,area,10,0x101A2Cu);
+    gfx_rect(wx+20,top+2,38,area-4,0x1B2942u);
+    i32 line=0,cursor_line=0,cursor_col=0;
+    for(i32 j=0;j<code_cursor;j++){
+        if(code_text[j]=='\n'){cursor_line++;cursor_col=0;}
         else cursor_col++;
     }
-    /* Keep the cursor in view: render a vertical window of source lines. */
-    i32 visible = (wh - 116) / 19;
-    if (visible < 1) visible = 1;
-    i32 first = cursor_line >= visible ? cursor_line - visible + 1 : 0;
+    i32 visible=(area-13)/19;
+    if(visible<1)visible=1;
+    i32 first=cursor_line>=visible?cursor_line-visible+1:0;
     char buf[115];
-    i32 bi = 0;
-    for (i32 pos = 0; pos <= code_len; pos++) {
-        char ch = code_text[pos];
-        i32 max_chars = (ww - 102) / 8;
-        if (max_chars >= (i32)sizeof buf) max_chars = (i32)sizeof buf - 1;
-        if (ch != '\n' && ch != 0 && bi < max_chars) {
-            buf[bi++] = ch; continue;
+    i32 bi=0;
+    for(i32 pos=0;pos<=code_len;pos++){
+        char ch=code_text[pos];
+        i32 max_chars=(ww-102)/8;
+        if(max_chars>=(i32)sizeof buf)max_chars=(i32)sizeof buf-1;
+        if(ch!='\n'&&ch!=0&&bi<max_chars){
+            buf[bi++]=ch;continue;
         }
-        buf[bi] = 0;
-        if (line >= first && line < first + visible) {
-            i32 y = wy + 54 + (line - first) * 19;
-            char num[12]; k_itoa(line + 1, num, 10);
-            gfx_text(wx + 27, y, num, PAL_TEXT_FAINT);
-            gfx_text(wx + 66, y, buf, buf[0] == '#' ? 0x78B69A : 0xDDE7FF);
-            if (line == cursor_line) {
-                i32 x = wx + 66 + cursor_col * 8;
-                if (x < wx + ww - 27) gfx_rect(x, y + 15, 8, 2, PAL_ACCENT);
+        buf[bi]=0;
+        if(line>=first&&line<first+visible){
+            i32 y=top+9+(line-first)*19;
+            if(line==cursor_line)
+                gfx_rect_a(wx+59,y-2,ww-80,19,0x306ABBu,58);
+            char num[12];k_itoa(line+1,num,10);
+            gfx_text(wx+27,y,num,PAL_TEXT_FAINT);
+            gfx_text(wx+66,y,buf,buf[0]=='#'?0x78B69Au:0xDDE7FFu);
+            if(line==cursor_line){
+                i32 x=wx+66+cursor_col*8;
+                if(x<wx+ww-27)gfx_rect(x,y+15,8,2,PAL_ACCENT);
             }
         }
-        bi = 0; line++;
+        bi=0;line++;
     }
-    gfx_text(wx + 22, wy + wh - 37, code_status, PAL_TEXT_DIM);
+    /* Bottom status follows the real cursor and unsaved-project state. */
+    i32 footer=wy+wh-43;
+    gfx_rect(wx+19,footer,ww-38,1,PAL_HAIRLINE);
+    char line_text[16],col_text[16],bytes_text[16];
+    k_itoa(cursor_line+1,line_text,10);
+    k_itoa(cursor_col+1,col_text,10);
+    k_itoa(code_len,bytes_text,10);
+    gfx_text(wx+23,footer+9,code_status,PAL_TEXT_DIM);
+    if(ww>=750){
+        gfx_text(wx+ww-199,footer+9,"Ln",PAL_TEXT_FAINT);
+        gfx_text(wx+ww-170,footer+9,line_text,PAL_TEXT);
+        gfx_text(wx+ww-135,footer+9,"Col",PAL_TEXT_FAINT);
+        gfx_text(wx+ww-98,footer+9,col_text,PAL_TEXT);
+        gfx_text(wx+ww-61,footer+9,bytes_text,PAL_TEXT_FAINT);
+        gfx_text(wx+ww-33,footer+9,"B",PAL_TEXT_FAINT);
+    }
 }
 
 /* ===== app table & dispatch ============================================= */
