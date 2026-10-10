@@ -4591,6 +4591,17 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
     }
 
     if (!click_edge) return false;
+#ifdef FALCON_QEMU_UI_GALLERY
+    /* Emit actual guest PS/2 pointer coordinates on rising-edge clicks.
+     * This proves whether QEMU's synthetic click reached window manager. */
+    outb(0xE9,'k');outb(0xE9,'P');
+    char mx_s[16], my_s[16];
+    k_itoa(mx,mx_s,10); k_itoa(my,my_s,10);
+    for(i32 j=0;mx_s[j];j++)outb(0xE9,(u8)mx_s[j]);
+    outb(0xE9,',');
+    for(i32 j=0;my_s[j];j++)outb(0xE9,(u8)my_s[j]);
+    outb(0xE9,';');
+#endif
     if (wm_focus_click(mx,my)) return true;
 
     /* traffic lights live at title-bar y ± 10px, x within radius 9.
