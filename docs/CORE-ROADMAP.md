@@ -17,7 +17,7 @@ Date: 2026-10-09. Branch: feature/core-storage-net-usermode.
 - Each file max 4096 bytes; SHA-256, generation, tombstone deletion,
   fallback to previous copy after torn/corrupted write.
 - Dirty file entries flushed incrementally from GUI event loop.
-- Existing Marketplace cache and CodeDium project offsets are preserved.
+- Existing Marketplace cache and Codedium project offsets are preserved.
 - Native mocked-disk regression covers persistence, max size, corruption,
   deletion and RAM-only mode.
 
