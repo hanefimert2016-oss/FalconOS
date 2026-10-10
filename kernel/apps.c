@@ -3527,6 +3527,28 @@ static void falco_navigate(const char *address,bool use_host){
     browser_address_focus=true;
     browser_host_gateway=use_host; /* F7: explicit local host-verified HTTPS. */
     browser_load();
+    /* Source authenticity also means verifying the requested site's content.
+     * A TLS-authenticated error page, access-denied screen, or GitHub README
+     * must not be reported as the FalconOS landing page. No fabricated HTML.
+     * This only applies to the explicit falconos.tech destination. */
+    bool requested_falconos_site =
+        k_strcmp(browser_address,"https://falconos.tech/")==0 ||
+        k_strcmp(browser_address,"https://falconos.tech")==0;
+    if(requested_falconos_site && browser_loaded){
+        if(!sh_contains_ci(browser_text,"FalconOS") ||
+           !sh_contains_ci(browser_text,"Contour")){
+            browser_loaded=false;
+            k_strcpy(browser_status,
+               "FalconOS site content not confirmed; refusing false success");
+        }else{
+            k_strcpy(browser_status,use_host?
+                "REAL falconos.tech Contour | host CA-verified HTTPS":
+                "REAL falconos.tech Contour | guest BearSSL HTTPS");
+#ifdef FALCON_QEMU_BROWSER_TEST
+            outb(0xE9,'f');outb(0xE9,'S');
+#endif
+        }
+    }
     if(use_host && browser_loaded &&
        sh_contains_ci(browser_address,"raw.githubusercontent.com/"))
         k_strcpy(browser_status,
