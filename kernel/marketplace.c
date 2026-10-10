@@ -423,6 +423,13 @@ static shfs_ent_t *package_file(i32 i) {
     return shfs_lookup(p);
 }
 bool market_installed(i32 i) { return package_file(i) != NULL; }
+bool market_publish_installed(i32 i)
+{
+    shfs_ent_t *pkg=package_file(i);
+    if(!pkg||pkg->is_dir||!pkg->len||pkg->len>PKG_MAX)return false;
+    return market_publish_package(pkg->data,pkg->len);
+}
+
 const char *market_script(i32 i) {
     shfs_ent_t *f = package_file(i);
     if (!f || f->is_dir || !app_meta(f->data, APP[i].id)) return NULL;
