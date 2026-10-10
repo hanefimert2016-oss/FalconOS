@@ -7,6 +7,7 @@ on:
       - "tools/publish_app.py"
       - "tools/marketplace_bridge.py"
       - "tests/test_host_publisher.py"
+      - "tests/test_qemu_boot_priority.py"
       - ".github/workflows/host-package-publish-tests.yml"
   workflow_dispatch:
 permissions:
@@ -24,3 +25,5 @@ jobs:
           ! grep -Eq 'nasm |qemu-system|grub-mkrescue' /tmp/publish-dry-run.txt
       - name: Test no-upload path, signed-off confirmation, FAPP format
         run: python3 -m unittest discover -s tests -p 'test_host_publisher.py' -v
+      - name: Test QEMU and CD-ROM boot priority without running QEMU
+        run: python3 -m unittest discover -s tests -p 'test_qemu_boot_priority.py' -v
