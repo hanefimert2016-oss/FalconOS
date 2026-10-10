@@ -1,0 +1,54 @@
+name: FalconOS Aura native GUI input fixes
+on:
+  push:
+    branches: [fix/aura-real-input-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-hid:
+    name: Native real-input GUI - ${{ matrix.gui }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gui: gtk
+            display: gtk,grab-on-hover=on
+          - gui: sdl
+            display: sdl
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native GUI/QEMU and build prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 qemu-system-gui xvfb xauth xdotool
+      - name: Check unit tests and compile UPDATED kernel, not old pre-fix ISO
+        run: |
+          python3 -m unittest discover -s tests -p 'test_*.py' -q
+          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
+          grub-file --is-x86-multiboot2 build/falcon.elf
+          sha256sum build/FalconOS.iso > build/iso-sha256.txt
+      - name: Test host mouse and keyboard through actual graphical window
+        id: gui
+        continue-on-error: true
+        run: |
+          timeout 280s xvfb-run -a -s '-screen 0 3200x2000x24' python3 tools/host_real_input_audit.py --display '${{ matrix.display }}'
+      - name: Upload individual original PNG captures as test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Aura-fixed-${{ matrix.gui }}-screens
+          path: |
+            build/FalconOS-Host-*.png
+            build/host-real-hid-report.json
+            build/host-real-hid-debug.log
+            build/host-pointer-location.txt
+            build/qemu-gtk-stderr.log
+            build/iso-sha256.txt
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Gate mouse+keyboard evidence
+        if: steps.gui.outcome != 'success'
+        run: exit 1
