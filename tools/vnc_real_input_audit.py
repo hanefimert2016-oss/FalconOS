@@ -78,8 +78,22 @@ def mouse(c):
     vx,vy=300,300
     old=len(raw())
     c.mouseMove(vx,vy)
-    pause(.5)
-    mark(b'p',old,deadline=12)
+    pause(.3)
+    # VNC relative pointer backends can use the first move only as origin.
+    # Exercise multiple real RFB pointer events and a human-length click
+    # before concluding the guest driver is not reachable.
+    for hx,hy in ((330,325),(360,350),(400,380)):
+        c.mouseMove(hx,hy)
+        vx,vy=hx,hy
+        pause(.25)
+    if b'p' not in raw()[old:]:
+        c.mouseDown(1)
+        pause(.3)
+        c.mouseMove(420,385)
+        c.mouseUp(1)
+        vx,vy=420,385
+        pause(.3)
+    mark(b'p',old,deadline=6)
     goal=(1989,315)  # 2560x1440, 2nd 1180x760 window Close centre
     RES['mouse']['initial_guest_pos']=latest_pos()
     for n in range(90):
