@@ -103,6 +103,7 @@ void apps_open(i32 app) {
     /* Never allow a translucent help sheet to consume the next click
      * intended for the opened window's titlebar traffic lights. */
     if(helppanel_is_open())helppanel_close();
+    if(app==2) market_refresh(); /* Discover requests real releases on open */
     if(app>=builtin_app_count()) {
         i32 idx=app-builtin_app_count();
         if(market_installed(idx))market_launch(idx);
@@ -3930,8 +3931,8 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
     gfx_round_rect_a(wx+18,wy+8,ww-36,75,19,PAL_PANEL_DEEP,255);
     gfx_round_rect(wx+30,wy+19,40,40,13,0x20AA83u);
     gfx_text_lg_centered(wx+50,wy+26,"+",0xFFFFFFu);
-    gfx_text_lg(wx+83,wy+14,"Discover",PAL_TEXT);
-    gfx_text(wx+85,wy+49,"FalconOS Marketplace | verified GitHub .app.pkg",PAL_TEXT_DIM);
+    gfx_text_lg(wx+83,wy+14,T("Discover","Keşfet"),PAL_TEXT);
+    gfx_text(wx+85,wy+49,T("Verified GitHub .app.pkg packages","GitHub doğrulamalı .app.pkg paketleri"),PAL_TEXT_DIM);
     gfx_text(wx+24,wy+91,"F5 refresh | F4 search | P selected | F11 add .pkg | F10 confirm",PAL_TEXT_DIM);
     gfx_text(wx+24,wy+111,
         market_publish_armed?
@@ -3980,7 +3981,8 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
     if(!total){
         gfx_round_rect_a(wx+24,wy+189,ww-48,90,14,PAL_PANEL_DEEP,255);
         gfx_text(wx+42,wy+225,
-            "Catalog offline or empty. Run make market-bridge and press F5.",
+            T("No releases. Start make run-market and press F5.",
+              "Katalog boş. make run-market başlat, ardından F5 bas."),
             PAL_TEXT_DIM);
     }else if(!count){
         gfx_round_rect_a(wx+24,wy+189,ww-48,90,14,PAL_PANEL_DEEP,255);
@@ -4344,7 +4346,7 @@ const char *apps_display_name(i32 i)
     if (i < 0 || i >= apps_count()) return "?";
     if (i >= builtin_app_count()) return market_name(i - builtin_app_count());
     /* User-facing brand: Keşfet / Discover; stable internal ID remains Store. */
-    if (i == 2) return T("Discover","Kesfet");
+    if (i == 2) return T("Discover","Keşfet");
     if (SET.lang != LANG_TR)
         return APPS[i].name;
     switch (i) {
@@ -4362,7 +4364,7 @@ const char *apps_display_name(i32 i)
         case 11: return "Galeri";
         case 12: return "Video";
         case 13: return "Falco";
-        case 14: return "Tarayici";
+        case 14: return "Tarayıcı";
         case 15: return "Heroic";
         case 16: return "Jarvis";
         case 17: return "Hakkında";
@@ -4375,7 +4377,7 @@ const char *apps_display_subtitle(i32 i)
     if (i < 0 || i >= apps_count()) return "";
     if (i >= builtin_app_count())
         return market_installed(i - builtin_app_count())
-            ? T("Installed FAPP/1", "Yuklu FAPP/1") : T("Get app from Store", "Magazadan indir");
+            ? T("Installed FAPP/1", "Yüklü FAPP/1") : T("Get app from Store", "Mağazadan indir");
     if (SET.lang != LANG_TR)
         return APPS[i].subtitle;
     switch (i) {
@@ -4393,7 +4395,7 @@ const char *apps_display_subtitle(i32 i)
         case 11: return "Renk paleti";
         case 12: return "Yazılım oynatıcı";
         case 13: return "Yerel indeks arama";
-        case 14: return "Dogrulanmis HTTPS metin gorunumu";
+        case 14: return "Doğrulanmış HTTPS metin görünümü";
         case 15: return "Oyun başlatıcı (uyum)";
         case 16: return "Yapay asistan";
         case 17: return "FalconOS bilgisi";
@@ -4507,6 +4509,16 @@ void apps_input_active(i32 key)
     if (key==KEY_TAB && (kbd_mod_state() & (1u<<2)) && wm_slot_count>1) {
         wm_raise(0);
         return;
+    }
+    /* Accessible window actions when PS/2 pointer grab is unavailable. */
+    if ((kbd_mod_state() & (1u<<2)) && key==KEY_F4) {
+        apps_close();return;
+    }
+    if ((kbd_mod_state() & (1u<<2)) && key==KEY_F9) {
+        wm_minimize_top();return;
+    }
+    if ((kbd_mod_state() & (1u<<2)) && key==KEY_F10) {
+        wm_max=!wm_max;return;
     }
     if (key == KEY_ESC) { apps_close(); return; }
     if (APPS[active_app].input) APPS[active_app].input(key);
