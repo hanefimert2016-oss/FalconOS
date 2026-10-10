@@ -3216,6 +3216,13 @@ static void falco_search(void){
          "Live Wikipedia results - host certificate verified");
 }
 static void falco_input_key(i32 key){
+    if ((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
+        if(falco_web_view){chrome_input_key(KEY_TAB);return;}
+        falco_query[0]=0;falco_query_len=0;falco_has_results=false;return;
+    }
+    if((kbd_mod_state() & (1u<<2)) && key==KEY_LEFT && falco_web_view){
+        falco_web_view=false;return;
+    }
     /* A deliberate GitHub-docs fallback is NOT the live website. */
     if(key==KEY_F8){
         falco_open_site_host(
@@ -3245,6 +3252,24 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     if(falco_web_view){render_browser(wx,wy,ww,wh,frame);return;}
     (void)frame;
     i32 x=wx+22,w=ww-44;
+    /* Pointer hit-test matches real drawn toolbar controls. */
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    if(wm_click_enabled()&&mx>=x&&mx<x+w){
+        if(my>=wy+109&&my<wy+160){
+            (void)mouse_consume_click();
+            if(mx>=x+w-126)falco_search();
+            return;
+        }
+        if(my>=wy+165&&my<wy+200){
+            i32 rel=mx-x;
+            (void)mouse_consume_click();
+            if(rel<160)falco_open_site("https://falconos.tech/");
+            else if(rel<326)falco_open_site_host("https://falconos.tech/");
+            else if(rel<492)falco_input_key(KEY_F8);
+            else falco_search();
+            return;
+        }
+    }
     gfx_round_rect_a(x,wy+12,w,84,20,0xDBEAFE,240);
     gfx_round_rect(x+14,wy+26,48,48,16,0x2269D9);
     gfx_text_lg_centered(x+38,wy+34,"F",0xFFFFFF);
@@ -3257,14 +3282,22 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_text(x+51,wy+127,falco_query_len?falco_query:"Search Wikipedia...",PAL_TEXT);
     gfx_round_rect(x+w-110,wy+117,100,35,13,0x246DE8);
     gfx_text_centered(x+w-60,wy+128,"Enter",0xFFFFFF);
-    gfx_text(x+4,wy+179,falco_status,0x4B779E);
-    gfx_text(x+8,wy+wh-23,
-       "F6 live TLS | F7 host TLS | F8 GitHub documentation fallback",
-       PAL_TEXT_FAINT);
-    gfx_round_rect_a(x,wy+204,w,wh-264,19,PAL_PANEL,240);
-    gfx_round_outline(x,wy+204,w,wh-264,19,PAL_HAIRLINE);
+    /* Explicit clickable HTTPS navigation; no fake "button" labels. */
+    const char *actions[4]={"Live site","Host HTTPS","GitHub docs","Search"};
+    for(i32 i=0;i<4;i++){
+        i32 bx=x+i*166;
+        if(bx+157>x+w)break;
+        gfx_round_rect_a(bx,wy+165,157,34,10,
+            i==0?0x246DE8u:PAL_PANEL_HI,250);
+        gfx_round_outline(bx,wy+165,157,34,10,PAL_HAIRLINE);
+        gfx_text_centered(bx+78,wy+175,actions[i],
+            i==0?0xFFFFFFu:PAL_TEXT);
+    }
+    gfx_text(x+4,wy+207,falco_status,0x4B779E);
+    gfx_round_rect_a(x,wy+230,w,wh-290,19,PAL_PANEL,240);
+    gfx_round_outline(x,wy+230,w,wh-290,19,PAL_HAIRLINE);
     if(!falco_has_results){
-        gfx_text_lg(x+26,wy+232,"Discover something new",PAL_TEXT);
+        gfx_text_lg(x+26,wy+253,"Discover something new",PAL_TEXT);
         gfx_text(x+26,wy+283,"Type a topic and press Enter.",PAL_TEXT_DIM);
         gfx_text(x+26,wy+312,
             "HTTPS is verified on the Arch host (not inside FalconOS).",PAL_TEXT_DIM);
@@ -3280,7 +3313,7 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             if(c=='\n'||col>=max_chars){
                 line[col]=0;
                 if(logical>=falco_sel)
-                    gfx_text(x+22,wy+225+(row++)*21,line,PAL_TEXT);
+                    gfx_text(x+22,wy+251+(row++)*21,line,PAL_TEXT);
                 logical++;col=0;
                 if(c=='\n')continue;
             }
@@ -3288,11 +3321,11 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
         if(col && row<rows && logical>=falco_sel){
             line[col]=0;
-            gfx_text(x+22,wy+225+row*21,line,PAL_TEXT);
+            gfx_text(x+22,wy+251+row*21,line,PAL_TEXT);
         }
     }
     gfx_text(x+5,wy+wh-36,
-        "F4 search | F6 native site | F7 host-verified site | F3 web back",
+        "Ctrl+L search | Enter go | F5 refresh | Alt+Left back | F8 Docs",
         PAL_TEXT_FAINT);
 }
 
