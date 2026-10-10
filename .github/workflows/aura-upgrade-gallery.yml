@@ -31,7 +31,7 @@ jobs:
       - name: Verify real Discover search, install and GitHub upload in QEMU
         id: marketplace
         run: timeout 175s python3 tools/qemu_market_e2e.py --iso build/FalconOS.iso --output build/FalconOS-Marketplace-Install.png
-      - name: Capture desktop, launchpad, apps, CodeDium and native multiwindows
+      - name: Capture desktop, launchpad, apps, Codedium and native multiwindows
         id: ui
         run: timeout 225s python3 tools/qemu_ui_smoke.py --iso build/FalconOS.iso
       - name: Verify explicit Falco GitHub README fallback with real QEMU
