@@ -140,7 +140,8 @@ def test_gui(args):
                 hmp(mon, "sendkey f2", 0.8)
                 # Search by real display name. Positional navigation may drop
                 # repeated key events under TCG software rendering.
-                for letter in "discover":
+                # Setup chose Turkish; apps_display_name(2) is "Kesfet".
+                for letter in "kesfet":
                     hmp(mon, "sendkey " + letter, 0.31)
                 hmp(mon, "sendkey ret", 1.1)
                 try:
