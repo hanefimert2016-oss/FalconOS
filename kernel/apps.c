@@ -4627,42 +4627,49 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
     for(i32 j=0;my_s[j];j++)outb(0xE9,(u8)my_s[j]);
     outb(0xE9,';');
 #endif
+    /* Focus background windows on first click; the next click manipulates
+     * their titlebar. The gesture may also start over any visible header. */
     if (wm_focus_click(mx,my)) return true;
 
-    /* traffic lights live at title-bar y ± 10px, x within radius 9.
-     *   red    → close (×)
-     *   yellow → minimise to dock
-     *   green  → toggle maximised (+)                                  */
-    i32 ty=wy+20;
-    if(my>=ty-15&&my<=ty+15){
-        if(mx>=wx+ww-44&&mx<wx+ww-9){
+    /* Match the *painted* titlebar hitboxes, including rounded corners:
+     * paint uses y+7..y+37. Earlier y+5..y+35 left the bottom edge dead.
+     * The full chrome row is available even on small-screen profiles. */
+    if(my>=wy+5 && my<wy+42) {
+        if(mx>=wx+ww-48 && mx<wx+ww-6) {
 #ifdef FALCON_QEMU_UI_GALLERY
-            outb(0xE9,'k');outb(0xE9,'X'); /* actual pointer hit titlebar close */
+            outb(0xE9,'k');outb(0xE9,'X');
 #endif
             apps_close();return true;
         }
-        if(mx>=wx+ww-84&&mx<wx+ww-46){wm_max=!wm_max;return true;}
-        if(mx>=wx+ww-124&&mx<wx+ww-86){
+        if(mx>=wx+ww-90 && mx<wx+ww-48) {
+            wm_max=!wm_max;return true;
+        }
+        if(mx>=wx+ww-134 && mx<wx+ww-90) {
             wm_minimize_top();return true;
         }
     }
 
-    /* resize handle: 18×18 square at the bottom-right, only visible
-     * when not maximised. Maximised windows are not resizable. */
+    /* Resize only the actual visible bottom-right grip. */
     if (!wm_max &&
-        mx >= wx + ww - 22 && mx <= wx + ww - 2 &&
-        my >= wy + wh - 22 && my <= wy + wh - 2) {
-        wm_resizing = true;
-        wm_resize_grab_x = mx; wm_resize_grab_y = my;
-        wm_resize_start_w = wm_dw; wm_resize_start_h = wm_dh;
+        mx >= wx + ww - 25 && mx < wx + ww &&
+        my >= wy + wh - 25 && my < wy + wh) {
+        wm_resizing=true;
+        wm_resize_grab_x=mx;wm_resize_grab_y=my;
+        wm_resize_start_w=wm_dw;wm_resize_start_h=wm_dh;
         return true;
     }
 
-    /* title bar: anywhere in the top 36 px not covered by the buttons */
-    if (my >= wy && my <= wy + 36 &&
-        mx >= wx + 80 && mx <= wx + ww - 40) {
-        wm_dragging = true;
-        wm_drag_grab_x = mx; wm_drag_grab_y = my;
+    /* Drag from the complete titlebar, including its app name. Additional
+     * Alt+left-drag anywhere inside the window allows recovery when the
+     * titlebar is covered or the pointer cannot reach a tiny target. */
+    bool alt_held=(kbd_mod_state() & (1u<<2))!=0;
+    bool in_title=my>=wy && my<wy+43 &&
+                  mx>=wx+48 && mx<wx+ww-134;
+    bool alt_drag=alt_held && mx>=wx && mx<wx+ww &&
+                              my>=wy && my<wy+wh;
+    if ((in_title || alt_drag) && left_held && !wm_max) {
+        wm_dragging=true;
+        wm_drag_grab_x=mx;wm_drag_grab_y=my;
         return true;
     }
 
