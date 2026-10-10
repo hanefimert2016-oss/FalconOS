@@ -26,8 +26,10 @@ jobs:
           python3 tools/bake_boot_intro.py --frames 48
           make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
           grub-file --is-x86-multiboot2 build/falcon.elf
-      - name: Verify graphical FalconOS boot in QEMU
-        run: python3 tools/qemu_smoke.py --iso build/FalconOS.iso --boot-seconds 16
+      - name: Verify graphical FalconOS boot with persistent raw disk and CD-ROM priority
+        run: |
+          make build/falcon-safe.raw
+          python3 tools/qemu_smoke.py --iso build/FalconOS.iso --disk build/falcon-safe.raw --boot-seconds 16
       - name: Verify real Discover search, install and GitHub upload in QEMU
         id: marketplace
         run: timeout 175s python3 tools/qemu_market_e2e.py --iso build/FalconOS.iso --output build/FalconOS-Marketplace-Install.png
