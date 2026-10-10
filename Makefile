@@ -90,7 +90,7 @@ else
 BOOT_GLB_FLAGS :=
 endif
 
-CFLAGS      := $(CFLAGS_ARCH) -ffreestanding -fno-pic -fno-stack-protector \
+CFLAGS      := $(CFLAGS_ARCH) -std=gnu11 -ffreestanding -fno-pic -fno-stack-protector \
                -fno-builtin -nostdlib -nostdinc \
                -Wall -Wextra -Wno-unused-parameter \
                -O2 -Ikernel -Ilinux \
