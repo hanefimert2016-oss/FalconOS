@@ -240,16 +240,19 @@ def main():
             # avoid 8-bit PS/2 packet overflow; the kernel's 2.5x acceleration
             # maps 26 * raw 20 + raw 4 to about 1306 pixels horizontally.
             # QEMU monitor mouse_move targets the real guest PS/2 device.
-            for _ in range(26): command(sock,"mouse_move 20 0",.09)
-            command(sock,"mouse_move 4 0",.13)
-            for _ in range(3): command(sock,"mouse_move 0 20",.09)
-            command(sock,"mouse_move 0 4",.13)
-            command(sock,"mouse_move 0 3",.15)
+            # QEMU relative events are further scaled by the virtual PS/2
+            # device.  Measured in the last real 2K framebuffer run: 26
+            # "mouse_move 20 0" steps reached x=1532, not x=1786.
+            # Move Y *together* with X to avoid PS/2 zero-X coalescing.
+            for _ in range(6): command(sock,"mouse_move 20 13",.12)
+            for _ in range(26): command(sock,"mouse_move 20 0",.12)
+            command(sock,"mouse_move 12 0",.18)
             ppm=root/"FalconOS-Aura-Pointer-Before-Close.ppm"
             screenshot(sock,ppm)
             ppm_to_png(ppm,root/"FalconOS-Aura-Pointer-Before-Close.png")
             click_offset=len(debug.read_bytes())
             command(sock,"mouse_button 1",.35)
+            command(sock,"mouse_move 1 0",.25)  # flush a PS/2 packet while held
             command(sock,"mouse_button 0",.40)
             try:
                 wait_for_marker(debug,b"kX",after=click_offset,timeout=15)
