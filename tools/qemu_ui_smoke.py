@@ -3,6 +3,7 @@
 This is a UI smoke test, not a native HTTPS/Market end-to-end test.
 """
 import argparse
+import json
 from pathlib import Path
 import socket
 import subprocess
@@ -34,6 +35,37 @@ def wait_for_marker(debug, marker, after=0, timeout=22):
     raise RuntimeError(f"Installer event {marker!r} missing. debug="+
                        repr(debug.read_bytes() if debug.exists() else b""))
 
+def qmp_mouse_button(socket_path,pressed):
+    """Inject actual QEMU InputEvent (preferred to deprecated HMP mouse_button).
+
+    Checks QMP replies so an unsupported host input command is never
+    mistaken for a guest mouse-driver failure.
+    """
+    with socket.socket(socket.AF_UNIX) as endpoint:
+        endpoint.settimeout(5)
+        endpoint.connect(str(socket_path))
+        io=endpoint.makefile("rwb",buffering=0)
+        hello=json.loads(io.readline())
+        if "QMP" not in hello:
+            raise RuntimeError("QMP handshake failed")
+        for request in (
+            {"execute":"qmp_capabilities"},
+            {"execute":"input-send-event","arguments":{"events":[
+                {"type":"btn","data":{"down":pressed,"button":"left"}}
+            ]}}
+        ):
+            io.write((json.dumps(request)+"\n").encode("ascii"))
+            while True:
+                reply=json.loads(io.readline())
+                if "event" in reply:
+                    continue
+                if "error" in reply:
+                    raise RuntimeError("QMP input rejected: "+str(reply["error"]))
+                if "return" in reply:
+                    break
+                raise RuntimeError("Unexpected QMP response: "+str(reply))
+
+
 def picture_difference(a, b):
     # PPM P6 headers share resolution; different pixels must reflect UI transitions.
     def split(ppm):
@@ -58,16 +90,20 @@ def main():
     root = Path("build")
     root.mkdir(exist_ok=True)
     monitor = (root / "ui-monitor.sock").absolute()
+    qmp = (root / "ui-qmp.sock").absolute()
     first = (root / "ui-before.ppm").absolute()
     last = (root / "ui-after.ppm").absolute()
     debug = (root / "ui-debugcon.log").absolute()
     if debug.exists(): debug.unlink()
     if monitor.exists(): monitor.unlink()
+    if qmp.exists(): qmp.unlink()
     cmd = ["qemu-system-x86_64", "-accel", "tcg", "-m", "1024", "-smp", "1",
            "-cdrom", args.iso, "-boot", "d", "-display", "none", "-vga", "std",
            "-serial", "none", "-monitor", "unix:" + str(monitor) + ",server=on,wait=off",
            "-debugcon", "file:" + str(debug), "-global", "isa-debugcon.iobase=0xe9",
            "-no-reboot"]
+    if args.verify_mouse:
+        cmd.extend(["-qmp", "unix:" + str(qmp) + ",server=on,wait=off"])
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         deadline = time.monotonic() + 10
@@ -256,9 +292,10 @@ def main():
                 screenshot(sock,ppm)
                 ppm_to_png(ppm,root/"FalconOS-Aura-Pointer-Before-Close.png")
                 click_offset=len(debug.read_bytes())
-                command(sock,"mouse_button 1",.35)
-                command(sock,"mouse_move 1 0",.25)  # flush a PS/2 packet while held
-                command(sock,"mouse_button 0",.40)
+                qmp_mouse_button(qmp,True)
+                command(sock,"mouse_move 1 0",.30)  # flush held PS/2 packet
+                qmp_mouse_button(qmp,False)
+                command(sock,"mouse_move 1 0",.32)  # flush button-release packet
                 try:
                     wait_for_marker(debug,b"kX",after=click_offset,timeout=15)
                 except (AssertionError, RuntimeError):
