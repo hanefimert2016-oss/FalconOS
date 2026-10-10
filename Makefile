@@ -195,15 +195,15 @@ market-bridge-publish:
 
 run-market-publish: $(ISO) $(BUILD)/falcon-safe.raw
 	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock --enable-publish & \
-	  bridge_pid=$!; \
-	  trap 'kill $bridge_pid 2>/dev/null || true' EXIT; \
+	  bridge_pid=$$!; \
+	  trap 'kill $$bridge_pid 2>/dev/null || true' EXIT; \
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 # All-in-one QEMU + HTTPS-to-COM1 bridge; kill the bridge when QEMU exits.
 run-market: $(ISO) $(BUILD)/falcon-safe.raw
 	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock & \
-	  bridge_pid=$!; \
-	  trap 'kill $bridge_pid 2>/dev/null || true' EXIT; \
+	  bridge_pid=$$!; \
+	  trap 'kill $$bridge_pid 2>/dev/null || true' EXIT; \
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 run: run-disk
