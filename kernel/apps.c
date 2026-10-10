@@ -141,6 +141,11 @@ void apps_close(void) {
 }
 i32 apps_active(void) {return active_app;}
 i32 apps_minimized(void) {return minimized_app;}
+void apps_close_all(void) {
+    wm_slot_count=0;wm_dx=wm_dy=wm_dw=wm_dh=0;
+    active_app=-1;minimized_app=-1;wm_max=false;
+    wm_dragging=wm_resizing=false;
+}
 
 /* ===== icon glyphs ======================================================== */
 static void icon_home(i32 cx, i32 cy)
