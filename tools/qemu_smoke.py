@@ -47,6 +47,7 @@ def ppm_to_png(src, dest):
 def main():
     a = argparse.ArgumentParser()
     a.add_argument("--iso", default="build/FalconOS.iso")
+    a.add_argument("--disk", help="Optional persistent raw data disk; CD-ROM still boots first")
     a.add_argument("--output", default="build/falcon-boot-smoke.png")
     a.add_argument("--boot-seconds", type=int, default=18)
     opts = a.parse_args()
@@ -59,10 +60,15 @@ def main():
             path.unlink()
     command = [
         "qemu-system-x86_64", "-accel", "tcg", "-m", "1024", "-smp", "1",
-        "-cdrom", opts.iso, "-boot", "d", "-display", "none",
+        "-cdrom", opts.iso, "-boot", "order=d", "-display", "none",
         "-vga", "std", "-serial", "none",
         "-monitor", f"unix:{mon},server=on,wait=off", "-no-reboot"
     ]
+    if opts.disk:
+        disk = Path(opts.disk)
+        if not disk.is_file():
+            raise FileNotFoundError(f"Missing QEMU data disk: {disk}")
+        command.extend(["-drive", f"file={disk},format=raw,if=ide,index=0"])
     proc = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:
         deadline = time.monotonic() + 15
