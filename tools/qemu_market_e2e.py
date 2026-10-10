@@ -149,10 +149,14 @@ def test_gui(args):
                 wait_for_marker(debug, b"C", after=prior, timeout=20)
                 # Search a *real* package, require one actual filtered match.
                 hmp(mon, "sendkey f4", 0.32)
-                prior = len(debug.read_bytes())
                 for letter in "world":
-                    hmp(mon, "sendkey " + letter, 0.24)
-                wait_for_marker(debug, b"q1", after=prior, timeout=20)
+                    hmp(mon, "sendkey " + letter, 0.30)
+                # Match must be emitted AFTER the last key was submitted,
+                # otherwise an earlier prefix match can cause a stale shot.
+                prior = len(debug.read_bytes())
+                wait_for_marker(debug, b"q1", after=prior, timeout=25)
+                wait_for_marker(debug, b"gC", after=prior, timeout=25)
+                time.sleep(1.0)
                 hmp(mon, "screendump " + str(root / "market-search.ppm"), 0.6)
                 ppm_to_png(root / "market-search.ppm",
                            root / "FalconOS-Discover-Search.png")
