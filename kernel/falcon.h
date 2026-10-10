@@ -356,6 +356,7 @@ bool codedium_build_pkg(const char *src,u32 length,char *out,u32 capacity,u32 *a
 const char *market_script(i32 i);
 void market_download(i32 i);
 bool market_publish_package(const char *payload,u32 bytes);
+bool market_publish_installed(i32 index);
 const char *market_publish_status(void);
 bool market_line_allowed(const char *line, i32 size);
 
