@@ -39,7 +39,7 @@ static i32 builtin_app_count(void);
  * different applications can be shown, positioned and focused concurrently.
  * Geometry lives per window; the selected window alone receives keyboard
  * and mouse events. This is OS framebuffer code, not the web preview. */
-#define WM_MAX_WINDOWS 6
+#define WM_MAX_WINDOWS 8
 typedef struct { i32 app, dx, dy, dw, dh; bool maximized, minimized; } wm_slot_t;
 static wm_slot_t wm_slots[WM_MAX_WINDOWS];
 static i32 wm_slot_count;
@@ -126,8 +126,8 @@ void apps_open(i32 app) {
     }
     /* Stagger windows across the desktop instead of stacking every title
      * bar on top of the same place.  Keeps background windows selectable. */
-    static const i32 x_off[6]={-190,145,-115,220,-240,70};
-    static const i32 y_off[6]={-95,-35,45,105,0,80};
+    static const i32 x_off[8]={-190,145,-115,220,-240,70,-75,175};
+    static const i32 y_off[8]={-95,-35,45,105,0,80,115,-115};
     i32 cascade=wm_slot_count;
     wm_slot_t item={.app=app,.dx=x_off[cascade],.dy=y_off[cascade],
                     .dw=0,.dh=0,.maximized=false,.minimized=false};
@@ -3052,6 +3052,10 @@ static void notes_input_key(i32 key)
         (void)sh_buf_append_key(notes_buf, &notes_len, NOTES_MAX, key);
     }
     notes_save();
+#ifdef FALCON_QEMU_UI_GALLERY
+    /* Real keyboard-to-editor evidence; do not infer edit success from window paint. */
+    outb(0xE9, 't');
+#endif
 }
 static void render_notes(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
@@ -4548,8 +4552,8 @@ static bool wm_window_rect(i32 *out_x, i32 *out_y, i32 *out_w, i32 *out_h)
         *out_w=W-48;*out_h=H-164; /* floating Shelf remains visible */
         return true;
     }
-    i32 ww = W - 280; if (ww > 920) ww = 920; if (ww < 600) ww = 600;
-    i32 wh = H - 220; if (wh > 580) wh = 580; if (wh < 380) wh = 380;
+    i32 ww = W - 280; if (ww > 1180) ww = 1180; if (ww < 600) ww = 600;
+    i32 wh = H - 220; if (wh > 760) wh = 760; if (wh < 380) wh = 380;
     ww += wm_dw; wh += wm_dh;
     if (ww < 480) ww = 480;
     if (wh < 300) wh = 300;
