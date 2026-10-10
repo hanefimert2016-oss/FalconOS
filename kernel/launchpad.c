@@ -41,7 +41,11 @@ static void refresh(void){
     i32 n=apps_launcher_count(section_id);
     for(i32 i=0;i<n&&visible_count<MAX_VISIBLE;i++){
         i32 id=apps_launcher_id(section_id,i);
-        if(id>=0 && has_ci(apps_display_name(id),search_term))
+        if(id>=0 && (has_ci(apps_display_name(id),search_term) ||
+                     has_ci(apps_name(id),search_term) ||
+                     (id==2 && (has_ci("Discover",search_term) ||
+                                 has_ci("Marketplace",search_term) ||
+                                 has_ci("Store",search_term)))))
             visible[visible_count++]=id;
     }
     if(selected<0)selected=0;
