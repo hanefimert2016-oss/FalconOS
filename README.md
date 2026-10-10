@@ -24,8 +24,35 @@ SHA-256 and launches allowlisted commands through Terminal. Run `make run-market
 on Linux to boot QEMU with a host HTTPS-to-COM1 bridge (native TCP/TLS is
 unfinished). Packages use the dedicated FalconOS partition for a persistent
 48-slot application cache when you explicitly select a safe disk.
-CodeDium is accessible by pressing C inside Store, with F5 save, F6 run,
-F7 export. CodeDium source files persist on explicitly selected safe partitions. The GUI Files app now lists real RAM files, not a demo tree.
+CodeDium is accessible by pressing C inside Discover: F5 Save, F6 Run,
+F7 Export, F10 twice to confirm a GitHub release. In Discover select an
+installed package and press P then F10 to publish the *exact saved .app.pkg*;
+when no release is selected it publishes `/home/falcon/Desktop/code.app.pkg`.
+All packages remain strict, maximum 4 KiB FAPP/1 scripts — NOT native GUI apps.
+
+**GitHub publishing opt-in (Arch Linux host only):**
+```bash
+sudo pacman -S github-cli
+gh auth login
+gh auth status
+make run-market-publish
+```
+`run-market` remains **download-only**. `run-market-publish` explicitly
+authorizes this VM to publish a new **public** immutable GitHub Release to
+`hanefimert2016-oss/FalconOS-Marketplace` via the authenticated host
+`gh` client. You must also confirm inside the guest. Tokens NEVER enter the
+guest or `.app.pkg`. Existing tags fail closed; change `# app-version`
+for updates. The repository's automatic build-from-source workflow is a
+separate publication path.
+
+**Falco:** F6 attempts guest-native HTTPS to `falconos.tech`, F7 attempts
+host-verified HTTPS. The site currently returns **HTTP 403 on GitHub Actions
+runners**; this cannot be legitimately overridden by client code.
+F8 explicitly loads `FalconOS` GitHub README documentation with host-verified
+HTTPS as a **separate fallback**, not a successful fetch of falconos.tech.
+The native browser displays bounded HTML/Markdown text, not CSS or JavaScript.
+The GUI Files app lists real RAM files, not a demo tree.
+CodeDium source files persist on explicitly selected safe partitions.
 See `docs/MARKETPLACE.md` and `docs/FALCONOS-V2-STATUS.md` for limits and milestones.
 
 ## What is it?
