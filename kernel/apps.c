@@ -4599,7 +4599,12 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
      *   green  → toggle maximised (+)                                  */
     i32 ty=wy+20;
     if(my>=ty-15&&my<=ty+15){
-        if(mx>=wx+ww-44&&mx<wx+ww-9){apps_close();return true;}
+        if(mx>=wx+ww-44&&mx<wx+ww-9){
+#ifdef FALCON_QEMU_UI_GALLERY
+            outb(0xE9,'k');outb(0xE9,'X'); /* actual pointer hit titlebar close */
+#endif
+            apps_close();return true;
+        }
         if(mx>=wx+ww-84&&mx<wx+ww-46){wm_max=!wm_max;return true;}
         if(mx>=wx+ww-124&&mx<wx+ww-86){
             wm_minimize_top();return true;
