@@ -244,9 +244,11 @@ def main():
             # device.  Measured in the last real 2K framebuffer run: 26
             # "mouse_move 20 0" steps reached x=1532, not x=1786.
             # Move Y *together* with X to avoid PS/2 zero-X coalescing.
-            for _ in range(6): command(sock,"mouse_move 20 13",.12)
+            # Measured from the 2K framebuffer: 6 combined+26 horizontal
+            # moved to (1832,560). Target Clock close center is (1786,520).
+            # Drop one horizontal step and one combined step.
+            for _ in range(5): command(sock,"mouse_move 20 13",.12)
             for _ in range(26): command(sock,"mouse_move 20 0",.12)
-            command(sock,"mouse_move 12 0",.18)
             ppm=root/"FalconOS-Aura-Pointer-Before-Close.ppm"
             screenshot(sock,ppm)
             ppm_to_png(ppm,root/"FalconOS-Aura-Pointer-Before-Close.png")
