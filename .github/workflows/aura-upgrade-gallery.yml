@@ -28,12 +28,12 @@ jobs:
           grub-file --is-x86-multiboot2 build/falcon.elf
       - name: Verify graphical FalconOS boot in QEMU
         run: python3 tools/qemu_smoke.py --iso build/FalconOS.iso --boot-seconds 16
+      - name: Verify real Discover search, install and GitHub upload in QEMU
+        id: marketplace
+        run: timeout 175s python3 tools/qemu_market_e2e.py --iso build/FalconOS.iso --output build/FalconOS-Marketplace-Install.png
       - name: Capture desktop, launchpad, apps, CodeDium and native multiwindows
         id: ui
         run: timeout 225s python3 tools/qemu_ui_smoke.py --iso build/FalconOS.iso
-      - name: Verify real Discover search and SHA-256 .app.pkg install in QEMU
-        id: marketplace
-        run: timeout 175s python3 tools/qemu_market_e2e.py --iso build/FalconOS.iso --output build/FalconOS-Marketplace-Install.png
       - name: Verify explicit Falco GitHub README fallback with real QEMU
         id: falco_fallback
         run: |
