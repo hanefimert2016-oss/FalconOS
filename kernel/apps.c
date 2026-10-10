@@ -3664,6 +3664,8 @@ static void render_heroic(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 /* ---- Marketplace: actual release catalogue + verified FAPP/1 script launch --- */
 static i32 market_cursor;
 static bool market_first_frame = true;
+static bool market_publish_armed;
+static i32 market_publish_armed_cursor;
 /* Discover has an actual filtered view, while IDs remain stable for package
  * installation and the terminal/prg inventory. No placeholder catalog. */
 #define MARKET_VIEW_CAP 48
@@ -3735,6 +3737,22 @@ static void market_launch(i32 i)
 static void market_input_key(i32 key)
 {
     market_update_view();
+    if(key=='p'||key=='P'){
+        market_publish_armed=true;
+        market_publish_armed_cursor=market_cursor;
+        return;
+    }
+    if(key==KEY_F10&&market_publish_armed){
+        market_publish_armed=false;
+        if(market_publish_armed_cursor>=0)
+            (void)market_publish_installed(market_publish_armed_cursor);
+        else {
+            shfs_ent_t *file=shfs_lookup("/home/falcon/Desktop/code.app.pkg");
+            if(file&&!file->is_dir)(void)market_publish_package(file->data,file->len);
+        }
+        return;
+    }
+    if(key==KEY_ESC){market_publish_armed=false;return;}
     if(key==KEY_F4){market_search_mode=!market_search_mode;return;}
     if(key==KEY_F8){
         market_category=(market_category+1)%3;
@@ -3791,8 +3809,11 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
     gfx_text_lg_centered(wx+50,wy+26,"+",0xFFFFFFu);
     gfx_text_lg(wx+83,wy+14,"Discover",PAL_TEXT);
     gfx_text(wx+85,wy+49,"FalconOS Marketplace | verified GitHub .app.pkg",PAL_TEXT_DIM);
-    gfx_text(wx+24,wy+91,"F5 refresh | F4 search | F8 filter | F9 reset | Enter run/install",PAL_TEXT_DIM);
-    gfx_text(wx+24,wy+111,market_status(),PAL_ACCENT);
+    gfx_text(wx+24,wy+91,"F5 refresh | F4 search | F8 filter | P publish | F10 confirm",PAL_TEXT_DIM);
+    gfx_text(wx+24,wy+111,
+        market_publish_armed?
+            "Publish selected .app.pkg to GitHub? F10 confirm / Esc cancel":
+            market_status(),PAL_ACCENT);
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool clicked=wm_click_enabled();
     if(clicked&&mx>=wx+24&&mx<=wx+ww-24&&
@@ -3866,15 +3887,14 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
     gfx_text(wx+24,wy+wh-48,nums,PAL_ACCENT);
     gfx_text(wx+49,wy+wh-48,"visible releases",PAL_TEXT_DIM);
     gfx_text(wx+24,wy+wh-25,
-        "SHA-256 verified | U update | D uninstall | C CodeDium | FAPP/1 scripts",
-        PAL_TEXT_FAINT);
+        market_publish_status(),PAL_TEXT_FAINT);
 }
 
 /* ---- CodeDium: native editable FAPP/1 source, file save and script preview --- */
 #define CODE_CAP 4096
 static char code_text[CODE_CAP];
 static i32 code_len, code_cursor;
-static bool code_ready,code_dirty;
+static bool code_ready,code_dirty,code_publish_armed;
 static const char *code_status = "F5 Save  |  F6 Run  |  F7 Export .app.pkg";
 static void code_init(void)
 {
@@ -3925,18 +3945,18 @@ static void code_run(void)
     code_status = "Executed in built-in Terminal";
     apps_open(5);
 }
-static void code_export(void)
+static bool code_export(void)
 {
     static char pkg[SHFS_FBYTES];
     u32 bytes=0;
     if (!codedium_build_pkg(code_text,(u32)code_len,pkg,
                             sizeof pkg,&bytes)) {
         code_status = "Export failed: check # app-* metadata, commands or 4 KiB limit";
-        return;
+        return false;
     }
     shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/code.app.pkg", false);
     if (!file) {
-        code_status = "Export failed: guest RAM file system is full"; return;
+        code_status = "Export failed: guest RAM file system is full"; return false;
     }
     k_memcpy(file->data,pkg,bytes+1);
     file->len=bytes;
@@ -3944,13 +3964,33 @@ static void code_export(void)
 #ifdef FALCON_QEMU_UI_GALLERY
     outb(0xE9,'E'); /* package actually built and written */
 #endif
+    return true;
 }
 static void code_input_key(i32 key)
 {
     code_init();
     if (key == KEY_F5) { code_save(); return; }
     if (key == KEY_F6) { code_run(); return; }
-    if (key == KEY_F7) { code_export(); return; }
+    if (key == KEY_F7) { (void)code_export(); return; }
+    if (key == KEY_F10) {
+        if(!code_publish_armed){
+            code_publish_armed=true;
+            code_status="Publish to GitHub Releases? Press F10 again to confirm.";
+        }else{
+            code_publish_armed=false;
+            if(code_export()){
+                shfs_ent_t *file=shfs_lookup("/home/falcon/Desktop/code.app.pkg");
+                if(file&&!file->is_dir&&market_publish_package(file->data,file->len))
+                    code_status="Upload submitted to host bridge. See Discover status.";
+                else code_status="Package upload rejected or bridge is busy.";
+            }
+        }
+        return;
+    }
+    if (key == KEY_ESC && code_publish_armed) {
+        code_publish_armed=false;
+        code_status="GitHub publish cancelled.";return;
+    }
     if ((kbd_mod_state() & KMOD_CTRL) && (key == 's' || key == 'S')) {
         code_save(); return;
     }
@@ -4010,11 +4050,12 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
     code_init();
     section(wx,wy,"CodeDium Studio","FAPP/1 editor  |  sandboxed commands only");
     /* Toolbar performs real actions; not placeholder or static artwork. */
-    const char *names[]={"Save  F5","Run  F6","Export  F7"};
-    const u32 tones[]={0x3478E6u,0x19A680u,0x8862D7u};
+    const char *names[]={"Save  F5","Run  F6","Export  F7",
+                         "GitHub F10"};
+    const u32 tones[]={0x3478E6u,0x19A680u,0x8862D7u,0x167B54u};
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool clicked=wm_click_enabled();
-    for(i32 i=0;i<3;i++){
+    for(i32 i=0;i<4;i++){
         i32 x=wx+21+i*123, y=wy+47;
         bool hover=mx>=x&&mx<x+113&&my>=y&&my<y+34;
         gfx_round_rect_a(x,y,113,34,11,hover?PAL_ACCENT:tones[i],255);
@@ -4023,10 +4064,11 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
             (void)mouse_consume_click();clicked=false;
             if(i==0)code_save();
             else if(i==1)code_run();
-            else code_export();
+            else if(i==2)(void)code_export();
+            else code_input_key(KEY_F10);
         }
     }
-    if(ww>=650){
+    if(ww>=800){
         gfx_text(wx+ww-240,wy+58,"Desktop/project.fsh",PAL_TEXT_DIM);
         gfx_circle(wx+ww-24,wy+64,5,code_dirty?COL_WARN:COL_OK);
     }
