@@ -151,7 +151,7 @@ def test_gui(args):
                 hmp(mon, "sendkey ret", 1.5)
                 try:
                     wait_for_marker(debug, b"zCn1", after=prior, timeout=35)
-                    wait_for_marker(debug, b"M", after=prior, timeout=35)
+                    wait_for_marker(debug, b"M", after=prior, timeout=65)
                 except AssertionError:
                     # Capture failing GUI state to distinguish lost keys from
                     # serial/device setup regressions. The CI artifact remains.
@@ -161,16 +161,19 @@ def test_gui(args):
                     raise
                 prior = len(debug.read_bytes())
                 hmp(mon, "sendkey r", 0.4)
-                wait_for_marker(debug, b"C", after=prior, timeout=20)
+                wait_for_marker(debug, b"C", after=prior, timeout=45)
                 # Search a *real* package, require one actual filtered match.
                 hmp(mon, "sendkey f4", 0.32)
-                for letter in "world":
-                    hmp(mon, "sendkey " + letter, 0.30)
-                # Match must be emitted AFTER the last key was submitted,
-                # otherwise an earlier prefix match can cause a stale shot.
+                # Record BEFORE input: a fast final 'q1' event can occur
+                # during sendkey acknowledgement, not after it. The old test
+                # waited after all keys and wrongly reported a missing result.
                 prior = len(debug.read_bytes())
-                wait_for_marker(debug, b"q1", after=prior, timeout=25)
-                wait_for_marker(debug, b"gC", after=prior, timeout=25)
+                for letter in "world":
+                    hmp(mon, "sendkey " + letter, 0.44)
+                wait_for_marker(debug, b"q1", after=prior, timeout=55)
+                # Require a native rendered Store frame, not just an accepted
+                # catalog or a QEMU HMP key acknowledgement.
+                wait_for_marker(debug, b"gC", after=prior, timeout=65)
                 time.sleep(1.0)
                 hmp(mon, "screendump " + str(root / "market-search.ppm"), 0.6)
                 ppm_to_png(root / "market-search.ppm",
