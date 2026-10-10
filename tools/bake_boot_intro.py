@@ -200,14 +200,19 @@ def bake(src,out,count):
     print(f"PASS decoded original GLB, {count} animation frames, {len(data)} sprite bytes, output {out}")
 
 if __name__=="__main__":
-    ap=argparse.ArgumentParser()
-    ap.add_argument("--source",default="build/boot_intro.glb")
+    ap=argparse.ArgumentParser(
+        description="Bake the actual user-provided FalconOS 3D intro GLB into kernel sprites")
+    ap.add_argument("--source",
+                    default="assets/boot/falconos_boot_intro_animation.glb")
     ap.add_argument("--out",default="build/boot_model_frames.inc")
     ap.add_argument("--frames",type=int,default=48)
     args=ap.parse_args()
-    files=sorted(pathlib.Path("assets/boot").glob("intro_glb.part*.b64"))
-    if len(files)!=16:raise SystemExit(f"need 16 original GLB parts, got {len(files)}")
-    raw=base64.b64decode("".join(p.read_text() for p in files),validate=True)
-    src=pathlib.Path(args.source);src.parent.mkdir(parents=True,exist_ok=True)
-    src.write_bytes(raw)
-    bake(src,pathlib.Path(args.out),args.frames)
+    src=pathlib.Path(args.source)
+    if not src.is_file():
+        raise SystemExit("GLB not found: "+str(src)+
+            ". Import the exact user-supplied .glb first.")
+    output=pathlib.Path(args.out)
+    output.parent.mkdir(parents=True,exist_ok=True)
+    import hashlib
+    print("Boot GLB source:",src,"SHA256",hashlib.sha256(src.read_bytes()).hexdigest())
+    bake(src,output,args.frames)
