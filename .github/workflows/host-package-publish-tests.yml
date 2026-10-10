@@ -1,0 +1,26 @@
+name: Host .app.pkg publish CLI checks (no QEMU)
+on:
+  push:
+    branches: [feature/aura-upgrade-37986574981]
+    paths:
+      - "Makefile"
+      - "tools/publish_app.py"
+      - "tools/marketplace_bridge.py"
+      - "tests/test_host_publisher.py"
+      - ".github/workflows/host-package-publish-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-host-only-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove host-only target does not start QEMU or NASM
+        run: |
+          make -n run-market-publish | tee /tmp/publish-dry-run.txt
+          grep -q 'python3 tools/publish_app.py' /tmp/publish-dry-run.txt
+          ! grep -Eq 'nasm |qemu-system|grub-mkrescue' /tmp/publish-dry-run.txt
+      - name: Test no-upload path, signed-off confirmation, FAPP format
+        run: python3 -m unittest discover -s tests -p 'test_host_publisher.py' -v
