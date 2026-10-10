@@ -20,6 +20,7 @@
  *      Esc  close active app or Launchpad
  * ============================================================================= */
 #include "falcon.h"
+#include "shfs.h"  /* RAM filesystem and persistent FalconFS mount/sync API */
 
 #define MB2_MAGIC_BOOT      0x36D76289u
 #define MB2_TAG_END         0
