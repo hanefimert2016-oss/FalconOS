@@ -3216,9 +3216,6 @@ static void falco_input_key(i32 key){
     if(key==KEY_F8){
         falco_open_site_host(
             "https://raw.githubusercontent.com/hanefimert2016-oss/FalconOS/FalconOS-1-release/README.md");
-        if(browser_loaded)
-            k_strcpy(browser_status,
-                "GitHub README fallback: NOT live falconos.tech; host HTTPS.");
         return;
     }
     if(falco_web_view){
@@ -3451,6 +3448,10 @@ static void falco_navigate(const char *address,bool use_host){
     browser_address_focus=true;
     browser_host_gateway=use_host; /* F7: explicit local host-verified HTTPS. */
     browser_load();
+    if(use_host && browser_loaded &&
+       sh_contains_ci(browser_address,"raw.githubusercontent.com/"))
+        k_strcpy(browser_status,
+                "GitHub README fallback, not live falconos.tech; host HTTPS");
     falco_web_view=true;
 #ifdef FALCON_QEMU_BROWSER_TEST
     /* A unique Falco navigation result: 'fY' means an actually loaded
