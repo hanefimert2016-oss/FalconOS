@@ -219,17 +219,25 @@ run-market-publish:
 market-bridge-publish:
 	python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock --enable-publish
 
+# Start both authenticated host bridges automatically: GitHub Releases
+# over COM1 and read-only, certificate-verified HTTPS for Falco search/pages.
+# Bind the HTTPS gateway only to loopback for QEMU user-mode networking.
+# Neither requires a GitHub token for downloads.
 run-market-publish-vm: $(ISO) $(BUILD)/falcon-safe.raw
 	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock --enable-publish & \
 	  bridge_pid=$!; \
-	  trap 'kill $bridge_pid 2>/dev/null || true' EXIT; \
+	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
+	  web_pid=$!; \
+	  trap 'kill $bridge_pid $web_pid 2>/dev/null || true' EXIT; \
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
-# All-in-one QEMU + HTTPS-to-COM1 bridge; kill the bridge when QEMU exits.
+# Starts QEMU + both HTTPS-backed services, and cleans them on exit.
 run-market: $(ISO) $(BUILD)/falcon-safe.raw
 	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock & \
-	  bridge_pid=$$!; \
-	  trap 'kill $$bridge_pid 2>/dev/null || true' EXIT; \
+	  bridge_pid=$!; \
+	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
+	  web_pid=$!; \
+	  trap 'kill $bridge_pid $web_pid 2>/dev/null || true' EXIT; \
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 run: run-disk
