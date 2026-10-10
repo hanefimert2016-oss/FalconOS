@@ -189,7 +189,9 @@ def main():
             ppm_to_png(ppm,root/"FalconOS-Aura-CodeDium.png")
             if picture_difference(before,screen)<40:
                 raise AssertionError("CodeDium did not render in actual guest")
+            off=len(debug.read_bytes())
             command(sock,"sendkey f7",1.5) # export reviewed FAPP/1 source
+            wait_for_marker(debug,b"E",after=off,timeout=30)
             ppm=root/"FalconOS-Aura-CodeDium-Export.ppm"
             screenshot(sock,ppm)
             ppm_to_png(ppm,root/"FalconOS-Aura-CodeDium-Export.png")
