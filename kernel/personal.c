@@ -168,6 +168,10 @@ static void shelf(void){
 }
 void mode_personal_render(u32 frame){
     (void)frame;
+    /* A PS/2 click can arrive during expensive 2K framebuffer painting.
+     * Only drain an unhandled click if it existed BEFORE this frame began.
+     * Otherwise keep the edge queued so the next frame's WM hit-test sees it. */
+    bool click_pending_at_frame_start = mouse_peek_click();
     backdrop();
     quick_cards();
     /* Persistent shortcuts are user-controlled and never auto-filled. */
@@ -196,6 +200,6 @@ void mode_personal_render(u32 frame){
     }
     apps_render_active(frame);
     shelf();
-    if(apps_active()>=0&&mouse_peek_click())
+    if(click_pending_at_frame_start && apps_active()>=0 && mouse_peek_click())
         (void)mouse_consume_click();
 }
