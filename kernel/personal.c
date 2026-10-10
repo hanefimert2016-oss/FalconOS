@@ -28,15 +28,27 @@ static void backdrop(void){
     i32 w=(i32)FB.width,h=(i32)FB.height;
     /* Simple layered broad tints: full-frame supersampled circles at 50fps
      * stalled keyboard processing under QEMU TCG (no GPU acceleration). */
-    gfx_round_rect_a(w-420,170,300,92,28,0x86ACF8u,20);
-    gfx_round_rect_a(58,h-272,300,72,26,0x4ECFCBu,19);
+    /* Aurora accents: low-cost layered geometry, responsive at HD/2K and
+     * safe for QEMU software framebuffer without expensive screen blur. */
+    gfx_round_rect_a(w-510,145,428,135,34,0x7BA9FFu,27);
+    gfx_round_rect_a(w-378,159,260,101,31,0x9DD9FFu,24);
+    gfx_round_rect_a(58,h-274,340,84,28,0x4ECFCBu,23);
+    gfx_round_rect_a(84,h-251,212,40,20,0x80B4FFu,14);
     gfx_round_rect_a(28,55,w-56,104,26,surface(),is_dark()?178:196);
     gfx_round_outline(28,55,w-56,104,26,is_dark()?0x3E5074u:0xE4ECF7u);
     gfx_round_rect(52,77,54,54,19,0x2867E6u);
     gfx_text_lg_centered(79,85,"F",0xFFFFFFu);
     gfx_text_lg(129,77,T("Welcome to FalconOS","FalconOS'a hos geldin"),ink());
-    gfx_text(131,118,T("Your space to create, explore and build",
-         "Kesfet, uret ve kendi calisma alanini olustur"),muted());
+    if(apps_window_count()>0){
+        char n[12];k_itoa(apps_window_count(),n,10);
+        gfx_text(131,118,T("WINDOWS OPEN / Alt+Tab to switch",
+                          "ACIK PENCERELER / Alt+Tab ile gec"),muted());
+        gfx_round_rect_a(425,110,38,26,10,0xE5EFFFu,255);
+        gfx_text_centered(444,116,n,0x2857A7u);
+    }else{
+        gfx_text(131,118,T("Your space to create, explore and build",
+             "Kesfet, uret ve kendi calisma alanini olustur"),muted());
+    }
     rtc_time_t now;rtc_local(&now);
     char time[16],minute[8];k_itoa(now.hour,time,10);
     if(now.hour<10){k_strcpy(minute,time);k_strcpy(time,"0");k_strcat(time,minute);}
@@ -104,8 +116,9 @@ static void shelf(void){
     if(w>W-22)w=W-22;
     i32 x=(W-w)/2,y=H-94;
     if(y<340)y=340;
-    gfx_round_rect_a(x+4,y+6,w,74,26,0x07172Fu,65);
-    gfx_round_rect_a(x,y,w,74,26,surface(),239);
+    gfx_round_rect_a(x+4,y+9,w,74,26,0x07172Fu,72);
+    gfx_round_rect_a(x,y,w,74,26,surface(),242);
+    gfx_round_rect_a(x+18,y+2,w-36,2,1,PAL_ACCENT,72);
     gfx_round_outline(x,y,w,74,26,is_dark()?0x627595u:0xD5E2F4u);
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool can_click=!launchpad_is_open();
@@ -127,7 +140,10 @@ static void shelf(void){
             gfx_round_rect_a(bx,y+11,tile,52,16,
                 hovered?0xBFD8FCu:0xDDE9FAu,190);
         apps_draw_icon(id,bx+tile/2,y+37);
-        if(running)gfx_circle(bx+tile/2,y+66,3,0x246FE7u);
+        if(running){
+            gfx_round_rect(bx+tile/2-10,y+64,20,4,2,0x246FE7u);
+            if(apps_active()==id)gfx_round_rect(bx+tile/2-14,y+64,28,4,2,PAL_ACCENT);
+        }
         if(hovered&&click){
             (void)mouse_consume_click();use_app(id);click=false;
         }
@@ -141,6 +157,11 @@ static void shelf(void){
     k_strcpy(clock,now.hour<10?"0":"");k_strcat(clock,hh);k_strcat(clock,":");
     if(now.min<10)k_strcat(clock,"0");k_strcat(clock,mm);
     gfx_text(tray+44,y+31,clock,ink());
+    if(apps_window_count()>0){
+        char n[12];k_itoa(apps_window_count(),n,10);
+        gfx_round_rect_a(tray+114,y+8,38,22,8,0xDCEBFFu,245);
+        gfx_text_centered(tray+133,y+13,n,0x225DC2u);
+    }
     if(click&&within(mx,my,tray,y+6,161,63)){
         (void)mouse_consume_click();apps_open(3);click=false;
     }
