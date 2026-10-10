@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import time
+import socket
 from vncdotool import api
 
 B=Path('build').absolute()
@@ -124,14 +125,20 @@ def main():
     with (B/'vnc-qemu-stderr.log').open('wb') as fd:
         proc=subprocess.Popen(cmd,stdout=subprocess.DEVNULL,stderr=fd)
         try:
-            c=None
-            for _ in range(80):
-                try:c=api.connect('127.0.0.1:7',timeout=4);break
-                except Exception:
-                    if proc.poll() is not None:raise RuntimeError('QEMU exited')
+            # api.connect schedules a Twisted connection asynchronously: wait
+            # for the actual RFB TCP listener before returning a client proxy.
+            listener=False
+            for _ in range(120):
+                try:
+                    with socket.create_connection(('127.0.0.1',5907),timeout=.5):
+                        listener=True
+                        break
+                except OSError:
+                    if proc.poll() is not None:raise RuntimeError('QEMU exited before VNC')
                     pause(.25)
-            if c is None:raise RuntimeError('VNC service unavailable')
-            with c:
+            if not listener:raise RuntimeError('QEMU VNC TCP/5907 unavailable')
+            with api.connect('127.0.0.1::5907',timeout=20) as c:
+                shot(c,'FalconOS-VNC-Initial-Screen')
                 mark(b'L',deadline=75)
                 for m in (b'T',b'A',b'K',b'D',b'U'):
                     off=len(raw());k(c,'enter');mark(m,off);RES['keyboard'].append(m.decode())
