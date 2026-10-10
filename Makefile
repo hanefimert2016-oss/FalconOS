@@ -107,6 +107,9 @@ ISO         := $(BUILD)/FalconOS.iso
 
 # Omit -no-shutdown / -no-reboot so ACPI power-off (PW_REG) and keyboard reset
 # behave like real hardware and terminate or restart the QEMU process.
+# SDL is the default. On Arch with QEMU GTK installed, use
+# QEMU_DISPLAY=gtk,grab-on-hover=on when PS/2 mouse capture in SDL is awkward.
+QEMU_DISPLAY  ?= sdl
 RAM           ?= 12288
 CPUS          ?= 6
 VRAM          ?= 256
@@ -117,7 +120,7 @@ DISK_CAPACITY ?= 4G
 QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -boot order=d \
                  -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
                  -netdev user,id=net0 -device rtl8139,netdev=net0 \
-                 -display sdl -vga std -global VGA.vgamem_mb=$(VRAM) \
+                 -display $(QEMU_DISPLAY) -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
 HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -boot order=d \
