@@ -226,13 +226,13 @@ def main():
             for _ in range(8):command(sock,"sendkey right",.12)
             off=len(debug.read_bytes())
             command(sock,"sendkey ret",.8) # Clock at Favorites index 8
-            wait_for_marker(debug,b"zIn4",after=off,timeout=35)
+            wait_for_marker(debug,b"zIn6",after=off,timeout=35)  # six live app windows; oldest kept
             wait_for_marker(debug,b"gI",after=off,timeout=35)
             time.sleep(.45)
             ppm=root/"FalconOS-Aura-Clock.ppm"
             screenshot(sock,ppm)
             ppm_to_png(ppm,root/"FalconOS-Aura-Clock.png")
-            print("PASS: real guest screenshot Clock; functional Launchpad gallery complete")
+            print("PASS: six concurrently running native windows; clock and launcher render")
         score = picture_difference(before, after)
         ppm_to_png(last, args.output)
         events = debug.read_bytes() if debug.exists() else b""
