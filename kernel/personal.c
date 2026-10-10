@@ -6,7 +6,7 @@
  */
 #include "falcon.h"
 #define SHELF_SLOTS 7
-/* Files, Falco, Browser, CodeDium, Discover, Notes and Settings. */
+/* Files, Falco, Browser, Codedium, Discover, Notes and Settings. */
 static const i32 SHELF_APPS[SHELF_SLOTS]={1,13,14,18,2,7,3};
 static i32 shelf_cursor;
 static bool within(i32 px,i32 py,i32 x,i32 y,i32 w,i32 h){
@@ -57,7 +57,7 @@ static void quick_cards(void){
     if(y<184)y=184;
     gfx_text_lg(x,y-52,T("Pick up where you left off","Calismaya devam et"),ink());
     gfx_text(x,y-14,"YOUR WORKSPACE   /   REAL NATIVE APPS",muted());
-    const char *titles[6]={"Files","Falco","CodeDium","Discover","Notes","Settings"};
+    const char *titles[6]={"Files","Falco","Codedium","Discover","Notes","Settings"};
     const char *sub[6]={"Your files","Search + HTTPS","Build .app.pkg","Verified apps","Write & save","Make it yours"};
     const i32 ids[6]={1,13,18,2,7,3};
     const u32 colors[6]={0xF3AD37u,0x3184F6u,0x5369E9u,0x1DB88Fu,0xE9C04Bu,0x7868E9u};
