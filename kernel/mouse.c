@@ -135,6 +135,16 @@ void mouse_irq(void)
     if (m_y < 0) m_y = 0;
     if ((u32)m_x >= FB.width)  m_x = (i32)FB.width  - 1;
     if ((u32)m_y >= FB.height) m_y = (i32)FB.height - 1;
+#ifdef FALCON_QEMU_UI_GALLERY
+    /* Diagnostic PS/2 cursor samples: real input path without injecting QMP/HMP. */
+    outb(0xE9, 'p');
+    char sx[16], sy[16];
+    k_itoa(m_x, sx, 10); k_itoa(m_y, sy, 10);
+    for (i32 j=0; sx[j]; j++) outb(0xE9, (u8)sx[j]);
+    outb(0xE9, ',');
+    for (i32 j=0; sy[j]; j++) outb(0xE9, (u8)sy[j]);
+    outb(0xE9, ';');
+#endif
 }
 
 bool mouse_consume_double(void)
