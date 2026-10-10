@@ -29,6 +29,7 @@ static void falco_set_query(const char *q);
 static void falco_open_site(const char *address);
 static void falco_open_site_host(const char *address);
 static void chrome_input_key(i32 key);
+static void chrome_focus_url(void);
 static void render_browser(i32 x,i32 y,i32 w,i32 h,u32 frame);
 static void market_launch(i32 i);
 static i32 builtin_app_count(void);
@@ -3242,7 +3243,7 @@ static void falco_search(void){
 }
 static void falco_input_key(i32 key){
     if ((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
-        if(falco_web_view){chrome_input_key(KEY_TAB);return;}
+        if(falco_web_view){chrome_focus_url();return;}
         falco_query[0]=0;falco_query_len=0;falco_has_results=false;return;
     }
     if((kbd_mod_state() & (1u<<2)) && key==KEY_LEFT && falco_web_view){
@@ -3363,6 +3364,11 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
 static char browser_address[224]="https://example.com/";
 static i32 browser_address_len=20;
 static bool browser_address_focus=true;
+static void chrome_focus_url(void){
+    /* Ctrl+L selects a fresh address entry, independent of current focus. */
+    browser_address[0]=0;browser_address_len=0;
+    browser_address_focus=true;
+}
 /* F6 enables a clearly labeled host-validated TLS proxy, never automatic. */
 static bool browser_host_gateway=false;
 static bool browser_dhcp_attempted=false;
