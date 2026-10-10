@@ -3212,6 +3212,15 @@ static void falco_search(void){
          "Live Wikipedia results - host certificate verified");
 }
 static void falco_input_key(i32 key){
+    /* A deliberate GitHub-docs fallback is NOT the live website. */
+    if(key==KEY_F8){
+        falco_open_site_host(
+            "https://raw.githubusercontent.com/hanefimert2016-oss/FalconOS/FalconOS-1-release/README.md");
+        if(browser_loaded)
+            k_strcpy(browser_status,
+                "GitHub README fallback: NOT live falconos.tech; host HTTPS.");
+        return;
+    }
     if(falco_web_view){
         if(key==KEY_F3){falco_web_view=false;return;}
         chrome_input_key(key);return;
@@ -3248,6 +3257,9 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_round_rect(x+w-110,wy+117,100,35,13,0x246DE8);
     gfx_text_centered(x+w-60,wy+128,"Enter",0xFFFFFF);
     gfx_text(x+4,wy+179,falco_status,0x4B779E);
+    gfx_text(x+8,wy+wh-23,
+       "F6 live TLS | F7 host TLS | F8 GitHub documentation fallback",
+       PAL_TEXT_FAINT);
     gfx_round_rect_a(x,wy+204,w,wh-264,19,PAL_PANEL,240);
     gfx_round_outline(x,wy+204,w,wh-264,19,PAL_HAIRLINE);
     if(!falco_has_results){
@@ -3382,8 +3394,12 @@ static void browser_load(void){
         verified=native_http_get_port(net_gateway(),18444u,local_path,
                                       browser_result,sizeof browser_result);
         if(!verified || !sh_contains_ci(browser_result,"X-Falcon-Host-HTTPS-Verified: yes")){
-            k_strcpy(browser_status,
-                "Host HTTPS gateway unavailable/unverified; run companion script.");
+            if(k_strcmp(hostname,"falconos.tech")==0)
+                k_strcpy(browser_status,
+                   "Site may block CI (403). F8: GitHub docs, not live site.");
+            else
+                k_strcpy(browser_status,
+                   "Host HTTPS failed; inspect gateway diagnostics.");
             return;
         }
     }else{
