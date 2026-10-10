@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """X11/XTest -> QEMU GTK -> FalconOS PS/2. Monitor only takes screenshots, NOT input."""
-import json, re, socket, subprocess, time
+import argparse, json, re, socket, subprocess, time
 from pathlib import Path
 from qemu_smoke import ppm_to_png
 
 B=Path('build').absolute();B.mkdir(exist_ok=True)
 LOG=B/'host-real-hid-debug.log';MON=B/'host-real-hid-monitor.sock'
 REPORT=B/'host-real-hid-report.json'
-STATE={'keyboard_steps':[],'mouse_click_events':[],'mouse_close_verified':False,'errors':[]}
+STATE={'keyboard_steps':[],'mouse_click_events':[],'mouse_close_verified':False,'notes_edit_verified':False,'errors':[]}
 
 def read():return LOG.read_bytes() if LOG.exists() else b''
 def wait_mark(m,after=0,t=50):
@@ -46,15 +46,21 @@ def click():
     xdo('mouseup','1',pause=.5)
     part=read()[start:]
     pts=re.findall(rb'kP(\d+),(\d+);',part)
-    if b'mL' not in part or not pts:raise RuntimeError('Host mouse failed to reach PS/2 WM: '+repr(part[-180:]))
+    if b'mL' not in part or not pts:
+        subprocess.run(['xdotool','getmouselocation','--shell'],stdout=(B/'host-pointer-location.txt').open('wb'),stderr=subprocess.DEVNULL)
+        raise RuntimeError('Host mouse failed to reach PS/2 WM: '+repr(part[-180:]))
     x,y=map(int,pts[-1]);STATE['mouse_click_events'].append([x,y])
     return x,y,part
 
 def main():
+    ap=argparse.ArgumentParser()
+    ap.add_argument('--display',default='gtk,grab-on-hover=on')
+    args=ap.parse_args()
+    STATE['host_display']=args.display
     for f in (MON,LOG):
         if f.exists():f.unlink()
     cmd=['qemu-system-x86_64','-accel','tcg','-m','1024','-smp','1',
-         '-cdrom','build/FalconOS.iso','-boot','d','-display','gtk,grab-on-hover=on',
+         '-cdrom','build/FalconOS.iso','-boot','d','-display',args.display,
          '-vga','std','-global','VGA.vgamem_mb=256','-serial','none',
          '-monitor','unix:'+str(MON)+',server=on,wait=off',
          '-debugcon','file:'+str(LOG),'-global','isa-debugcon.iobase=0xe9','-no-reboot']
@@ -91,15 +97,25 @@ def main():
                 typed('Notlar')
                 off=len(read());key('Return');wait_mark(b'zHn2',off)
                 shot(sock,'FalconOS-Host-Notes-Before')
+                before=(B/'FalconOS-Host-Notes-Before.ppm').read_bytes()
+                off=len(read())
                 typed('FalconOS HID keyboard test')
+                wait_mark(b't',off,t=12)
+                time.sleep(1.5)
                 shot(sock,'FalconOS-Host-Notes-After')
-                STATE['keyboard_steps'].append('Notes typed with host XTest keys')
+                after=(B/'FalconOS-Host-Notes-After.ppm').read_bytes()
+                pixel_changes=sum(a!=b for a,b in zip(before[1500::37],after[1500::37]))
+                STATE['note_pixel_changes']=pixel_changes
+                if pixel_changes<60:
+                    raise AssertionError('Notes input reached editor, but no distinct visual text change: '+str(pixel_changes))
+                STATE['notes_edit_verified']=True
+                STATE['keyboard_steps'].append('Notes text reached guest editor and repainted')
                 xdo('mousemove','--window',wid,900,620,pause=.85)
                 x,y,_=click()
                 shot(sock,'FalconOS-Host-Mouse-First-Click')
-                # Notes is second cascading window. Close target is (1860,405).
+                # 2560x1440, second 1180x760 window at (835,295). Close button center (1989,315).
                 for attempt in range(28):
-                    dx,dy=1860-x,405-y
+                    dx,dy=1989-x,315-y
                     if abs(dx)<14 and abs(dy)<14:
                         _,_,chunk=click()
                         if b'kX' in chunk:STATE['mouse_close_verified']=True
