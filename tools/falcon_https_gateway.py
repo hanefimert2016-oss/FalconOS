@@ -105,6 +105,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
             out.append("")
         if len(out)<4:out.append("No results found for this query.")
         return self.verified_text("\n".join(out)[:2000])
+    def github_repository_search(self,query):
+        """Public read-only fallback only when Wikipedia cannot be reached.
+
+        Actual results are returned by GitHub's HTTPS JSON API; never fake
+        a Wikipedia result, and never silently present another source.
+        """
+        url="https://api.github.com/search/repositories?q="+urllib.parse.quote(query,safe="")+"&per_page=5"
+        payload=json.loads(self.safe_tls_fetch(url))
+        out=["Search: "+query,
+             "Source: GitHub public repositories (Wikipedia unavailable)",
+             "HTTPS certificate and hostname verified on host",""]
+        for row in payload.get("items",[])[:5]:
+            title=str(row.get("full_name",""))[:95]
+            target=str(row.get("html_url",""))
+            if not target.startswith("https://github.com/"):
+                continue
+            out.append(title)
+            description=str(row.get("description") or "")[:130]
+            if description:out.append(description)
+            out.append(target)
+            out.append("")
+        if len(out)<=4:out.append("No public repositories found.")
+        return self.verified_text("\n".join(out)[:2200])
+
     def do_GET(self):
         # No open Internet proxy on a public network.
         try:
@@ -113,11 +137,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.send_text(403,"Denied outside trusted VM NAT.")
         except ValueError:return self.send_text(403,"Unknown client.")
         if self.path.startswith("/search/") and len(self.path)<=390:
+            query=urllib.parse.unquote(self.path[8:])
             try:
-                return self.wiki_search(urllib.parse.unquote(self.path[8:]))
+                return self.wiki_search(query)
             except (OSError,ssl.SSLError,ValueError,KeyError,json.JSONDecodeError,
-                    urllib.error.HTTPError) as e:
-                return self.send_text(502,"Search/TLS error: "+str(e)[:160])
+                    urllib.error.HTTPError) as primary:
+                print("WIKI_SEARCH_UNAVAILABLE",repr(primary),flush=True)
+                try:
+                    return self.github_repository_search(query)
+                except (OSError,ssl.SSLError,ValueError,KeyError,
+                        json.JSONDecodeError,urllib.error.HTTPError) as fallback:
+                    return self.send_text(502,"Both HTTPS search providers unavailable: "+str(fallback)[:135])
         if not self.path.startswith("/fetch/") or len(self.path)>380:
             return self.send_text(400,"Expect /fetch/example.com/path")
         original=self.path[7:]
