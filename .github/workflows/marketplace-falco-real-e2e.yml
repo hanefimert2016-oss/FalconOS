@@ -1,0 +1,84 @@
+name: FalconOS real Marketplace and falconos.tech Falco browser
+on:
+  push:
+    branches: [fix/marketplace-falco-live-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-marketplace:
+    name: Real GitHub Marketplace app install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv
+          python3 -m venv /tmp/falcon-e2e
+          /tmp/falcon-e2e/bin/pip -q install vncdotool pillow
+      - name: Build current native Store kernel
+        run: |
+          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Live GitHub Releases fetch, verified installation, Terminal launch through VNC
+        id: vnc
+        continue-on-error: true
+        run: timeout 370s /tmp/falcon-e2e/bin/python tools/vnc_marketplace_live_e2e.py
+      - name: Upload individual real Marketplace guest PNGs and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Marketplace-REAL-PNG
+          path: |
+            build/FalconOS-Market-*.png
+            build/market-vnc-*.json
+            build/market-vnc-*.log
+            build/market-vnc-qemu-stderr.log
+          if-no-files-found: warn
+      - name: Gate real Marketplace
+        if: steps.vnc.outcome != 'success'
+        run: exit 1
+  live-falco:
+    name: Falco real Contour website - ${{ matrix.mode }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: native-bearssl
+            arg: ""
+          - mode: host-ca-verified
+            arg: "--via-host"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native OS, network and VNC requirements
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv ca-certificates
+          python3 -m venv /tmp/falcon-e2e
+          /tmp/falcon-e2e/bin/pip -q install vncdotool pillow
+      - name: Compile native FalconOS with BearSSL
+        run: |
+          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Open EXACT falconos.tech in Falco from guest desktop and prove Contour content
+        id: falco
+        continue-on-error: true
+        run: timeout 330s /tmp/falcon-e2e/bin/python tools/vnc_falco_live_e2e.py ${{ matrix.arg }}
+      - name: Upload individual authentic guest screen images and HTTPS diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Falco-REAL-${{ matrix.mode }}-PNG
+          path: |
+            build/FalconOS-Falco-*.png
+            build/falco-live-*.json
+            build/falco-live-*.log
+            build/falco-live-qemu-stderr.log
+          if-no-files-found: warn
+      - name: Fail when actual website was not verified inside Falco
+        if: steps.falco.outcome != 'success'
+        run: exit 1
