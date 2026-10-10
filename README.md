@@ -18,13 +18,13 @@
       ~~~~~~~~~~~
 ```
 
-## Marketplace + CodeDium (experimental)
+## Marketplace + Codedium (experimental)
 The native Store now lists actual GitHub Releases FAPP/1 packages, verifies
 SHA-256 and launches allowlisted commands through Terminal. Run `make run-market`
 on Linux to boot QEMU with a host HTTPS-to-COM1 bridge (native TCP/TLS is
 unfinished). Packages use the dedicated FalconOS partition for a persistent
 48-slot application cache when you explicitly select a safe disk.
-CodeDium is accessible by pressing C inside Discover: F5 Save, F6 Run,
+Codedium is accessible by pressing C inside Discover: F5 Save, F6 Run,
 F7 Export, F10 twice to confirm a GitHub release. In Discover select an
 installed package and press P then F10 to publish the *exact saved .app.pkg*;
 when no release is selected it publishes `/home/falcon/Desktop/code.app.pkg`.
@@ -52,7 +52,7 @@ F8 explicitly loads `FalconOS` GitHub README documentation with host-verified
 HTTPS as a **separate fallback**, not a successful fetch of falconos.tech.
 The native browser displays bounded HTML/Markdown text, not CSS or JavaScript.
 The GUI Files app lists real RAM files, not a demo tree.
-CodeDium source files persist on explicitly selected safe partitions.
+Codedium source files persist on explicitly selected safe partitions.
 See `docs/MARKETPLACE.md` and `docs/FALCONOS-V2-STATUS.md` for limits and milestones.
 
 ## What is it?
