@@ -1,0 +1,25 @@
+name: FalconOS source snapshot for hands-on audit
+on:
+  push:
+    branches: [audit/real-input-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture exact commit and source tree
+        run: |
+          git rev-parse HEAD > AUDIT_COMMIT.txt
+          tar --exclude='.git' -czf /tmp/FalconOS-source-audit.tar.gz .
+          cp /tmp/FalconOS-source-audit.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-exact-source-audit
+          path: |
+            FalconOS-source-audit.tar.gz
+            AUDIT_COMMIT.txt
+          retention-days: 7
