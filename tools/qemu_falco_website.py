@@ -23,13 +23,18 @@ def main():
     parser.add_argument("--iso", default="build/FalconOS.iso")
     parser.add_argument("--timeout", type=int, default=65)
     parser.add_argument("--via-host", action="store_true")
+    parser.add_argument("--github-docs", action="store_true",
+                        help="Verify explicit F8 GitHub README fallback, NOT falconos.tech")
     args = parser.parse_args()
+    if args.github_docs and not args.via_host:
+        parser.error("--github-docs requires --via-host")
     root = Path("build").absolute()
     root.mkdir(parents=True, exist_ok=True)
     monitor_path = root / "falco-website-monitor.sock"
     debug = root / "falco-website-debug.log"
     initial = root / "FalconOS-Falco-Search.ppm"
-    site = root / "FalconOS-Falco-falconos-tech.ppm"
+    site = root / ("FalconOS-Falco-GitHub-Docs.ppm" if args.github_docs
+                   else "FalconOS-Falco-falconos-tech.ppm")
     for file in (monitor_path, debug, initial, site):
         if file.exists():
             file.unlink()
@@ -67,7 +72,10 @@ def main():
             # Request the exact same path outside the VM first.
             try:
                 with urllib.request.urlopen(
-                    "http://127.0.0.1:18444/fetch/falconos.tech/", timeout=18
+                    ("http://127.0.0.1:18444/fetch/raw.githubusercontent.com/"
+                     "hanefimert2016-oss/FalconOS/FalconOS-1-release/README.md"
+                     if args.github_docs else
+                     "http://127.0.0.1:18444/fetch/falconos.tech/"), timeout=18
                 ) as verify:
                     passed = (verify.status == 200 and
                               verify.headers.get("X-Falcon-Host-HTTPS-Verified") == "yes")
@@ -117,7 +125,9 @@ def main():
             ppm_to_png(initial, root / "FalconOS-Falco-Search.png")
             start = len(debug.read_bytes())
             # An explicit choice: F6 native TLS, F7 host-verified companion.
-            command(monitor, "sendkey f7" if args.via_host else "sendkey f6", .1)
+            command(monitor,
+                    "sendkey f8" if args.github_docs else
+                    ("sendkey f7" if args.via_host else "sendkey f6"), .1)
             result = "timeout"
             limit = time.monotonic() + args.timeout
             while time.monotonic() < limit:
@@ -133,7 +143,9 @@ def main():
                 time.sleep(.3)
             time.sleep(1.8)
             screenshot(monitor, site)
-            ppm_to_png(site, root / "FalconOS-Falco-falconos-tech.png")
+            ppm_to_png(site,root / (
+                "FalconOS-Falco-GitHub-Docs.png" if args.github_docs
+                else "FalconOS-Falco-falconos-tech.png"))
             if result != "verified":
                 raise AssertionError(
                     f"Falco site not verified: {result}. "
@@ -143,11 +155,13 @@ def main():
                 access_log = (root / "falco-gateway.log").read_text(
                     encoding="utf-8", errors="replace"
                 )
-                if ("GET /fetch/falconos.tech/" not in access_log
-                        or " 200 " not in access_log):
+                expected_fetch = ("/fetch/raw.githubusercontent.com/" if
+                                  args.github_docs else "/fetch/falconos.tech/")
+                if (expected_fetch not in access_log or " 200 " not in access_log):
                     raise AssertionError("The verified host gateway did not return the website")
             method = "host-verified HTTPS (local VM link HTTP)" if args.via_host else "guest-native HTTPS"
-            print("PASS: real Falco website rendered from " + method, flush=True)
+            label = "GitHub README fallback (NOT falconos.tech)" if args.github_docs else "live falconos.tech"
+            print("PASS: real Falco " + label + " rendered from " + method, flush=True)
     finally:
         if guest is not None:
             guest.terminate()
