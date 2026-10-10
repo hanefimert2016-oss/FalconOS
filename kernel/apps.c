@@ -38,7 +38,7 @@ static i32 builtin_app_count(void);
  * different applications can be shown, positioned and focused concurrently.
  * Geometry lives per window; the selected window alone receives keyboard
  * and mouse events. This is OS framebuffer code, not the web preview. */
-#define WM_MAX_WINDOWS 4
+#define WM_MAX_WINDOWS 6
 typedef struct { i32 app, dx, dy, dw, dh; bool maximized; } wm_slot_t;
 static wm_slot_t wm_slots[WM_MAX_WINDOWS];
 static i32 wm_slot_count;
@@ -102,8 +102,12 @@ void apps_open(i32 app) {
         for(i32 j=1;j<wm_slot_count;j++)wm_slots[j-1]=wm_slots[j];
         wm_slot_count--;
     }
-    i32 cascade=wm_slot_count*27;
-    wm_slot_t item={.app=app,.dx=cascade-35,.dy=cascade-35,
+    /* Stagger windows across the desktop instead of stacking every title
+     * bar on top of the same place.  Keeps background windows selectable. */
+    static const i32 x_off[6]={-190,145,-115,220,-240,70};
+    static const i32 y_off[6]={-95,-35,45,105,0,80};
+    i32 cascade=wm_slot_count;
+    wm_slot_t item={.app=app,.dx=x_off[cascade],.dy=y_off[cascade],
                     .dw=0,.dh=0,.maximized=false};
     wm_slots[wm_slot_count++]=item;
     wm_load_top();
@@ -4401,6 +4405,12 @@ void apps_draw_icon(i32 i,i32 cx,i32 cy){
 void apps_input_active(i32 key)
 {
     if (active_app < 0) return;
+    /* OS-level Alt+Tab rotates the existing real window stack; it does not
+     * open a replacement application or destroy any document state. */
+    if (key==KEY_TAB && (kbd_mod_state() & (1u<<2)) && wm_slot_count>1) {
+        wm_raise(0);
+        return;
+    }
     if (key == KEY_ESC) { apps_close(); return; }
     if (APPS[active_app].input) APPS[active_app].input(key);
 }
@@ -4477,8 +4487,8 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
     }
     if (wm_resizing) {
         if (!left_held) { wm_resizing = false; return true; }
-        wm_dw = (mx - wm_resize_grab_x) + (wm_resize_start_w - ((i32)FB.width  - 280));
-        wm_dh = (my - wm_resize_grab_y) + (wm_resize_start_h - ((i32)FB.height - 220));
+        wm_dw = wm_resize_start_w + (mx - wm_resize_grab_x);
+        wm_dh = wm_resize_start_h + (my - wm_resize_grab_y);
         return true;
     }
 
@@ -4505,7 +4515,7 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
         my >= wy + wh - 22 && my <= wy + wh - 2) {
         wm_resizing = true;
         wm_resize_grab_x = mx; wm_resize_grab_y = my;
-        wm_resize_start_w = ww; wm_resize_start_h = wh;
+        wm_resize_start_w = wm_dw; wm_resize_start_h = wm_dh;
         return true;
     }
 
@@ -4528,11 +4538,9 @@ static void wm_paint_window(u32 frame,bool focused) {
     const app_def_t *a=&APPS[active_app];
     i32 wx,wy,ww,wh;
     if(!wm_window_rect(&wx,&wy,&ww,&wh))return;
-    if(focused && SET.animations && !wm_dragging && !wm_resizing) {
-        u32 dt=pit_ms()-open_at_ms;
-        if(dt>200)dt=200;
-        wy+=(i32)((200-dt)*60/200);
-    }
+    /* Geometry must match the WM's hit-test on every frame. Animated
+     * visual offsets previously made traffic lights impossible to click
+     * during the first 200ms after focusing or opening a window. */
     gfx_round_rect_a(wx+4,wy+12,ww,wh,24,COL_SHADOW,70);
     gfx_round_rect_a(wx,wy,ww,wh,24,PAL_PANEL,SET.aero_enabled?246:255);
     gfx_round_outline(wx,wy,ww,wh,24,
@@ -4540,10 +4548,14 @@ static void wm_paint_window(u32 frame,bool focused) {
     gfx_round_rect(wx+14,wy+8,28,28,10,a->tint);
     apps_draw_icon(active_app,wx+28,wy+22);
     gfx_text(wx+54,wy+13,apps_display_name(active_app),PAL_TEXT);
-    gfx_text(wx+ww-115,wy+14,"-",PAL_TEXT_DIM);
-    gfx_text(wx+ww-77,wy+14,"[]",PAL_TEXT_DIM);
-    gfx_round_rect(wx+ww-40,wy+7,31,30,11,0xFBE6E8u);
-    gfx_text_centered(wx+ww-24,wy+14,"x",0xAE3E4Bu);
+    if (focused) gfx_rect_a(wx+54,wy+34,98,2,PAL_ACCENT,220);
+    /* 40px click targets correspond exactly to wm_handle_mouse() below. */
+    gfx_round_rect_a(wx+ww-124,wy+7,38,30,10,PAL_PANEL_HI,255);
+    gfx_text_centered(wx+ww-105,wy+14,"_",PAL_TEXT_DIM);
+    gfx_round_rect_a(wx+ww-84,wy+7,38,30,10,PAL_PANEL_HI,255);
+    gfx_text_centered(wx+ww-65,wy+13,wm_max?"o":"[]",PAL_TEXT_DIM);
+    gfx_round_rect(wx+ww-44,wy+7,35,30,10,0xFBE6E8u);
+    gfx_text_centered(wx+ww-26,wy+14,"x",0xAE3E4Bu);
     gfx_rect_a(wx+13,wy+42,ww-26,1,PAL_HAIRLINE,255);
     a->render(wx,wy+44,ww,wh-44,frame);
     if(!wm_max){
@@ -4558,7 +4570,8 @@ void apps_render_active(u32 frame) {
     wm_store_top();
     if(SET.aero_enabled && SET.theme==THEME_LIQUID)
         gfx_blur_rect(20,40,(i32)FB.width-40,(i32)FB.height-140,2);
-    gfx_rect_a(0,0,FB.width,FB.height,COL_SHADOW,23);
+    /* Keep background visible for spatial awareness and pointer targeting. */
+    gfx_rect_a(0,0,FB.width,FB.height,COL_SHADOW,10);
     const i32 count=wm_slot_count;
     for(i32 j=0;j<count;j++) {
         const wm_slot_t *w=&wm_slots[j];
