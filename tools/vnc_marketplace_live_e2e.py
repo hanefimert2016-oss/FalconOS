@@ -93,8 +93,11 @@ def main():
                 # Genuine GitHub Releases (or authenticated reviewed static
                 # catalog only when unauthenticated API is rate-limited).
                 wait(b"C",off,80)
-                STATE["steps"].append("GitHub marketplace catalog accepted in guest")
-                pause(1.5)
+                # CAT events are streamed one by one; do not search until the
+                # real host completed the entire catalog with DONE.
+                wait(b"mD",off,110)
+                STATE["steps"].append("Real GitHub marketplace catalog fully transferred")
+                pause(1.3)
                 k(c,"f4")
                 before=len(fresh_data())
                 t(c,"Hello")
