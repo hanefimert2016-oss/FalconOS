@@ -593,7 +593,9 @@ void long_start(u64 magic, u64 info_ptr)
      * open automatically so they discover the F1/F2/F12 shortcuts and
      * mouse / window gestures immediately.  diskdb_save() in
      * helppanel_handle_*() flips SET.help_seen so it stays dismissed.  */
-    if (!SET.help_seen) helppanel_open();
+    /* First-boot Help remains available from the ? glyph, but must not
+     * cover the upper-right window controls on every fresh desktop. */
+    helppanel_close();
 
     /* main loop: paced to PIT — wait for at least 1 tick before next frame */
     u32 last = g_ticks;
