@@ -171,33 +171,33 @@ def main():
                 raise AssertionError("Native WM did not repaint three windows")
             ppm_to_png(multi3,root/"FalconOS-Aura-MultiWindow-3.png")
             print("PASS: guest compositor emitted Files count=2, Browser count=3 and redrew both screenshot states")
-            # Native CodeDium: launch from System tab and export a real
+            # Native Codedium: launch from System tab and export a real
             # FAPP/1 file into the guest's Desktop, then capture both states.
             command(sock,"sendkey f2",.7)
             command(sock,"sendkey tab",.25)   # System
             for _ in range(4):command(sock,"sendkey right",.13)
             off=len(debug.read_bytes())
-            command(sock,"sendkey ret",.65)    # CodeDium
+            command(sock,"sendkey ret",.65)    # Codedium
             wait_for_marker(debug,b"zSn4",after=off,timeout=35)
             wait_for_marker(debug,b"gS",after=off,timeout=35)
             time.sleep(.5)
             ppm4=root/"FalconOS-Aura-MultiWindow-4.ppm"
             screenshot(sock,ppm4)
             ppm_to_png(ppm4,root/"FalconOS-Aura-MultiWindow-4.png")
-            ppm=root/"FalconOS-Aura-CodeDium.ppm"
+            ppm=root/"FalconOS-Aura-Codedium.ppm"
             screen=screenshot(sock,ppm)
-            ppm_to_png(ppm,root/"FalconOS-Aura-CodeDium.png")
+            ppm_to_png(ppm,root/"FalconOS-Aura-Codedium.png")
             if picture_difference(before,screen)<40:
-                raise AssertionError("CodeDium did not render in actual guest")
+                raise AssertionError("Codedium did not render in actual guest")
             off=len(debug.read_bytes())
             command(sock,"sendkey f7",1.5) # export reviewed FAPP/1 source
             wait_for_marker(debug,b"E",after=off,timeout=30)
-            ppm=root/"FalconOS-Aura-CodeDium-Export.ppm"
+            ppm=root/"FalconOS-Aura-Codedium-Export.ppm"
             screenshot(sock,ppm)
-            ppm_to_png(ppm,root/"FalconOS-Aura-CodeDium-Export.png")
-            print("PASS: CodeDium and four simultaneous native windows, FAPP/1 exported")
+            ppm_to_png(ppm,root/"FalconOS-Aura-Codedium-Export.png")
+            print("PASS: Codedium and four simultaneous native windows, FAPP/1 exported")
             # Cover every non-demo app available in the native Launchpad.
-            # The System tab remains selected after opening CodeDium (index 4).
+            # The System tab remains selected after opening Codedium (index 4).
             current_system=4
             for target,name,app_id in (
                 (1,"Stats",9),(2,"Updates",4),(3,"About",17),(5,"Terminal",5)
