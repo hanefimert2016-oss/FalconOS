@@ -1,0 +1,43 @@
+name: FalconOS VNC Desktop PS2 real input
+on:
+  push:
+    branches: [fix/aura-real-input-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rfb-ps2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bare-metal ISO toolchain and VNC client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-pip python3-venv
+          python3 -m venv /tmp/falcon-vnc-env
+          /tmp/falcon-vnc-env/bin/pip install --quiet vncdotool Pillow
+      - name: Compile NEW FalconOS kernel with real PS2 markers
+        run: |
+          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Use VNC desktop keyboard and mouse, not HMP or QMP injection
+        id: input
+        continue-on-error: true
+        run: |
+          timeout 300s /tmp/falcon-vnc-env/bin/python tools/vnc_real_input_audit.py
+      - name: Publish actual guest PNG individually inside evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-VNC-GUI-Real-Input-PNGs
+          path: |
+            build/FalconOS-VNC-*.png
+            build/vnc-hid-guest.log
+            build/vnc-hid-results.json
+            build/vnc-qemu-stderr.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Fail when actual PS2 pointer or window Close fails
+        if: steps.input.outcome != 'success'
+        run: exit 1
