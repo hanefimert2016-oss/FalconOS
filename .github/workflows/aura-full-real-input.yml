@@ -1,0 +1,51 @@
+name: FalconOS Aura full features & real HID validation
+on:
+  push:
+    branches: [fix/aura-real-input-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full-aura:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native ISO/QEMU, TLS and 3D splash build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-pip python3-venv ca-certificates
+          python3 -m venv /tmp/falcon-full-venv
+          /tmp/falcon-full-venv/bin/pip install --quiet 'numpy<3' trimesh opencv-python-headless pillow vncdotool
+      - name: Bake original 3D Falcon dragon and compile full Aura ISO with BearSSL
+        run: |
+          /tmp/falcon-full-venv/bin/python tools/bake_boot_intro.py --frames 48
+          make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=1 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
+          grub-file --is-x86-multiboot2 build/falcon.elf
+          sha256sum build/FalconOS.iso
+      - name: Validate full features ISO through actual VNC mouse and keyboard
+        id: hid
+        continue-on-error: true
+        run: timeout 300s /tmp/falcon-full-venv/bin/python tools/vnc_real_input_audit.py
+      - name: Upload original full-featured FalconOS Aura ISO only after VNC test passes
+        if: steps.hid.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Aura-Full-Dragon-TLS-RealMouse-ISO
+          path: build/FalconOS.iso
+          retention-days: 14
+      - name: Upload native desktop screenshots and input evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Aura-Full-Real-Input-Screens
+          path: |
+            build/FalconOS-VNC-*.png
+            build/vnc-hid-guest.log
+            build/vnc-hid-results.json
+            build/vnc-qemu-stderr.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Fail full build if mouse and keyboard validation failed
+        if: steps.hid.outcome != 'success'
+        run: exit 1
