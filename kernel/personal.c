@@ -172,15 +172,20 @@ void mode_personal_render(u32 frame){
     quick_cards();
     /* Persistent shortcuts are user-controlled and never auto-filled. */
     if(apps_active()<0)desktop_pins_render(frame);
-    if(apps_active()>=0){
+    {
+        static bool previous_held;
         i32 mx,my;bool held;mouse_get(&mx,&my,&held);
-        bool edge=mouse_peek_click();
-        /* Shelf has its own hit-testing and must not drag the app window. */
-        if(my<(i32)FB.height-102){
+        /* Preserve a click even if the PS/2 edge was consumed earlier in
+         * the frame. Held-button detection also supports drag gestures. */
+        bool edge=mouse_peek_click() || (held && !previous_held);
+        previous_held=held;
+        if(apps_active()>=0 && !launchpad_is_open() &&
+           my<(i32)FB.height-102) {
             bool wm_used=apps_wm_handle_mouse(mx,my,held,edge);
             if(edge&&wm_used)(void)mouse_consume_click();
         }
-    }else if(mouse_peek_click()&&!launchpad_is_open()){
+    }
+    if(apps_active()<0 && mouse_peek_click() && !launchpad_is_open()){
         i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
         if(my>70&&my<(i32)FB.height-110&&!within(mx,my,
               ((i32)FB.width-1060)/2,(i32)FB.height/2-178,
