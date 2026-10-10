@@ -1,4 +1,4 @@
-# FalconOS Marketplace and CodeDium integration
+# FalconOS Marketplace and Codedium integration
 
 ## What works
 - GitHub Marketplace packages are actually hosted as versioned Releases.
@@ -9,8 +9,8 @@
   command allowlist, then installs and launches the script via Terminal.
 - When a dedicated, correctly partitioned FalconOS test disk is selected,
   up to 48 apps persist in checksummed fixed-size partition slots.
-- CodeDium can edit scripts, save to RAM, run allowlisted commands and
-  export a .app.pkg in its RAM Desktop folder. The web CodeDium Studio in
+- Codedium can edit scripts, save to RAM, run allowlisted commands and
+  export a .app.pkg in its RAM Desktop folder. The web Codedium Studio in
   the Marketplace repo can export a host-downloadable package and submit
   a source PR for publishing.
 
@@ -28,8 +28,8 @@ Choose that FalconOS partition during setup for app persistence, and do
 not attach your actual Windows/Linux SSD to these experimental builds.
 In the guest open **Store** and press **R**. Choose a release with the
 arrow keys, press Enter to GET, then press Enter again to RUN.
-Press **U** to download a newer release; **D** removes an installed app. Press **C** for CodeDium.
-CodeDium: F5 save, F6 run, F7 create a local .app.pkg in guest RAM.
+Press **U** to download a newer release; **D** removes an installed app. Press **C** for Codedium.
+Codedium: F5 save, F6 run, F7 create a local .app.pkg in guest RAM.
 
 ## Important limitations
 The guest does not yet have native TCP/TLS. The HTTPS bridge is opt-in
@@ -47,8 +47,8 @@ unavailable non-built-in entries are no longer permitted to claim successful
 installation. The graphical Store is exclusively Release-backed. Package
 publication means reviewed FAPP/1 sources followed by an immutable Release.
 
-## Native CodeDium custom app identity
-Create or edit a project in CodeDium. At the top of `project.fsh` add
+## Native Codedium custom app identity
+Create or edit a project in Codedium. At the top of `project.fsh` add
 these exact ASCII source comments (edit them for each application):
 
     # app-id: my-app
@@ -62,7 +62,7 @@ Press F5 to save, F6 to run and F7 to package into
 `/home/falcon/Desktop/code.app.pkg`. Packages are limited to 4096 bytes
 and only the allowlisted built-in commands can execute. This is not an
 ELF/native binary compiler. For publishing, move the package to a host,
-import it into the web CodeDium source editor, fork the Marketplace repo,
+import it into the web Codedium source editor, fork the Marketplace repo,
 and submit a reviewed PR. Device-to-host file transfer is not yet built in.
 
 ## Tests

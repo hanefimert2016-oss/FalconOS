@@ -110,8 +110,8 @@ void helppanel_render(u32 frame)
 
     draw_section(x, y,
         T("Keyboard",  "Klavye"),
-        T("F1   toggle Personal / Developer kernel",
-          "F1   Personal / Developer çekirdek"),
+        T("F1   open / close Help",
+          "F1   Yardımı aç / kapat"),
         T("F2   open the Launchpad (all apps)",
           "F2   Launchpad'i aç (tüm uygulamalar)"),
         T("F12  open the Power menu",

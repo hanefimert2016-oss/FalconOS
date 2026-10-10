@@ -205,10 +205,14 @@ static usb_ctrl_t USB_CTRL;
 static bool g_inited = false;
 
 /* ---- Port I/O for USB controllers --------------------------------------- */
-static u8  usb_inb(u16 port)
+static u8 usb_inb(u32 port)
 {
+    /* x86 I/O instructions address only 16-bit ports. Refuse to silently
+     * truncate a physical MMIO address to some unrelated hardware port.
+     * OHCI/EHCI MMIO probing needs a PCI-discovered BAR, not port I/O. */
+    if (port > 0xFFFFu) return 0xFFu;
     u8 v;
-    __asm__ volatile ("inb %1, %0" : "=a"(v) : "Nd"(port));
+    __asm__ volatile ("inb %1, %0" : "=a"(v) : "Nd"((u16)port));
     return v;
 }
 
@@ -231,14 +235,19 @@ static void usb_outw(u16 port, u16 val)
 
 static u32 usb_inl(u32 port)
 {
+    /* Do not treat a 32-bit MMIO base as a 16-bit port operand. */
+    if (port > 0xFFFFu) return 0xFFFFFFFFu;
     u32 v;
-    __asm__ volatile ("inl %1, %0" : "=a"(v) : "Nd"(port));
+    __asm__ volatile ("inl %1, %0" : "=a"(v) : "Nd"((u16)port));
     return v;
 }
 
 static void usb_outl(u32 port, u32 val)
 {
-    __asm__ volatile ("outl %0, %1" : : "a"(val), "Nd"(port));
+    /* Fail closed until proper PCI-BAR-validated MMIO register access
+     * exists; truncating this address could corrupt unrelated I/O. */
+    if (port > 0xFFFFu) return;
+    __asm__ volatile ("outl %0, %1" : : "a"(val), "Nd"((u16)port));
 }
 
 /* ---- USB timing helpers ------------------------------------------------- */

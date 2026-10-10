@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Opt-in QEMU UART <> GitHub Releases bridge for FalconOS FAPP/1.
+"""QEMU serial Marketplace bridge. Downloads need no authentication.
 
-Uses the host HTTPS stack because the guest has no TCP/TLS driver yet.
-Only lists and downloads packages from a pinned public repository.
-Never runs downloaded code on the host. Does not need GitHub credentials.
+Publishing is DISABLED unless --enable-publish is set on the host.
+The guest never sees GitHub credentials. Explicit guest confirmation is
+also required, and only a valid FAPP/1 package can become a GitHub release.
+No downloaded scripts ever execute on the host.
 """
 import argparse
 import hashlib
@@ -12,11 +13,15 @@ import re
 import socket
 import time
 import urllib.request
+import urllib.error
+import subprocess
+import tempfile
 from pathlib import Path
 
 API = "https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases?per_page=100"
 ALLOWED = {"echo", "date", "uname", "uptime", "whoami", "pwd", "ls", "help", "cal", "hwinfo", "free", "df", "clear"}
 MAX_BYTES = 4096
+STATIC_ROOT = "https://raw.githubusercontent.com/hanefimert2016-oss/FalconOS-Marketplace/main/site/native/"
 APP_ID = re.compile(r"[a-z][a-z0-9-]{1,31}\Z")
 NAME = re.compile(r"[A-Za-z0-9 .,:!?+/_()\-]{2,75}\Z")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?\Z")
@@ -28,7 +33,8 @@ def request_json(url):
 
 def request_bytes(url):
     if not (url.startswith("https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/")
-            or url.startswith("https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases/assets/")):
+            or url.startswith("https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases/assets/")
+            or (url.startswith(STATIC_ROOT) and re.fullmatch(r"[a-z][a-z0-9-]{1,31}-v[0-9a-z.\-]+\.app\.pkg(?:\.sha256)?", url[len(STATIC_ROOT):]))):
         raise ValueError("untrusted asset URL")
     req = urllib.request.Request(url, headers={"User-Agent": "FalconOS-Bridge/1.0"})
     with urllib.request.urlopen(req, timeout=25) as response:
@@ -102,7 +108,11 @@ def semver_key(version):
 def releases():
     result = {}
     for page in range(1, 6):
-        batch = request_json(API + f"&page={page}")
+        try:
+            batch = request_json(API + f"&page={page}")
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print("GitHub Releases API unavailable, trying reviewed static catalog:", exc, flush=True)
+            break
         if not batch:
             break
         for release in batch:
@@ -128,7 +138,89 @@ def releases():
                     continue
                 result[m.group(1)] = {"asset": a, "checksum_asset": sha_asset,
                                        "version": m.group(2), "release": release}
+    if not result:
+        result = static_catalog()
     return dict(sorted(result.items())[:48])
+
+
+def static_catalog():
+    """Read the reviewed HTTPS fallback catalog when GitHub API is limited.
+
+    Never use unsigned arbitrary host paths. Filenames, IDs, versions and
+    checksums are validated, and GET verifies package SHA-256 again.
+    """
+    req=urllib.request.Request(STATIC_ROOT+"catalog.fcat",
+                               headers={"User-Agent":"FalconOS-Bridge/1.0"})
+    with urllib.request.urlopen(req,timeout=15) as response:
+        raw=response.read(8193)
+    if len(raw)>8192 or not raw.startswith(b"FCAT/1\n"):
+        raise ValueError("invalid static Marketplace catalog")
+    entries={}
+    for line in raw.decode("ascii").splitlines()[1:]:
+        fields=line.split("|")
+        if len(fields)!=6 or fields[0]!="CAT":
+            raise ValueError("invalid catalog row")
+        _,app_id,ver,name,digest,filename=fields
+        if (not APP_ID.fullmatch(app_id) or not VERSION.fullmatch(ver)
+            or not NAME.fullmatch(name) or not re.fullmatch(r"[0-9a-f]{64}",digest)
+            or filename != f"{app_id}-v{ver}.app.pkg"):
+            raise ValueError("unsafe catalog metadata")
+        entries[app_id]={
+          "asset":{"name":filename,"browser_download_url":STATIC_ROOT+filename},
+          "checksum_asset":{"name":filename+".sha256",
+                            "browser_download_url":STATIC_ROOT+filename+".sha256"},
+          "version":ver,"release":{"name":name,"tag_name":f"app-{app_id}-v{ver}"},
+          "static_digest":digest,
+        }
+    return entries
+
+
+REPO = "hanefimert2016-oss/FalconOS-Marketplace"
+
+def publish_release(raw, metadata):
+    """Create exactly one immutable GitHub Release via authenticated host gh.
+
+    No guest-provided command/URL/repository reaches subprocess arguments.
+    gh auth login (or scoped GH_TOKEN) is required outside the guest.
+    """
+    validate_package(raw, metadata["id"])
+    tag = f'app-{metadata["id"]}-v{metadata["version"]}'
+    asset = f'{metadata["id"]}-v{metadata["version"]}.app.pkg'
+    status = subprocess.run(["gh", "auth", "status"], timeout=20,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if status.returncode:
+        raise ValueError("Host GitHub CLI not authenticated; run gh auth login")
+    existing = subprocess.run(["gh", "release", "view", tag, "--repo", REPO],
+                              capture_output=True, text=True, timeout=25)
+    if existing.returncode == 0:
+        raise ValueError("Version already exists in GitHub Releases; increment app-version")
+    with tempfile.TemporaryDirectory(prefix="falcon-publish-") as directory:
+        pkg = Path(directory) / asset
+        pkg.write_bytes(raw)
+        sidecar = Path(directory) / (asset + ".sha256")
+        sidecar.write_text(hashlib.sha256(raw).hexdigest() + "  " + asset + "\n",
+                           encoding="ascii")
+        cmd = ["gh", "release", "create", tag, str(pkg), str(sidecar),
+               "--repo", REPO, "--title", metadata["name"],
+               "--notes", "FAPP/1 script published from FalconOS Codedium/Discover.",
+               "--latest=false"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=70)
+        if result.returncode:
+            raise ValueError("GitHub release failed: " + result.stderr[:250])
+    return tag
+
+def publish_transfer_complete(upload, publisher):
+    if upload is None:
+        raise ValueError("Upload END without BEGIN")
+    raw = bytes(upload["data"])
+    if len(raw) != upload["size"] or hashlib.sha256(raw).hexdigest() != upload["sha"]:
+        raise ValueError("Upload length or SHA-256 mismatch")
+    info = validate_package(raw, upload["id"])
+    if info["version"] != upload["version"]:
+        raise ValueError("Version mismatch")
+    if publisher is None:
+        raise ValueError("Host publishing disabled: restart bridge with --enable-publish")
+    return publisher(raw, info)
 
 def send(sock, message):
     wire = (message + "\n").encode("ascii")
@@ -158,12 +250,39 @@ def send_acknowledged(sock, line):
     if answer != "ACK":
         raise ValueError("guest rejected packet: " + answer[:100])
 
-def serve(sock):
+def serve(sock, publisher=None):
     cache = {}
+    upload = None
     while True:
         command = read_line(sock)
         try:
-            if command == "LIST":
+            if command.startswith("UP|"):
+                fields = command.split("|")
+                if len(fields) != 5 or not APP_ID.fullmatch(fields[1]) or \
+                    not VERSION.fullmatch(fields[2]) or not fields[3].isdigit() or \
+                    not (70 <= int(fields[3]) <= MAX_BYTES) or \
+                    not re.fullmatch(r"[0-9a-f]{64}", fields[4]):
+                    raise ValueError("Invalid upload announcement")
+                upload = {"id": fields[1], "version": fields[2],
+                          "size": int(fields[3]), "sha": fields[4],
+                          "data": bytearray()}
+            elif command.startswith("DAT|"):
+                if upload is None:
+                    raise ValueError("Data without an upload")
+                encoded = command[4:]
+                if not (2 <= len(encoded) <= 32 and len(encoded) % 2 == 0) or \
+                    not re.fullmatch(r"[0-9a-f]+", encoded):
+                    raise ValueError("Invalid upload data")
+                data = bytes.fromhex(encoded)
+                if len(upload["data"]) + len(data) > upload["size"]:
+                    raise ValueError("Upload overrun")
+                upload["data"].extend(data)
+            elif command == "UPEND":
+                finished = upload
+                upload = None
+                tag = publish_transfer_complete(finished, publisher)
+                send(sock, "PUBOK|" + tag)
+            elif command == "LIST":
                 cache = releases()
                 for app_id, entry in list(cache.items())[:48]:
                     asset = entry["asset"]
@@ -189,6 +308,8 @@ def serve(sock):
                 published = checksum.decode("ascii").split()[0]
                 if not re.fullmatch(r"[0-9a-f]{64}", published) or published != digest:
                     raise ValueError("Published Release checksum does not match package")
+                if entry.get("static_digest") and digest != entry["static_digest"]:
+                    raise ValueError("Static catalog SHA-256 mismatch")
                 # SHA-256 is independently checked again by the guest.
                 send_acknowledged(sock, "BEGIN|" + app_id + "|" + str(len(raw)) + "|" + digest)
                 for start in range(0, len(raw), 16):
@@ -200,11 +321,17 @@ def serve(sock):
                 send(sock, "ERR|unknown command")
         except (OSError, TimeoutError, ValueError, KeyError, json.JSONDecodeError) as exc:
             print("Bridge error:", exc, flush=True)
-            send(sock, "ERR|download failed")
+            if command.startswith(("UP|", "DAT|")) or command == "UPEND":
+                upload = None
+                send(sock, "PUBERR|upload-rejected")
+            else:
+                send(sock, "ERR|download failed")
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--socket", default="build/falcon-market.sock")
+    p.add_argument("--enable-publish", action="store_true",
+                   help="Explicitly authorize authenticated GitHub Release uploads from this VM")
     args = p.parse_args()
     path = Path(args.socket)
     print("Connecting to QEMU serial socket:", path, flush=True)
@@ -212,7 +339,10 @@ def main():
         time.sleep(0.2)
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.connect(str(path))
-        serve(sock)
+        if args.enable_publish:
+            print("WARNING: GitHub publishing enabled: guest-confirmed FAPP/1 releases only.",
+                  flush=True)
+        serve(sock, publisher=publish_release if args.enable_publish else None)
 
 if __name__ == "__main__":
     main()

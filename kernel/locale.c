@@ -32,11 +32,11 @@ const char *TX(const char *en, const char *tr, const char *de,
 const char *lang_name(lang_t l)
 {
     switch (l) {
-        case LANG_TR: return "Turkce";
+        case LANG_TR: return "Türkçe";
         case LANG_EN: return "English";
         case LANG_DE: return "Deutsch";
-        case LANG_FR: return "Francais";
-        case LANG_ES: return "Espanol";
+        case LANG_FR: return "Français";
+        case LANG_ES: return "Español";
         default: return "?";
     }
 }

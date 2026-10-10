@@ -116,6 +116,9 @@ void mouse_irq(void)
     bool ln = (pkt[0] & 1) != 0;
     bool rn = (pkt[0] & 2) != 0;
     if (ln && !m_l) {
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'m');outb(0xE9,'L'); /* raw PS/2 left press IRQ */
+#endif
         m_l_edge = true;
         m_clicks++;
         u32 now = pit_ms();

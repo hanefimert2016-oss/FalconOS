@@ -83,14 +83,14 @@ endif
 
 # Build-time baked glTF boot sprites are generated into build/ only.
 # Use ENABLE_BOOT_GLB=1 after tools/bake_boot_intro.py is run.
-ENABLE_BOOT_GLB ?= 0
+ENABLE_BOOT_GLB ?= 1
 ifeq ($(ENABLE_BOOT_GLB),1)
 BOOT_GLB_FLAGS := -DFALCON_BOOT_GLB -I$(BUILD)
 else
 BOOT_GLB_FLAGS :=
 endif
 
-CFLAGS      := $(CFLAGS_ARCH) -ffreestanding -fno-pic -fno-stack-protector \
+CFLAGS      := $(CFLAGS_ARCH) -std=gnu11 -ffreestanding -fno-pic -fno-stack-protector \
                -fno-builtin -nostdlib -nostdinc \
                -Wall -Wextra -Wno-unused-parameter \
                -O2 -Ikernel -Ilinux \
@@ -107,17 +107,24 @@ ISO         := $(BUILD)/FalconOS.iso
 
 # Omit -no-shutdown / -no-reboot so ACPI power-off (PW_REG) and keyboard reset
 # behave like real hardware and terminate or restart the QEMU process.
+# SDL is the default. On Arch with QEMU GTK installed, use
+# QEMU_DISPLAY=gtk,grab-on-hover=on when PS/2 mouse capture in SDL is awkward.
+QEMU_DISPLAY  ?= sdl
 RAM           ?= 12288
 CPUS          ?= 6
 VRAM          ?= 256
 DISK_CAPACITY ?= 4G
 
-QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
+# Boot the GRUB CD-ROM before the unbootable persistent data disk.
+# This must match the explicit -boot d used by our real QEMU CI tests.
+QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -boot order=d \
+                 -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
                  -netdev user,id=net0 -device rtl8139,netdev=net0 \
-                 -display sdl -vga std -global VGA.vgamem_mb=$(VRAM) \
+                 -display $(QEMU_DISPLAY) -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
-HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
+HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -boot order=d \
+                 -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
                  -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display none -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
@@ -161,10 +168,25 @@ $(BUILD)/kernel/https_bearssl.o: kernel/https_bearssl.c kernel/falcon.h $(TLS_LI
 	$(CC) $(filter-out -nostdinc,$(CFLAGS)) -c $< -o $@
 endif
 
-# ---- link kernel --------------------------------------------------------------
+# ---- original user-provided boot intro -----------------------------------------
+# Bake real 3D keyframes from the uploaded GLB at build time; OS itself has
+# only a bounded, freestanding RGB sprite player. Use a private venv when the
+# host lacks Python 3D dependencies: never modify the host's Python install.
 ifeq ($(ENABLE_BOOT_GLB),1)
+$(BUILD)/boot_model_frames.inc: assets/boot/falconos_boot_intro_animation.glb tools/bake_boot_intro.py | $(BUILD)
+	@if python3 -c 'import numpy, cv2, trimesh, PIL' >/dev/null 2>&1; then \
+	  python3 tools/bake_boot_intro.py --source $< --out $@ --frames 48; \
+	else \
+	  python3 -m venv $(BUILD)/boot-intro-venv && \
+	  $(BUILD)/boot-intro-venv/bin/pip install --disable-pip-version-check 'numpy<3' trimesh opencv-python-headless pillow && \
+	  $(BUILD)/boot-intro-venv/bin/python tools/bake_boot_intro.py --source $< --out $@ --frames 48; \
+	fi
+
 $(BUILD)/kernel/boot_glb_animation.o: $(BUILD)/boot_model_frames.inc
+$(BUILD)/kernel/main.o: $(BUILD)/boot_model_frames.inc
 endif
+
+# ---- link kernel --------------------------------------------------------------
 
 $(KERNEL): $(ASM_OBJS) $(C_OBJS) $(TLS_OBJECTS) $(TLS_LIBRARY) linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(ASM_OBJS) $(C_OBJS) $(TLS_OBJECTS) $(TLS_LIBRARY)
@@ -184,15 +206,41 @@ $(ISO): $(KERNEL) boot/grub.cfg
 # ---- run ----------------------------------------------------------------------
 # Run FalconOS first, then start this in a second terminal to enable
 # GitHub Releases downloads through the opt-in COM1 bridge.
-.PHONY: market-bridge run-market
+.PHONY: market-bridge market-bridge-publish run-market run-market-publish run-market-publish-vm
 market-bridge:
 	python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock
 
-# All-in-one QEMU + HTTPS-to-COM1 bridge; kill the bridge when QEMU exits.
+# Host-only upload: reads an existing .app.pkg and creates a public Release.
+# No kernel build, NASM, QEMU, ISO or VM is required.
+# Usage: make run-market-publish PKG=/path/to/your.app.pkg
+#        make run-market-publish  # prompts for a file path and confirmation
+run-market-publish:
+	@python3 tools/publish_app.py
+
+# Separate, opt-in bridge mode for publishing from Codedium / Discover
+# *inside a running FalconOS guest*. Kept for existing VM workflows.
+market-bridge-publish:
+	python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock --enable-publish
+
+# Start both authenticated host bridges automatically: GitHub Releases
+# over COM1 and read-only, certificate-verified HTTPS for Falco search/pages.
+# Bind the HTTPS gateway only to loopback for QEMU user-mode networking.
+# Neither requires a GitHub token for downloads.
+run-market-publish-vm: $(ISO) $(BUILD)/falcon-safe.raw
+	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock --enable-publish & \
+	  bridge_pid=$!; \
+	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
+	  web_pid=$!; \
+	  trap 'kill $bridge_pid $web_pid 2>/dev/null || true' EXIT; \
+	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
+
+# Starts QEMU + both HTTPS-backed services, and cleans them on exit.
 run-market: $(ISO) $(BUILD)/falcon-safe.raw
 	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock & \
 	  bridge_pid=$!; \
-	  trap 'kill $bridge_pid 2>/dev/null || true' EXIT; \
+	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
+	  web_pid=$!; \
+	  trap 'kill $bridge_pid $web_pid 2>/dev/null || true' EXIT; \
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 run: run-disk

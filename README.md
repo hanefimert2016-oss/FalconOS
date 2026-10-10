@@ -1,8 +1,8 @@
 # FalconOS
 
-> A bare-metal **x86_64** operating system with **two kernels in one**:
-> switch between a macOS-styled *Personal Kernel* and a hacker-grade
-> *Developer Kernel* live, with a single key-press.
+> A bare-metal **x86_64** operating system with one unified desktop,
+> native multiwindow compositor, a Codedium editor, a verified Marketplace,
+> and a bounded HTTPS text browser.
 
 ```
       ___---___
@@ -18,14 +18,111 @@
       ~~~~~~~~~~~
 ```
 
-## Marketplace + CodeDium (experimental)
+## Aura desktop: multiwindow, Falco, original GLB intro
+
+The native desktop supports up to **six concurrently running built-in app
+windows**. Press **F2** to open a second app without closing the first, or
+use the dock to focus/restore apps. **Alt+Tab** cycles the window stack.
+The upper-right titlebar controls close, maximise/restore and minimise;
+minimise now retains the open window and its geometry rather than closing it.
+Window resizing uses a bottom-right drag handle. The first-run Help drawer
+no longer covers the upper-right controls; open Help from the top bar.
+
+Falco's search field and Submit button are clickable. The action row has
+explicit buttons for live-site HTTPS, host HTTPS, GitHub docs fallback and
+search. The page-view toolbar offers Back, Reload, HTTPS mode and a clickable
+address field. **Ctrl+L** starts a new URL, **Ctrl+R** reloads, and
+**Alt+Left** returns from a Falco page to search. Browser rendering remains
+bounded text-only HTML with no JavaScript engine.
+
+The exact user's Drive file `falconos_boot_intro_animation (1).glb` is now
+stored as `assets/boot/falconos_boot_intro_animation.glb` (3,036,412 bytes,
+SHA-256 `094a8de5cc4fec713b0442eba51ece8ac56e708c361db4f790e5918ca323a304`).
+`tools/bake_boot_intro.py` bakes animated glTF keyframes from this file.
+`ENABLE_BOOT_GLB=1` is the default when building the kernel. No runtime GLB
+parser runs with kernel privileges. When the host lacks numpy, trimesh,
+OpenCV or Pillow, the Makefile installs build-only dependencies in its own
+`build/boot-intro-venv` directory; first build may need internet access.
+
+To run the desktop and **download verified Marketplace packages** on Arch:
+```bash
+cd ~/FalconOS-Publisher
+git pull --ff-only
+make run-market RAM=4096 CPUS=4
+```
+Open **Keşfet/Discover**, refresh the release list with **R**, and search
+for `FalconOS Test App` (release tag `app-falcon-test-v1.0.0`). Enter
+downloads/installs a validated FAPP/1 script from a real GitHub Release.
+This uses an opt-in host COM1 network bridge; `make run-disk` starts the
+OS without the Marketplace download bridge. The sample release and SHA-256
+are at
+https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/tag/app-falcon-test-v1.0.0.
+
+
+### Current user interface and connectivity
+
+- Developer mode has been retired. F1 opens Help. F2 launches apps; F12 is Power.
+- Turkish Q/F keyboards and 12 Turkish UTF-8 glyphs are built in. Missing
+  translated labels have been corrected to show letters such as **ş, ğ, ı, ö, ü**.
+- Window close/maximize/minimize targets have larger hitboxes. Drag the
+  title bar, or hold **Alt** and left-drag from the client area. If the host
+  QEMU input grab is unavailable, use **Alt+F4**, **Alt+F10**, **Alt+F9**.
+- Run `make run-market` (not `make run-disk`) to start both read-only HTTPS
+  gateway and GitHub Release bridge. Discover automatically refreshes when
+  opened. When GitHub's public API is rate limited the host can use the
+  reviewed static HTTPS catalog and independently verify the FAPP/1 SHA-256.
+- **Falco remains an HTTPS text viewer, not Chromium**. It cannot execute
+  JavaScript, CSS layouts or complex interactive websites. `falconos.tech`
+  can still return upstream HTTP 403, unrelated to the mouse/window patches.
+
+## Marketplace + Codedium (experimental)
 The native Store now lists actual GitHub Releases FAPP/1 packages, verifies
 SHA-256 and launches allowlisted commands through Terminal. Run `make run-market`
 on Linux to boot QEMU with a host HTTPS-to-COM1 bridge (native TCP/TLS is
 unfinished). Packages use the dedicated FalconOS partition for a persistent
 48-slot application cache when you explicitly select a safe disk.
-CodeDium is accessible by pressing C inside Store, with F5 save, F6 run,
-F7 export. CodeDium source files persist on explicitly selected safe partitions. The GUI Files app now lists real RAM files, not a demo tree.
+Codedium is accessible by pressing C inside Discover: F5 Save, F6 Run,
+F7 Export, F10 twice to confirm a GitHub release. In Discover select an
+installed package and press P then F10 to publish the *exact saved .app.pkg*;
+when no release is selected it publishes `/home/falcon/Desktop/code.app.pkg`.
+All packages remain strict, maximum 4 KiB FAPP/1 scripts — NOT native GUI apps.
+
+**Host-only GitHub publishing (Arch Linux, FalconOS does NOT boot):**
+```bash
+sudo pacman -S --needed github-cli
+gh auth status
+cd ~/FalconOS-Publisher
+make run-market-publish PKG=/path/to/code.app.pkg
+```
+You can also run `make run-market-publish` and enter the existing local
+`.app.pkg` path when asked. The command checks the package format and requests
+explicit confirmation (type `PUBLISH`) before creating a **public** immutable
+GitHub Release with its SHA-256 checksum. There is **no** dependency on
+`nasm`, QEMU, GRUB, a booted guest, or an ISO. To validate without publishing:
+`python3 tools/publish_app.py --package /path/to/code.app.pkg --check-only`.
+
+**Publishing directly from Codedium/Discover *inside* FalconOS:**
+```bash
+make run-market-publish-vm
+```
+That separate target boots QEMU and enables a guest-confirmed publisher bridge.
+`market-bridge-publish` enables the same bridge if FalconOS is *already*
+running with its matching QEMU serial socket. `run-market` stays download-only.
+The host's `gh` client owns GitHub credentials; none enter the guest. Existing
+release tags fail closed; increase `# app-version` before another release.
+Both publish routes upload an existing validated FAPP/1 script, not native GUI
+executables. Automatic source-to-release workflows are a different path.
+
+**Falco:** the default Arch `make run-market` boots both secure host-side
+services (GitHub Releases and verified read-only HTTPS). Without an optional
+BearSSL-enabled kernel build, F6 navigates via host-verified HTTPS rather than
+pretending guest-native TLS; F7 explicitly uses the same host-validated route. The site currently returns **HTTP 403 on GitHub Actions
+runners**; this cannot be legitimately overridden by client code.
+F8 explicitly loads `FalconOS` GitHub README documentation with host-verified
+HTTPS as a **separate fallback**, not a successful fetch of falconos.tech.
+The native browser displays bounded HTML/Markdown text, not CSS or JavaScript.
+The GUI Files app lists real RAM files, not a demo tree.
+Codedium source files persist on explicitly selected safe partitions.
 See `docs/MARKETPLACE.md` and `docs/FALCONOS-V2-STATUS.md` for limits and milestones.
 
 ## What is it?
@@ -36,14 +133,13 @@ boots through GRUB (Multiboot2) into a configurable linear framebuffer
 2-MiB huge pages, and renders its entire UI in software — no BIOS, no
 DOS, no host OS, no external libraries.
 
-Two kernels live inside the same binary:
+The unified desktop runs on the FalconOS kernel:
 
 | Mode                    | What you get |
 |-------------------------|--------------|
 | **Personal Kernel**     | A "dolu dolu" desktop — top menu bar, 6 information widgets (Weather, Calendar, System, Now-Playing, Recents, Quick), pinnable desktop shortcuts down the left edge, a Big-Sur dock with 7 visible tiles, Launchpad (F2). No more centred breathing circle. |
-| **Developer Kernel**    | Live CPU register snapshot, scrollable memory inspector, BIOS memory-map panel, scrolling kernel log, interactive REPL — everything refreshes every frame |
 
-Hit **F1** at any time to flip between them. **F2** in Personal mode
+**F1** toggles Help; Developer mode has been removed. **F2** on the desktop
 opens the **Launchpad** (a full-screen 4 × 4 grid of all built-in
 apps). Inside the Launchpad, press **P** on a tile to pin / unpin it
 to the desktop. **Esc** closes the active app or Launchpad.

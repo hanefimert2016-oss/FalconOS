@@ -19,14 +19,14 @@ be used in QEMU. Nothing has been merged into the stable default branch.
   the same validated dedicated partition. Offline apps are listed and launch.
 - Update detection for installed packages based on version mismatch;
   manual update and remove.
-- CodeDium local editor with cursor motion, save/run/export and one persistent
+- Codedium local editor with cursor motion, save/run/export and one persistent
   4 KiB project slot when the dedicated partition is selected.
 - Real SHFS entries shown in Files, safe path length checks, Launchpad
   registration and pagination for downloaded apps.
 - GitHub Actions tests: Python bridge tests, C mock ATA persistence tests,
   C native Marketplace protocol tests, Multiboot2 validation, ISO build,
   graphical QEMU smoke, and scripted keyboard/UI walkthrough.
-- CodeDium Web sources are in Marketplace/site/index.html. Browser export
+- Codedium Web sources are in Marketplace/site/index.html. Browser export
   works without access tokens; contributors submit files via GitHub fork/PR.
 
 ## NOT implemented — do not present as shipping

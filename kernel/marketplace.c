@@ -24,6 +24,8 @@ static char rx_digest[65];
 static char pending_id[33];
 static void market_rebuild_cached(void);
 static const char *status_text = "Bridge offline. Press R to refresh.";
+static bool publish_busy;
+static const char *publish_status="P: prepare upload, F10: confirm";
 
 static bool safe_id(const char *s) {
     i32 n = 0;
@@ -100,6 +102,20 @@ static bool check_package(void) {
     return has_cmd && line[0] == 0;
 }
 static void on_line(char *line) {
+    if(k_strncmp(line,"PUBOK|",6)==0){
+        publish_busy=false;
+        publish_status="GitHub Release uploaded. Press F5 in Discover.";
+        status_text=publish_status;
+        outb(0xE9,'J'); /* QEMU e2e: host acknowledged real publish request */
+        return;
+    }
+    if(k_strncmp(line,"PUBERR|",7)==0){
+        publish_busy=false;
+        publish_status="GitHub publish failed. See host bridge log.";
+        status_text=publish_status;
+        outb(0xE9,'j');
+        return;
+    }
     if (k_strcmp(line, "DONE") == 0) {
         status_text = "Catalog ready. Enter: download/run, R: refresh";
         return;
@@ -197,6 +213,69 @@ static void on_line(char *line) {
         return;
     }
 }
+
+/* Explicit, bounded guest->host publishing channel (COM1).
+ * The GH login always lives on the host and is never sent to the VM.
+ * Nothing is published merely by opening a file or launching CodeDium.
+ */
+const char *market_publish_status(void) { return publish_status; }
+
+static bool publish_header(const char *p,u32 bytes,char *id,char *version)
+{
+    if(!p||bytes<70||bytes>PKG_MAX||p[bytes]!=0 ||
+       k_strncmp(p,"FAPP/1\nid=",10)!=0)return false;
+    const char *at=p+10;
+    u32 k=0;
+    while(*at&&*at!='\n'&&k<32)id[k++]=*at++;
+    id[k]=0;
+    if(*at!='\n'||!safe_id(id))return false;
+    const char *v=NULL;
+    for(u32 i=0;i+9<bytes;i++){
+        if((i==0||p[i-1]=='\n')&&k_strncmp(p+i,"version=",8)==0){
+            v=p+i+8;break;
+        }
+    }
+    if(!v)return false;
+    k=0;
+    while(v[k]&&v[k]!='\n'&&k<24){version[k]=v[k];k++;}
+    version[k]=0;
+    if(v[k]!='\n'||!market_version_valid(version))return false;
+    return true;
+}
+bool market_publish_package(const char *payload,u32 len)
+{
+    if(publish_busy){publish_status="Upload already in progress";return false;}
+    char id[33],version[25];
+    if(!publish_header(payload,len,id,version)){
+        publish_status="Invalid FAPP/1 package or metadata";return false;
+    }
+    if(len>PKG_MAX){publish_status="4 KiB package limit";return false;}
+    /* Every package is validated by the host before its authenticated API call. */
+    u8 digest[32];char hash[65],number[16];
+    sha256_hash((const u8 *)payload,len,digest);
+    hex_encode(digest,32,hash);
+    k_itoa((i32)len,number,10);
+    publish_busy=true;
+    publish_status="Uploading verified package to host publisher...";
+    uart_write("UP|");uart_write(id);uart_write("|");
+    uart_write(version);uart_write("|");uart_write(number);
+    uart_write("|");uart_write(hash);uart_write("\n");
+    static const char hexchars[]="0123456789abcdef";
+    for(u32 start=0;start<len;start+=16){
+        u32 end=start+16;if(end>len)end=len;
+        char line[38];u32 j=0;
+        line[j++]='D';line[j++]='A';line[j++]='T';line[j++]='|';
+        for(u32 at=start;at<end;at++){
+            u8 c=(u8)payload[at];
+            line[j++]=hexchars[c>>4];line[j++]=hexchars[c&15u];
+        }
+        line[j++]='\n';line[j]=0;
+        uart_write(line);
+    }
+    uart_write("UPEND\n");
+    return true;
+}
+
 void market_init(void) {
     /* COM1 16550, 115200 baud, 8N1, polled mode (no UART IRQ). */
     outb(PORT + 1, 0);
@@ -344,6 +423,13 @@ static shfs_ent_t *package_file(i32 i) {
     return shfs_lookup(p);
 }
 bool market_installed(i32 i) { return package_file(i) != NULL; }
+bool market_publish_installed(i32 i)
+{
+    shfs_ent_t *pkg=package_file(i);
+    if(!pkg||pkg->is_dir||!pkg->len||pkg->len>PKG_MAX)return false;
+    return market_publish_package(pkg->data,pkg->len);
+}
+
 const char *market_script(i32 i) {
     shfs_ent_t *f = package_file(i);
     if (!f || f->is_dir || !app_meta(f->data, APP[i].id)) return NULL;

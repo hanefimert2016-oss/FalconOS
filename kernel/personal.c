@@ -6,7 +6,8 @@
  */
 #include "falcon.h"
 #define SHELF_SLOTS 7
-static const i32 SHELF_APPS[SHELF_SLOTS]={1,14,13,7,6,3,5};
+/* Files, Falco, Browser, Codedium, Discover, Notes and Settings. */
+static const i32 SHELF_APPS[SHELF_SLOTS]={1,13,14,18,2,7,3};
 static i32 shelf_cursor;
 static bool within(i32 px,i32 py,i32 x,i32 y,i32 w,i32 h){
     return px>=x&&px<x+w&&py>=y&&py<y+h;
@@ -27,15 +28,27 @@ static void backdrop(void){
     i32 w=(i32)FB.width,h=(i32)FB.height;
     /* Simple layered broad tints: full-frame supersampled circles at 50fps
      * stalled keyboard processing under QEMU TCG (no GPU acceleration). */
-    gfx_round_rect_a(w-420,170,300,92,28,0x86ACF8u,20);
-    gfx_round_rect_a(58,h-272,300,72,26,0x4ECFCBu,19);
+    /* Aurora accents: low-cost layered geometry, responsive at HD/2K and
+     * safe for QEMU software framebuffer without expensive screen blur. */
+    gfx_round_rect_a(w-510,145,428,135,34,0x7BA9FFu,27);
+    gfx_round_rect_a(w-378,159,260,101,31,0x9DD9FFu,24);
+    gfx_round_rect_a(58,h-274,340,84,28,0x4ECFCBu,23);
+    gfx_round_rect_a(84,h-251,212,40,20,0x80B4FFu,14);
     gfx_round_rect_a(28,55,w-56,104,26,surface(),is_dark()?178:196);
     gfx_round_outline(28,55,w-56,104,26,is_dark()?0x3E5074u:0xE4ECF7u);
     gfx_round_rect(52,77,54,54,19,0x2867E6u);
     gfx_text_lg_centered(79,85,"F",0xFFFFFFu);
     gfx_text_lg(129,77,T("Welcome to FalconOS","FalconOS'a hos geldin"),ink());
-    gfx_text(131,118,T("Your space to create, explore and build",
-         "Kesfet, uret ve kendi calisma alanini olustur"),muted());
+    if(apps_window_count()>0){
+        char n[12];k_itoa(apps_window_count(),n,10);
+        gfx_text(131,118,T("WINDOWS OPEN / Alt+Tab to switch",
+                          "ACIK PENCERELER / Alt+Tab ile gec"),muted());
+        gfx_round_rect_a(425,110,38,26,10,0xE5EFFFu,255);
+        gfx_text_centered(444,116,n,0x2857A7u);
+    }else{
+        gfx_text(131,118,T("Your space to create, explore and build",
+             "Kesfet, uret ve kendi calisma alanini olustur"),muted());
+    }
     rtc_time_t now;rtc_local(&now);
     char time[16],minute[8];k_itoa(now.hour,time,10);
     if(now.hour<10){k_strcpy(minute,time);k_strcpy(time,"0");k_strcat(time,minute);}
@@ -47,7 +60,7 @@ static void backdrop(void){
              net_connected()?0x0EA579u:muted());
 }
 static void quick_cards(void){
-    if(apps_active()>=0||launchpad_is_open())return;
+    if(!SET.widgets_shown||apps_active()>=0||launchpad_is_open())return;
     i32 W=(i32)FB.width,H=(i32)FB.height;
     i32 content=W-96;
     if(content>1060)content=1060;
@@ -55,16 +68,16 @@ static void quick_cards(void){
     i32 y=H/2-178;
     if(y<184)y=184;
     gfx_text_lg(x,y-52,T("Pick up where you left off","Calismaya devam et"),ink());
-    gfx_text(x,y-14,"REAL APPS   /   READY TO USE",muted());
-    const char *titles[4]={"Files","Browser","Notes","Calculator"};
-    const char *sub[4]={"Your documents","Live HTTPS text","Create and save","Calculate"};
-    const i32 ids[4]={1,14,7,6};
-    const u32 colors[4]={0xF3AD37u,0x3184F6u,0xE9C04Bu,0x7868E9u};
-    i32 cw=(content-3*18)/4;
+    gfx_text(x,y-14,"YOUR WORKSPACE   /   REAL NATIVE APPS",muted());
+    const char *titles[6]={"Files","Falco","Codedium","Discover","Notes","Settings"};
+    const char *sub[6]={"Your files","Search + HTTPS","Build .app.pkg","Verified apps","Write & save","Make it yours"};
+    const i32 ids[6]={1,13,18,2,7,3};
+    const u32 colors[6]={0xF3AD37u,0x3184F6u,0x5369E9u,0x1DB88Fu,0xE9C04Bu,0x7868E9u};
+    i32 cw=(content-5*12)/6;
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool click=mouse_peek_click();
-    for(i32 i=0;i<4;i++){
-        i32 bx=x+i*(cw+18);
+    for(i32 i=0;i<6;i++){
+        i32 bx=x+i*(cw+12);
         bool hov=within(mx,my,bx,y+19,cw,165);
         gfx_round_rect_a(bx+3,y+25,cw,165,22,0x0C2248u,29);
         gfx_round_rect(bx,y+19,cw,165,22,surface());
@@ -84,8 +97,8 @@ static void quick_cards(void){
     gfx_circle(x+34,by+36,12,net_connected()?0x26B98Au:0xEAAE50u);
     gfx_text(x+62,by+18,"System & network",ink());
     gfx_text(x+62,by+42,net_connected()?
-       "Network detected. HTTPS uses certificate validation.":
-       "Offline. Configure RTL8139 + DHCP to use network apps.",muted());
+       "Network ready. Falco uses native TLS (text-only pages).":
+       "Offline. Configure RTL8139 + DHCP for Falco and Discover.",muted());
     gfx_round_rect(x+content-145,by+19,123,36,14,0xE6EEFFu);
     gfx_text_centered(x+content-83,by+30,"Settings",0x2758AEu);
     if(click&&within(mx,my,x+content-151,by+10,140,55)){
@@ -103,8 +116,9 @@ static void shelf(void){
     if(w>W-22)w=W-22;
     i32 x=(W-w)/2,y=H-94;
     if(y<340)y=340;
-    gfx_round_rect_a(x+4,y+6,w,74,26,0x07172Fu,65);
-    gfx_round_rect_a(x,y,w,74,26,surface(),239);
+    gfx_round_rect_a(x+4,y+9,w,74,26,0x07172Fu,72);
+    gfx_round_rect_a(x,y,w,74,26,surface(),242);
+    gfx_round_rect_a(x+18,y+2,w-36,2,1,PAL_ACCENT,72);
     gfx_round_outline(x,y,w,74,26,is_dark()?0x627595u:0xD5E2F4u);
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool can_click=!launchpad_is_open();
@@ -121,12 +135,15 @@ static void shelf(void){
         if(bx+tile>x+w-168)break;
         bool hovered=within(mx,my,bx,y+11,tile,53);
         i32 id=SHELF_APPS[i];
-        bool running=(apps_active()==id||apps_minimized()==id);
+        bool running=(apps_is_open(id)||apps_minimized()==id);
         if(hovered||running||i==shelf_cursor)
             gfx_round_rect_a(bx,y+11,tile,52,16,
                 hovered?0xBFD8FCu:0xDDE9FAu,190);
         apps_draw_icon(id,bx+tile/2,y+37);
-        if(running)gfx_circle(bx+tile/2,y+66,3,0x246FE7u);
+        if(running){
+            gfx_round_rect(bx+tile/2-10,y+64,20,4,2,0x246FE7u);
+            if(apps_active()==id)gfx_round_rect(bx+tile/2-14,y+64,28,4,2,PAL_ACCENT);
+        }
         if(hovered&&click){
             (void)mouse_consume_click();use_app(id);click=false;
         }
@@ -140,6 +157,11 @@ static void shelf(void){
     k_strcpy(clock,now.hour<10?"0":"");k_strcat(clock,hh);k_strcat(clock,":");
     if(now.min<10)k_strcat(clock,"0");k_strcat(clock,mm);
     gfx_text(tray+44,y+31,clock,ink());
+    if(apps_window_count()>0){
+        char n[12];k_itoa(apps_window_count(),n,10);
+        gfx_round_rect_a(tray+114,y+8,38,22,8,0xDCEBFFu,245);
+        gfx_text_centered(tray+133,y+13,n,0x225DC2u);
+    }
     if(click&&within(mx,my,tray,y+6,161,63)){
         (void)mouse_consume_click();apps_open(3);click=false;
     }
@@ -150,15 +172,20 @@ void mode_personal_render(u32 frame){
     quick_cards();
     /* Persistent shortcuts are user-controlled and never auto-filled. */
     if(apps_active()<0)desktop_pins_render(frame);
-    if(apps_active()>=0){
+    {
+        static bool previous_held;
         i32 mx,my;bool held;mouse_get(&mx,&my,&held);
-        bool edge=mouse_peek_click();
-        /* Shelf has its own hit-testing and must not drag the app window. */
-        if(my<(i32)FB.height-102){
+        /* Preserve a click even if the PS/2 edge was consumed earlier in
+         * the frame. Held-button detection also supports drag gestures. */
+        bool edge=mouse_peek_click() || (held && !previous_held);
+        previous_held=held;
+        if(apps_active()>=0 && !launchpad_is_open() &&
+           my<(i32)FB.height-102) {
             bool wm_used=apps_wm_handle_mouse(mx,my,held,edge);
             if(edge&&wm_used)(void)mouse_consume_click();
         }
-    }else if(mouse_peek_click()&&!launchpad_is_open()){
+    }
+    if(apps_active()<0 && mouse_peek_click() && !launchpad_is_open()){
         i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
         if(my>70&&my<(i32)FB.height-110&&!within(mx,my,
               ((i32)FB.width-1060)/2,(i32)FB.height/2-178,

@@ -3,6 +3,7 @@
 This is a UI smoke test, not a native HTTPS/Market end-to-end test.
 """
 import argparse
+import json
 from pathlib import Path
 import socket
 import subprocess
@@ -34,6 +35,37 @@ def wait_for_marker(debug, marker, after=0, timeout=22):
     raise RuntimeError(f"Installer event {marker!r} missing. debug="+
                        repr(debug.read_bytes() if debug.exists() else b""))
 
+def qmp_mouse_button(socket_path,pressed):
+    """Inject actual QEMU InputEvent (preferred to deprecated HMP mouse_button).
+
+    Checks QMP replies so an unsupported host input command is never
+    mistaken for a guest mouse-driver failure.
+    """
+    with socket.socket(socket.AF_UNIX) as endpoint:
+        endpoint.settimeout(5)
+        endpoint.connect(str(socket_path))
+        io=endpoint.makefile("rwb",buffering=0)
+        hello=json.loads(io.readline())
+        if "QMP" not in hello:
+            raise RuntimeError("QMP handshake failed")
+        for request in (
+            {"execute":"qmp_capabilities"},
+            {"execute":"input-send-event","arguments":{"events":[
+                {"type":"btn","data":{"down":pressed,"button":"left"}}
+            ]}}
+        ):
+            io.write((json.dumps(request)+"\n").encode("ascii"))
+            while True:
+                reply=json.loads(io.readline())
+                if "event" in reply:
+                    continue
+                if "error" in reply:
+                    raise RuntimeError("QMP input rejected: "+str(reply["error"]))
+                if "return" in reply:
+                    break
+                raise RuntimeError("Unexpected QMP response: "+str(reply))
+
+
 def picture_difference(a, b):
     # PPM P6 headers share resolution; different pixels must reflect UI transitions.
     def split(ppm):
@@ -52,20 +84,26 @@ def main():
     p.add_argument("--iso", default="build/FalconOS.iso")
     p.add_argument("--output", default="build/FalconOS-Store-screen.png")
     p.add_argument("--boot-seconds", type=float, default=7)
+    p.add_argument("--verify-mouse", action="store_true",
+                   help="Opt-in real PS/2 titlebar click diagnostic; fails on unconfirmed hit")
     args = p.parse_args()
     root = Path("build")
     root.mkdir(exist_ok=True)
     monitor = (root / "ui-monitor.sock").absolute()
+    qmp = (root / "ui-qmp.sock").absolute()
     first = (root / "ui-before.ppm").absolute()
     last = (root / "ui-after.ppm").absolute()
     debug = (root / "ui-debugcon.log").absolute()
     if debug.exists(): debug.unlink()
     if monitor.exists(): monitor.unlink()
+    if qmp.exists(): qmp.unlink()
     cmd = ["qemu-system-x86_64", "-accel", "tcg", "-m", "1024", "-smp", "1",
            "-cdrom", args.iso, "-boot", "d", "-display", "none", "-vga", "std",
            "-serial", "none", "-monitor", "unix:" + str(monitor) + ",server=on,wait=off",
            "-debugcon", "file:" + str(debug), "-global", "isa-debugcon.iobase=0xe9",
            "-no-reboot"]
+    if args.verify_mouse:
+        cmd.extend(["-qmp", "unix:" + str(qmp) + ",server=on,wait=off"])
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         deadline = time.monotonic() + 10
@@ -106,29 +144,168 @@ def main():
             command(sock, "sendkey f2", .8)
             launcher=screenshot(sock, root/"aura-launcher.ppm")
             ppm_to_png(root/"aura-launcher.ppm",root/"FalconOS-Aura-Launcher.png")
-            # Functional Shelf launcher: Store is eighth favorite (slot 7).
-            for _ in range(7): command(sock, "sendkey right", .17)
-            command(sock, "sendkey ret", 1.5)
+            # Navigate native Launchpad at QEMU/TCG-safe cadence; use
+            # explicit kernel window-open markers, not merely pixel diffs.
+            for _ in range(7): command(sock, "sendkey right", .24)
+            off=len(debug.read_bytes())
+            command(sock, "sendkey ret", 1.2)
+            wait_for_marker(debug,b"zCn1",after=off,timeout=30) # Store ID=2
+            wait_for_marker(debug,b"gC",after=off,timeout=35) # actual presented Store frame
+            time.sleep(.5)
             after = screenshot(sock, last)
-            # Real framebuffer shots for native functional apps, not mockups.
+
+            # All these are actual native rendered windows, not Launchpad.
             current=7
-            for target,name in ((0,"Files"),(1,"Browser"),(2,"Falco"),
-                                (3,"Calculator"),(4,"Notes"),(5,"Settings")):
-                command(sock,"sendkey esc",.18)
-                command(sock,"sendkey f2",.35)
+            for target,name,app_id in ((0,"Files",1),(1,"Browser",14),
+                                       (2,"Falco",13),(3,"Calculator",6),
+                                       (4,"Notes",7),(5,"Settings",3)):
+                command(sock,"sendkey esc",.5)
+                command(sock,"sendkey f2",1.0)
                 while current>target:
-                    command(sock,"sendkey left",.07)
+                    command(sock,"sendkey left",.25)
                     current-=1
                 while current<target:
-                    command(sock,"sendkey right",.07)
+                    command(sock,"sendkey right",.25)
                     current+=1
-                command(sock,"sendkey ret",.5)
+                off=len(debug.read_bytes())
+                command(sock,"sendkey ret",1.0)
+                marker=("z"+chr(ord("A")+app_id)+"n1").encode("ascii")
+                wait_for_marker(debug,marker,after=off,timeout=35)
+                painted=("g"+chr(ord("A")+app_id)).encode("ascii")
+                wait_for_marker(debug,painted,after=off,timeout=35)
+                time.sleep(.45)
                 ppm=root/("FalconOS-Aura-"+name+".ppm")
                 shot=screenshot(sock,ppm)
                 if picture_difference(before,shot)<40:
                     raise AssertionError("No visual change after launching "+name)
                 ppm_to_png(ppm,root/("FalconOS-Aura-"+name+".png"))
-                print("PASS: QEMU rendered actual app window",name)
+                print("PASS: QEMU app ID and window count traced, native PNG",name)
+            # Native framebuffer compositor verification, synchronized to
+            # kernel debugcon events (z<app-id> n<visible-window-count>).
+            # A screenshot with just Launchpad open must never count as pass.
+            command(sock,"sendkey f2",.95)
+            for _ in range(5):command(sock,"sendkey left",.22)
+            off=len(debug.read_bytes())
+            command(sock,"sendkey ret",1.6)  # Files while Settings remains
+            wait_for_marker(debug,b"zBn2",after=off,timeout=35)
+            wait_for_marker(debug,b"gB",after=off,timeout=35)
+            command(sock,"info status",.65)
+            multi2=root/"FalconOS-Aura-MultiWindow-2.ppm"
+            shot2=screenshot(sock,multi2)
+            if picture_difference(shot,shot2)<40:
+                raise AssertionError("Native WM did not repaint two windows")
+            ppm_to_png(multi2,root/"FalconOS-Aura-MultiWindow-2.png")
+
+            command(sock,"sendkey f2",.95)
+            command(sock,"sendkey right",.35)
+            off=len(debug.read_bytes())
+            command(sock,"sendkey ret",1.6)  # Browser; 3 windows must remain
+            wait_for_marker(debug,b"zOn3",after=off,timeout=35)
+            wait_for_marker(debug,b"gO",after=off,timeout=35)
+            command(sock,"info status",.65)
+            multi3=root/"FalconOS-Aura-MultiWindow-3.ppm"
+            shot3=screenshot(sock,multi3)
+            if picture_difference(shot2,shot3)<40:
+                raise AssertionError("Native WM did not repaint three windows")
+            ppm_to_png(multi3,root/"FalconOS-Aura-MultiWindow-3.png")
+            print("PASS: guest compositor emitted Files count=2, Browser count=3 and redrew both screenshot states")
+            # Native Codedium: launch from System tab and export a real
+            # FAPP/1 file into the guest's Desktop, then capture both states.
+            command(sock,"sendkey f2",.7)
+            command(sock,"sendkey tab",.25)   # System
+            for _ in range(4):command(sock,"sendkey right",.13)
+            off=len(debug.read_bytes())
+            command(sock,"sendkey ret",.65)    # Codedium
+            wait_for_marker(debug,b"zSn4",after=off,timeout=35)
+            wait_for_marker(debug,b"gS",after=off,timeout=35)
+            time.sleep(.5)
+            ppm4=root/"FalconOS-Aura-MultiWindow-4.ppm"
+            screenshot(sock,ppm4)
+            ppm_to_png(ppm4,root/"FalconOS-Aura-MultiWindow-4.png")
+            ppm=root/"FalconOS-Aura-Codedium.ppm"
+            screen=screenshot(sock,ppm)
+            ppm_to_png(ppm,root/"FalconOS-Aura-Codedium.png")
+            if picture_difference(before,screen)<40:
+                raise AssertionError("Codedium did not render in actual guest")
+            off=len(debug.read_bytes())
+            command(sock,"sendkey f7",1.5) # export reviewed FAPP/1 source
+            wait_for_marker(debug,b"E",after=off,timeout=30)
+            ppm=root/"FalconOS-Aura-Codedium-Export.ppm"
+            screenshot(sock,ppm)
+            ppm_to_png(ppm,root/"FalconOS-Aura-Codedium-Export.png")
+            print("PASS: Codedium and four simultaneous native windows, FAPP/1 exported")
+            # Cover every non-demo app available in the native Launchpad.
+            # The System tab remains selected after opening Codedium (index 4).
+            current_system=4
+            for target,name,app_id in (
+                (1,"Stats",9),(2,"Updates",4),(3,"About",17),(5,"Terminal",5)
+            ):
+                command(sock,"sendkey f2",.6)
+                while current_system>target:
+                    command(sock,"sendkey left",.13)
+                    current_system-=1
+                while current_system<target:
+                    command(sock,"sendkey right",.13)
+                    current_system+=1
+                off=len(debug.read_bytes())
+                command(sock,"sendkey ret",.7)
+                marker=("z"+chr(ord("A")+app_id)).encode("ascii")
+                wait_for_marker(debug,marker,after=off,timeout=35)
+                painted=("g"+chr(ord("A")+app_id)).encode("ascii")
+                wait_for_marker(debug,painted,after=off,timeout=35)
+                time.sleep(.45)
+                ppm=root/("FalconOS-Aura-"+name+".ppm")
+                screenshot(sock,ppm)
+                ppm_to_png(ppm,root/("FalconOS-Aura-"+name+".png"))
+                print("PASS: real guest screenshot",name)
+            command(sock,"sendkey f2",.65)
+            command(sock,"sendkey tab",.18) # System -> All apps
+            command(sock,"sendkey tab",.18) # All apps -> Essentials
+            for _ in range(8):command(sock,"sendkey right",.12)
+            off=len(debug.read_bytes())
+            command(sock,"sendkey ret",.8) # Clock at Favorites index 8
+            wait_for_marker(debug,b"zIn6",after=off,timeout=35)  # six live app windows; oldest kept
+            wait_for_marker(debug,b"gI",after=off,timeout=35)
+            time.sleep(.45)
+            ppm=root/"FalconOS-Aura-Clock.ppm"
+            screenshot(sock,ppm)
+            ppm_to_png(ppm,root/"FalconOS-Aura-Clock.png")
+            print("PASS: six concurrently running native windows; clock and launcher render")
+            if args.verify_mouse:
+                # Verify a real pointer-driven titlebar action, not just keyboard
+                # app switches.  PS/2 driver starts at (480,360).  In the 2560x1440
+                # default 2K guest, the sixth cascading window has its close icon
+                # centered at approximately (1786,520).  Small relative motions
+                # avoid 8-bit PS/2 packet overflow; the kernel's 2.5x acceleration
+                # maps 26 * raw 20 + raw 4 to about 1306 pixels horizontally.
+                # QEMU monitor mouse_move targets the real guest PS/2 device.
+                # QEMU relative events are further scaled by the virtual PS/2
+                # device.  Measured in the last real 2K framebuffer run: 26
+                # "mouse_move 20 0" steps reached x=1532, not x=1786.
+                # Move Y *together* with X to avoid PS/2 zero-X coalescing.
+                # Measured from the 2K framebuffer: 6 combined+26 horizontal
+                # moved to (1832,560). Target Clock close center is (1786,520).
+                # Drop one horizontal step and one combined step.
+                for _ in range(5): command(sock,"mouse_move 20 13",.12)
+                for _ in range(26): command(sock,"mouse_move 20 0",.12)
+                ppm=root/"FalconOS-Aura-Pointer-Before-Close.ppm"
+                screenshot(sock,ppm)
+                ppm_to_png(ppm,root/"FalconOS-Aura-Pointer-Before-Close.png")
+                click_offset=len(debug.read_bytes())
+                qmp_mouse_button(qmp,True)
+                command(sock,"mouse_move 1 0",.30)  # flush held PS/2 packet
+                qmp_mouse_button(qmp,False)
+                command(sock,"mouse_move 1 0",.32)  # flush button-release packet
+                try:
+                    wait_for_marker(debug,b"kX",after=click_offset,timeout=15)
+                except (AssertionError, RuntimeError):
+                    events=debug.read_bytes()[click_offset:]
+                    print("MOUSE DIAGNOSTICS: "+repr(events[-450:]),flush=True)
+                    raise
+                ppm=root/"FalconOS-Aura-Window-Close-Clicked.ppm"
+                screenshot(sock,ppm)
+                ppm_to_png(ppm,root/"FalconOS-Aura-Window-Close-Clicked.png")
+                print("PASS: PS/2 pointer physically clicked native upper-right Close button")
         score = picture_difference(before, after)
         ppm_to_png(last, args.output)
         events = debug.read_bytes() if debug.exists() else b""

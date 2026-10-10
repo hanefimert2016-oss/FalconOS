@@ -20,6 +20,7 @@
  *      Esc  close active app or Launchpad
  * ============================================================================= */
 #include "falcon.h"
+#include "shfs.h"  /* RAM filesystem and persistent FalconFS mount/sync API */
 
 #define MB2_MAGIC_BOOT      0x36D76289u
 #define MB2_TAG_END         0
@@ -43,7 +44,7 @@ typedef struct __attribute__((packed)) {
 } mb2_fb_t;
 
 volatile u32      g_tick = 0;
-static falcon_mode_t g_mode = MODE_PERSONAL;
+/* One desktop only: Developer shell mode has been retired. */
 
 volatile bool g_panic = false;
 char          g_panic_msg[80];
@@ -81,9 +82,10 @@ static void draw_menu_bar(void){
     gfx_round_rect(13,4,22,22,8,0x3479E9u);
     gfx_text_centered(24,7,"F",0xFFFFFFu);
     gfx_text(45,7,"FalconOS",PAL_TEXT);
-    gfx_circle(151,15,3,g_mode==MODE_PERSONAL?0x2AAB91u:0xE7AF54u);
-    gfx_text(161,7,g_mode==MODE_PERSONAL?"Workspace":"Developer",PAL_TEXT_DIM);
-    const char *hint="F2  Apps  |  F1  Developer  |  F12  Power";
+    gfx_circle(151,15,3,0x2AAB91u);
+    gfx_text(161,7,T("Workspace","Masaüstü"),PAL_TEXT_DIM);
+    const char *hint=T("F2 Apps  |  F1 Help  |  F12 Power",
+                       "F2 Uygulamalar  |  F1 Yardım  |  F12 Güç");
     i32 hw=gfx_text_width(hint)+34;
     i32 hx=(W-hw)/2;
     gfx_round_rect_a(hx,3,hw,24,11,0xE6F0FFu,220);
@@ -592,7 +594,9 @@ void long_start(u64 magic, u64 info_ptr)
      * open automatically so they discover the F1/F2/F12 shortcuts and
      * mouse / window gestures immediately.  diskdb_save() in
      * helppanel_handle_*() flips SET.help_seen so it stays dismissed.  */
-    if (!SET.help_seen) helppanel_open();
+    /* First-boot Help remains available from the ? glyph, but must not
+     * cover the upper-right window controls on every fresh desktop. */
+    helppanel_close();
 
     /* main loop: paced to PIT — wait for at least 1 tick before next frame */
     u32 last = g_ticks;
@@ -604,7 +608,7 @@ void long_start(u64 magic, u64 info_ptr)
         /* Sign out / Sleep from the power menu set lockscreen back to
          * locked — re-enter the lockscreen modal until unlocked again.   */
         if (!lockscreen_is_unlocked()) {
-            if (apps_active() >= 0) apps_close();
+            apps_close_all();
             if (launchpad_is_open()) launchpad_close();
             power_menu_close();
             kbd_drain(); mouse_drain();
@@ -622,14 +626,13 @@ void long_start(u64 magic, u64 info_ptr)
             if (helppanel_is_open() && k != KEY_F1 && k != KEY_F2 && k != KEY_F12) {
                 helppanel_handle_key(k); continue;
             }
-            /* F1: switch between Personal and Developer shells. */
+            /* F1 now opens/closes contextual Help; never exits desktop. */
             if (k == KEY_F1) {
-                if (apps_active() >= 0) apps_close();
-                if (launchpad_is_open()) launchpad_close();
-                g_mode = (g_mode == MODE_PERSONAL) ? MODE_DEVELOPER : MODE_PERSONAL;
+                if (helppanel_is_open())helppanel_close();
+                else helppanel_open();
                 continue;
             }
-            if (k == KEY_F2 && g_mode == MODE_PERSONAL) {
+            if (k == KEY_F2) {
                 if (launchpad_is_open()) launchpad_close();
                 else                     launchpad_open();
                 continue;
@@ -643,8 +646,7 @@ void long_start(u64 magic, u64 info_ptr)
                 launchpad_input(k);
                 continue;
             }
-            if (g_mode == MODE_PERSONAL)  mode_personal_input(k);
-            else                          mode_developer_input(k);
+            mode_personal_input(k);
         }
 
         /* Mouse: power menu > help drawer > menubar glyphs > desktop.
@@ -692,8 +694,7 @@ void long_start(u64 magic, u64 info_ptr)
 
         gfx_wallpaper();
 
-        if (g_mode == MODE_PERSONAL)  mode_personal_render(g_tick);
-        else                          mode_developer_render(g_tick);
+        mode_personal_render(g_tick);
 
         if (launchpad_is_open()) launchpad_render(g_tick);
 
@@ -704,6 +705,15 @@ void long_start(u64 magic, u64 info_ptr)
         draw_cursor();
 
         gfx_present();
+#ifdef FALCON_QEMU_UI_GALLERY
+        /* Only emit a framebuffer-proof marker after the complete frame
+         * was painted with Launchpad closed. 'g'+appId verifies native app
+         * content, not a stale popup or an app-open event alone. */
+        if (!launchpad_is_open() && apps_active() >= 0) {
+            outb(0xE9,'g');
+            outb(0xE9,(u8)('A'+apps_active()));
+        }
+#endif
         g_tick++;
         native_net_poll(); /* native RTL8139 ARP/IPv4 receiver, bounded polling */
         fvm_tick();        /* cooperative, bounded application scheduling */

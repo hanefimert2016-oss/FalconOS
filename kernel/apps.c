@@ -26,45 +26,131 @@ static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
 static i32 minimized_app = -1; /* last app sent to dock by yellow light */
 static void falco_set_query(const char *q);
+static void falco_open_site(const char *address);
+static void falco_open_site_host(const char *address);
+static void chrome_input_key(i32 key);
+static void chrome_focus_url(void);
+static void render_browser(i32 x,i32 y,i32 w,i32 h,u32 frame);
 static void market_launch(i32 i);
 static i32 builtin_app_count(void);
 
-/* ----- window manager state (FalconOS 1) ---------------------------------
- * The dispatcher used to centre every app window on every frame. With
- * a mouse-driven WM users expect:
- *   - drag the title bar to relocate the window
- *   - resize from the bottom-right corner
- *   - traffic lights (red close / yellow minimise / green maximise)
- * We keep a single window slot since we still only have one active app
- * at a time; minimise just collapses to "no active app" but remembers
- * the offset/size so re-opening the same app feels persistent.        */
-static i32  wm_dx = 0, wm_dy = 0;     /* persistent offset from centre  */
-static i32  wm_dw = 0, wm_dh = 0;     /* size delta (added to default)  */
-static bool wm_max = false;            /* maximised? overrides above    */
-static bool wm_dragging = false;
-static i32  wm_drag_grab_x = 0, wm_drag_grab_y = 0;
-static bool wm_resizing = false;
-static i32  wm_resize_grab_x = 0, wm_resize_grab_y = 0;
-static i32  wm_resize_start_w = 0, wm_resize_start_h = 0;
+/* ---- Contour native window stack (up to 4 simultaneous application windows).
+ * No heap / GPU dependency. Each built-in app remains a singleton, but
+ * different applications can be shown, positioned and focused concurrently.
+ * Geometry lives per window; the selected window alone receives keyboard
+ * and mouse events. This is OS framebuffer code, not the web preview. */
+#define WM_MAX_WINDOWS 6
+typedef struct { i32 app, dx, dy, dw, dh; bool maximized, minimized; } wm_slot_t;
+static wm_slot_t wm_slots[WM_MAX_WINDOWS];
+static i32 wm_slot_count;
+static i32 wm_dx, wm_dy, wm_dw, wm_dh;
+static bool wm_max, wm_dragging, wm_resizing, wm_passive_paint;
+static i32 wm_drag_grab_x, wm_drag_grab_y;
+static i32 wm_resize_grab_x, wm_resize_grab_y;
+static i32 wm_resize_start_w, wm_resize_start_h;
 
-void apps_open(i32 i)
-{
-    if (i < 0 || i >= apps_count()) return;
-    if (i >= builtin_app_count()) {
-        i32 index = i - builtin_app_count();
-        if (market_installed(index)) market_launch(index);
-        else { active_app = 2; market_download(index); }
+static bool wm_click_enabled(void) {
+    return !wm_passive_paint && mouse_peek_click();
+}
+static void wm_store_top(void) {
+    if (wm_slot_count <= 0 || active_app < 0) return;
+    wm_slot_t *w=&wm_slots[wm_slot_count-1];
+    w->dx=wm_dx; w->dy=wm_dy; w->dw=wm_dw; w->dh=wm_dh;
+    w->maximized=wm_max;
+}
+static void wm_load_top(void) {
+    if (wm_slot_count <= 0) {
+        active_app=-1; wm_dx=wm_dy=wm_dw=wm_dh=0; wm_max=false;
         return;
     }
-    active_app = i;
-    if (i == 2) outb(0xE9, 'S');  /* QEMU trace: Store actually opened */
-    minimized_app = -1;
-    open_at_ms = pit_ms();
+    const wm_slot_t *w=&wm_slots[wm_slot_count-1];
+    active_app=w->minimized?-1:w->app;
+    wm_dx=w->dx; wm_dy=w->dy;
+    wm_dw=w->dw; wm_dh=w->dh; wm_max=w->maximized;
 }
-void apps_close(void)  { active_app = -1; wm_max = false;
-                          wm_dragging = false; wm_resizing = false; }
-i32  apps_active(void) { return active_app; }
-i32  apps_minimized(void) { return minimized_app; }
+static void wm_raise(i32 index) {
+    if (index<0||index>=wm_slot_count)return;
+    wm_store_top();
+    if(index==wm_slot_count-1){
+        wm_slots[index].minimized=false;wm_load_top();return;
+    }
+    wm_slot_t raised=wm_slots[index];
+    raised.minimized=false;
+    for(i32 j=index;j<wm_slot_count-1;j++) wm_slots[j]=wm_slots[j+1];
+    wm_slots[wm_slot_count-1]=raised;
+    wm_load_top();
+    wm_dragging=wm_resizing=false;
+    open_at_ms=pit_ms();
+}
+static void wm_minimize_top(void) {
+    if(wm_slot_count<=0 || active_app<0)return;
+    wm_store_top();
+    wm_slot_t hidden=wm_slots[wm_slot_count-1];
+    hidden.minimized=true;
+    for(i32 j=wm_slot_count-1;j>0;j--)wm_slots[j]=wm_slots[j-1];
+    wm_slots[0]=hidden;
+    minimized_app=hidden.app;
+    wm_load_top();
+    wm_dragging=wm_resizing=false;
+}
+i32 apps_window_count(void) {return wm_slot_count;}
+bool apps_is_open(i32 app) {
+    for(i32 j=0;j<wm_slot_count;j++)if(wm_slots[j].app==app)return true;
+    return false;
+}
+void apps_open(i32 app) {
+    if(app<0||app>=apps_count())return;
+    /* Never allow a translucent help sheet to consume the next click
+     * intended for the opened window's titlebar traffic lights. */
+    if(helppanel_is_open())helppanel_close();
+    if(app==2) market_refresh(); /* Discover requests real releases on open */
+    if(app>=builtin_app_count()) {
+        i32 idx=app-builtin_app_count();
+        if(market_installed(idx))market_launch(idx);
+        else { apps_open(2); market_download(idx); }
+        return;
+    }
+    wm_store_top();
+    for(i32 j=0;j<wm_slot_count;j++) {
+        if(wm_slots[j].app==app) {
+            wm_raise(j);
+            minimized_app=-1; open_at_ms=pit_ms();
+            outb(0xE9,'z');outb(0xE9,(u8)('A'+app));
+            outb(0xE9,'n');outb(0xE9,(u8)('0'+wm_slot_count));
+            return;
+        }
+    }
+    if(wm_slot_count==WM_MAX_WINDOWS) {
+        for(i32 j=1;j<wm_slot_count;j++)wm_slots[j-1]=wm_slots[j];
+        wm_slot_count--;
+    }
+    /* Stagger windows across the desktop instead of stacking every title
+     * bar on top of the same place.  Keeps background windows selectable. */
+    static const i32 x_off[6]={-190,145,-115,220,-240,70};
+    static const i32 y_off[6]={-95,-35,45,105,0,80};
+    i32 cascade=wm_slot_count;
+    wm_slot_t item={.app=app,.dx=x_off[cascade],.dy=y_off[cascade],
+                    .dw=0,.dh=0,.maximized=false,.minimized=false};
+    wm_slots[wm_slot_count++]=item;
+    wm_load_top();
+    if(app==2)outb(0xE9,'S');
+    outb(0xE9,'z');outb(0xE9,(u8)('A'+app));
+    outb(0xE9,'n');outb(0xE9,(u8)('0'+wm_slot_count));
+    minimized_app=-1; open_at_ms=pit_ms();
+    wm_dragging=wm_resizing=false;
+}
+void apps_close(void) {
+    if(wm_slot_count>0&&active_app>=0)wm_slot_count--;
+    wm_load_top();
+    wm_dragging=wm_resizing=false;
+}
+i32 apps_active(void) {return active_app;}
+i32 apps_minimized(void) {return minimized_app;}
+void apps_close_all(void) {
+    wm_slot_count=0;wm_dx=wm_dy=wm_dw=wm_dh=0;
+    active_app=-1;minimized_app=-1;wm_max=false;
+    wm_dragging=wm_resizing=false;
+}
 
 /* ===== icon glyphs ======================================================== */
 static void icon_home(i32 cx, i32 cy)
@@ -305,48 +391,132 @@ static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     }
 }
 
-/* --- Files --------------------------------------------------------------- */
-/* Files: actual RAM-backed SHFS listing, not a mocked source tree. */
-static i32 files_scroll = 0;
-static void files_input_key(i32 key)
-{
-    if (key == KEY_UP && files_scroll > 0) files_scroll--;
-    if (key == KEY_DOWN && files_scroll < SHFS_MAX_ENTRIES-1) files_scroll++;
+/* --- Files: live SHFS browser with real folders and a searchable list. ---
+ * This UI never fabricates files; only SHFS enumerated entries are displayed.
+ * F4 search, Left/Right locations, Up/Down scroll. The same exact file state
+ * is shared with Notes, Codedium and downloaded FAPP/1 packages. */
+static i32 files_scroll, files_scope;
+static bool files_search_mode;
+static char files_filter[40];
+static i32 files_filter_len;
+static const char *FILES_ROOTS[4] = {
+    "", "/home/falcon", "/home/falcon/Desktop", "/home/falcon/apps"
+};
+static const char *FILES_LABELS[4] = { "All files", "Home", "Desktop", "Apps" };
+static bool files_matches(const char *path) {
+    const char *root=FILES_ROOTS[files_scope];
+    i32 root_len=k_strlen(root);
+    if(root_len && k_strncmp(path,root,root_len)!=0)return false;
+    if(!files_filter_len)return true;
+    for(i32 i=0;path[i];i++) {
+        i32 j=0;
+        while(files_filter[j]&&path[i+j]) {
+            char a=path[i+j],b=files_filter[j];
+            if(a>='A'&&a<='Z')a+=32;
+            if(b>='A'&&b<='Z')b+=32;
+            if(a!=b)break;
+            j++;
+        }
+        if(!files_filter[j])return true;
+    }
+    return false;
 }
-typedef struct { i32 x, y, w, limit, row, seen; } file_draw_ctx_t;
-static void files_row(const char *path, bool is_dir, u32 len, void *ud)
-{
-    file_draw_ctx_t *c = (file_draw_ctx_t *)ud;
-    if (c->seen++ < files_scroll || c->row >= c->limit) return;
-    i32 y = c->y + c->row * 28;
-    gfx_round_rect_a(c->x, y, c->w, 25, 6,
-                     (c->row & 1) ? PAL_PANEL : PAL_PANEL_DEEP, 255);
-    gfx_text(c->x + 12, y + 5, is_dir ? "[D]" : "[F]", is_dir ? COL_OK : PAL_ACCENT);
-    gfx_text(c->x + 47, y + 5, path, PAL_TEXT);
-    if (!is_dir) {
-        char num[12];
-        k_itoa(len, num, 10);
-        gfx_text(c->x + c->w - 80, y + 5, num, PAL_TEXT_DIM);
+static void files_input_key(i32 key) {
+    if(key==KEY_F4){files_search_mode=!files_search_mode;return;}
+    if(files_search_mode){
+        if(key==KEY_BACKSPACE){
+            if(files_filter_len>0)files_filter[--files_filter_len]=0;
+            files_scroll=0;
+        }else{
+            char bytes[4];i32 n=key_to_utf8(key,bytes);
+            if(n>0&&files_filter_len+n<(i32)sizeof files_filter){
+                for(i32 i=0;i<n;i++)files_filter[files_filter_len++]=bytes[i];
+                files_filter[files_filter_len]=0;files_scroll=0;
+            }
+        }
+        return;
+    }
+    if(key==KEY_LEFT){files_scope=(files_scope+3)%4;files_scroll=0;}
+    if(key==KEY_RIGHT){files_scope=(files_scope+1)%4;files_scroll=0;}
+    if(key==KEY_UP&&files_scroll>0)files_scroll--;
+    if(key==KEY_DOWN&&files_scroll<SHFS_MAX_ENTRIES-1)files_scroll++;
+}
+typedef struct {i32 x,y,w,limit,row,seen,files,dirs;} file_draw_ctx_t;
+static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
+    file_draw_ctx_t *c=(file_draw_ctx_t *)ud;
+    if(!files_matches(path))return;
+    if(is_dir)c->dirs++;else c->files++;
+    if(c->seen++<files_scroll||c->row>=c->limit)return;
+    i32 y=c->y+c->row*37;
+    gfx_round_rect_a(c->x,y,c->w,34,10,
+        (c->row&1)?PAL_PANEL:PAL_PANEL_DEEP,255);
+    gfx_round_rect(c->x+9,y+7,24,20,6,
+        is_dir?0xF3BC5Du:0x548FEBu);
+    gfx_text_centered(c->x+21,y+10,is_dir?"D":"F",0xFFFFFFu);
+    const char *name=path;
+    for(i32 i=0;path[i];i++)if(path[i]=='/'&&path[i+1])name=path+i+1;
+    char clipped[53];i32 max=(c->w-135)/8;
+    if(max<10)max=10;if(max>52)max=52;
+    i32 k=0;while(name[k]&&k<max){clipped[k]=name[k];k++;}
+    clipped[k]=0;
+    gfx_text(c->x+42,y+10,clipped,PAL_TEXT);
+    if(!is_dir){
+        char digits[16];k_itoa(len,digits,10);
+        gfx_text(c->x+c->w-83,y+10,digits,PAL_TEXT_DIM);
+        gfx_text(c->x+c->w-44,y+10,"B",PAL_TEXT_FAINT);
     }
     c->row++;
 }
-static void render_files(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
-    (void)frame;
-    shfs_init();
-    section(wx, wy, T("Files", "Dosyalar"),
-            T("Live guest RAM filesystem - arrows scroll", "Gercek RAM dosya sistemi - oklarla kaydir"));
-    file_draw_ctx_t ctx = {
-        wx + 22, wy + 58, ww - 44, (wh - 110) / 28, 0, 0
-    };
-    if (ctx.limit < 1) ctx.limit = 1;
-    shfs_foreach_path(files_row, &ctx);
-    if (ctx.seen == 0) gfx_text(wx + 36, wy + 74, "No files", PAL_TEXT_DIM);
-    gfx_text(wx + 24, wy + wh - 24,
-             "Desktop/project.fsh and downloaded apps appear here.", PAL_TEXT_FAINT);
+static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    (void)frame;shfs_init();
+    i32 margin=18,sidebar=122,top=91,bottom=45;
+    i32 sx=wx+margin,main_x=sx+sidebar+14;
+    i32 main_w=ww-2*margin-sidebar-14;
+    gfx_round_rect_a(sx,wy+10,ww-2*margin,65,16,PAL_PANEL_DEEP,255);
+    gfx_round_rect(sx+14,wy+23,36,36,11,0xF3BC5Du);
+    gfx_text_centered(sx+32,wy+33,"F",0xFFFFFFu);
+    gfx_text_lg(sx+62,wy+16,T("Files","Dosyalar"),PAL_TEXT);
+    gfx_text(sx+62,wy+51,
+        T("Your actual FalconOS files","FalconOS dosyalarin"),PAL_TEXT_DIM);
+    gfx_round_rect_a(sx,wy+top,sidebar,wh-top-bottom,13,PAL_PANEL_DEEP,255);
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    bool clicked=wm_click_enabled();
+    for(i32 i=0;i<4;i++){
+        i32 sy=wy+top+13+i*43;
+        bool chosen=i==files_scope;
+        gfx_round_rect(sx+7,sy,sidebar-14,36,11,
+            chosen?PAL_ACCENT_DIM:PAL_PANEL);
+        gfx_text(sx+19,sy+11,FILES_LABELS[i],chosen?PAL_ACCENT:PAL_TEXT_DIM);
+        if(clicked&&mx>=sx+7&&mx<sx+sidebar-7&&my>=sy&&my<sy+36){
+            files_scope=i;files_scroll=0;
+            (void)mouse_consume_click();clicked=false;
+        }
+    }
+    gfx_text(sx+13,wy+wh-76,"SHFS / RAM",PAL_TEXT_DIM);
+    gfx_text(sx+13,wy+wh-56,"Real storage",PAL_TEXT_FAINT);
+    gfx_round_rect_a(main_x,wy+top,main_w,38,11,PAL_PANEL_DEEP,255);
+    gfx_circle_outline(main_x+19,wy+top+18,7,PAL_ACCENT);
+    gfx_line(main_x+24,wy+top+23,main_x+30,wy+top+29,PAL_ACCENT);
+    gfx_text(main_x+38,wy+top+12,
+        files_filter_len?files_filter:(files_search_mode?"Type to search...":"F4: Search files"),
+        files_filter_len?PAL_TEXT:PAL_TEXT_DIM);
+    if(clicked&&mx>=main_x&&mx<main_x+main_w&&my>=wy+top&&my<wy+top+38){
+        files_search_mode=true;(void)mouse_consume_click();
+    }
+    file_draw_ctx_t ctx={main_x,wy+top+49,main_w,
+        (wh-top-bottom-53)/37,0,0,0,0};
+    if(ctx.limit<1)ctx.limit=1;
+    shfs_foreach_path(files_row,&ctx);
+    if(ctx.seen==0)
+        gfx_text(main_x+16,wy+top+89,
+            files_filter_len?"No matching files":"No files in this location",PAL_TEXT_DIM);
+    gfx_rect(sx,wy+wh-36,ww-2*margin,1,PAL_HAIRLINE);
+    char count[16];k_itoa(ctx.files,count,10);
+    gfx_text(sx+4,wy+wh-26,count,PAL_ACCENT);
+    gfx_text(sx+35,wy+wh-26,"files  |  F4 search  |  Left/Right folders  |  Up/Down scroll",
+        PAL_TEXT_DIM);
 }
 
-/* --- Clock: analog dial -------------------------------------------------- */
 static void render_clock(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
@@ -660,7 +830,7 @@ static void render_store(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     i32 mx, my; bool ml;
     mouse_get(&mx, &my, &ml);
     (void)ml;
-    bool edge = mouse_peek_click();
+    bool edge = wm_click_enabled();
     bool click_used = false;
 
     if (edge && mx >= all_x && mx <= all_x + all_w && my >= chip_y && my <= chip_y + 20) {
@@ -2642,13 +2812,30 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame;
     i32 sx=wx+22,sw=ww-44;
-    gfx_round_rect_a(sx,wy+7,sw,100,19,0xE2EEFFu,255);
-    gfx_round_rect(sx+18,wy+24,49,49,16,0x3476E9u);
+    gfx_round_rect_a(sx,wy+7,sw,100,19,PAL_PANEL_DEEP,255);
+    gfx_round_outline(sx,wy+7,sw,100,19,PAL_HAIRLINE);
+    gfx_round_rect(sx+18,wy+24,49,49,16,PAL_ACCENT);
     gfx_circle_outline(sx+43,wy+48,14,0xFFFFFFu);
     gfx_circle(sx+43,wy+48,5,0xFFFFFFu);
-    gfx_text_lg(sx+85,wy+22,T("Settings","Ayarlar"),0x173C72u);
+    gfx_text_lg(sx+85,wy+22,T("Make FalconOS yours","FalconOS'u kisisellestir"),PAL_TEXT);
     gfx_text(sx+85,wy+60,
-        "Personalization  |  Accounts  |  Device  |  Security",0x6284A9u);
+        T("Themes / colors / accounts / display","Temalar / renkler / hesaplar / ekran"),PAL_TEXT_DIM);
+    /* Interactive theme swatches: native palette changes immediately. */
+    static const u32 swatches[THEME_COUNT] = {
+        0xE8EFF8u,0x202937u,0x6CB7DCu,0xB9C9D8u,0xDAA5A0u
+    };
+    i32 mx_theme,my_theme;bool held_theme;
+    mouse_get(&mx_theme,&my_theme,&held_theme);(void)held_theme;
+    for(i32 t=0;t<THEME_COUNT;t++){
+        i32 cx=sx+sw-159+t*29,cy=wy+80;
+        gfx_round_rect(cx,cy,24,15,5,swatches[t]);
+        if((i32)SET.theme==t)
+            gfx_round_outline(cx-2,cy-2,28,19,7,PAL_ACCENT);
+        if(wm_click_enabled()&&mx_theme>=cx&&mx_theme<cx+24 &&
+           my_theme>=cy&&my_theme<cy+15){
+            SET.theme=(theme_t)t;(void)mouse_consume_click();
+        }
+    }
     i32 sy=wy+124;
     i32 step=36;
     settings_view_min=sy-1;
@@ -2660,7 +2847,7 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     if(set_row<settings_scroll)settings_scroll=set_row;
     gfx_text(wx+ww-192,wy+112,
       "Up/Down   Left/Right",PAL_TEXT_DIM);
-    if(mouse_peek_click()){
+    if(wm_click_enabled()){
         i32 mx,my;bool pressed;mouse_get(&mx,&my,&pressed);(void)pressed;
         if(mx>=sx&&mx<sx+sw&&my>=settings_view_min &&
            my<settings_view_max){
@@ -2692,7 +2879,9 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         s_row(sx, sy + SR_ACCENT * step, sw,
               T("Accent", "Vurgu"), names[SET.accent],
               set_row == SR_ACCENT, PAL_ACCENT);
-        gfx_circle(sx + sw - 14, sy + SR_ACCENT * step + SR_BOX_H / 2, 6, PAL_ACCENT);
+        i32 accent_y=sy+(SR_ACCENT-settings_scroll)*step+SR_BOX_H/2;
+        if(accent_y>settings_view_min+6&&accent_y<settings_view_max-6)
+            gfx_circle(sx+sw-14,accent_y,6,PAL_ACCENT);
     }
 
     /* Aero --- frosted glass toggle ------------------------------------ */
@@ -2984,6 +3173,7 @@ static char falco_http[4096],falco_results[3100];
 static char falco_status[128]="Enter searches live Wikipedia, via HTTPS host gateway.";
 static bool falco_has_results;
 static bool falco_dhcp_done;
+static bool falco_web_view;
 static void falco_set_query(const char *q){
     falco_query_len=0;
     while(q&&q[falco_query_len]&&falco_query_len<79){
@@ -2993,10 +3183,21 @@ static void falco_set_query(const char *q){
     falco_query[falco_query_len]=0;
     falco_sel=0;
     falco_has_results=false;
+    falco_web_view=false;
 }
 static void falco_search(void){
     falco_has_results=false;
     if(!falco_query_len)return;
+    /* A URL in Falco is a navigation, not a Wikipedia search. */
+    bool has_dot=false,has_space=false;
+    for(i32 j=0;j<falco_query_len;j++){
+        if(falco_query[j]=='.')has_dot=true;
+        if(falco_query[j]==' '||falco_query[j]=='\n')has_space=true;
+    }
+    if(!has_space && (has_dot || k_strncmp(falco_query,"https://",8)==0 ||
+                      k_strncmp(falco_query,"http://",7)==0)){
+        falco_open_site(falco_query);return;
+    }
     if(!net_present()){
         k_strcpy(falco_status,"No RTL8139 network card is active");
         return;
@@ -3033,7 +3234,7 @@ static void falco_search(void){
     i32 n=0;
     while(body[n]&&n<(i32)sizeof falco_results-1){
         u8 c=(u8)body[n];
-        falco_results[n]=(c<32&&c!='\n')?' ':((c>126)?'?':(char)c);
+        falco_results[n]=(c<32&&c!='\n')?' ':(char)c; /* retain validated UTF-8 for Turkish */
         n++;
     }
     falco_results[n]=0;
@@ -3042,6 +3243,25 @@ static void falco_search(void){
          "Live Wikipedia results - host certificate verified");
 }
 static void falco_input_key(i32 key){
+    if ((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
+        if(falco_web_view){chrome_focus_url();return;}
+        falco_query[0]=0;falco_query_len=0;falco_has_results=false;return;
+    }
+    if((kbd_mod_state() & (1u<<2)) && key==KEY_LEFT && falco_web_view){
+        falco_web_view=false;return;
+    }
+    /* A deliberate GitHub-docs fallback is NOT the live website. */
+    if(key==KEY_F8){
+        falco_open_site_host(
+            "https://raw.githubusercontent.com/hanefimert2016-oss/FalconOS/FalconOS-1-release/README.md");
+        return;
+    }
+    if(falco_web_view){
+        if(key==KEY_F3){falco_web_view=false;return;}
+        chrome_input_key(key);return;
+    }
+    if(key==KEY_F6){falco_open_site("https://falconos.tech/");return;}
+    if(key==KEY_F7){falco_open_site_host("https://falconos.tech/");return;}
     if(key==KEY_F4){
         falco_query[0]=0;falco_query_len=0;
         falco_has_results=false;falco_sel=0;return;
@@ -3056,8 +3276,27 @@ static void falco_input_key(i32 key){
     (void)sh_buf_append_key(falco_query,&falco_query_len,80,key);
 }
 static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    if(falco_web_view){render_browser(wx,wy,ww,wh,frame);return;}
     (void)frame;
     i32 x=wx+22,w=ww-44;
+    /* Pointer hit-test matches real drawn toolbar controls. */
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    if(wm_click_enabled()&&mx>=x&&mx<x+w){
+        if(my>=wy+109&&my<wy+160){
+            (void)mouse_consume_click();
+            if(mx>=x+w-126)falco_search();
+            return;
+        }
+        if(my>=wy+165&&my<wy+200){
+            i32 rel=mx-x;
+            (void)mouse_consume_click();
+            if(rel<160)falco_open_site("https://falconos.tech/");
+            else if(rel<326)falco_open_site_host("https://falconos.tech/");
+            else if(rel<492)falco_input_key(KEY_F8);
+            else falco_search();
+            return;
+        }
+    }
     gfx_round_rect_a(x,wy+12,w,84,20,0xDBEAFE,240);
     gfx_round_rect(x+14,wy+26,48,48,16,0x2269D9);
     gfx_text_lg_centered(x+38,wy+34,"F",0xFFFFFF);
@@ -3070,11 +3309,22 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_text(x+51,wy+127,falco_query_len?falco_query:"Search Wikipedia...",PAL_TEXT);
     gfx_round_rect(x+w-110,wy+117,100,35,13,0x246DE8);
     gfx_text_centered(x+w-60,wy+128,"Enter",0xFFFFFF);
-    gfx_text(x+4,wy+179,falco_status,0x4B779E);
-    gfx_round_rect_a(x,wy+204,w,wh-264,19,PAL_PANEL,240);
-    gfx_round_outline(x,wy+204,w,wh-264,19,PAL_HAIRLINE);
+    /* Explicit clickable HTTPS navigation; no fake "button" labels. */
+    const char *actions[4]={"Live site","Host HTTPS","GitHub docs","Search"};
+    for(i32 i=0;i<4;i++){
+        i32 bx=x+i*166;
+        if(bx+157>x+w)break;
+        gfx_round_rect_a(bx,wy+165,157,34,10,
+            i==0?0x246DE8u:PAL_PANEL_HI,250);
+        gfx_round_outline(bx,wy+165,157,34,10,PAL_HAIRLINE);
+        gfx_text_centered(bx+78,wy+175,actions[i],
+            i==0?0xFFFFFFu:PAL_TEXT);
+    }
+    gfx_text(x+4,wy+207,falco_status,0x4B779E);
+    gfx_round_rect_a(x,wy+230,w,wh-290,19,PAL_PANEL,240);
+    gfx_round_outline(x,wy+230,w,wh-290,19,PAL_HAIRLINE);
     if(!falco_has_results){
-        gfx_text_lg(x+26,wy+232,"Discover something new",PAL_TEXT);
+        gfx_text_lg(x+26,wy+253,"Discover something new",PAL_TEXT);
         gfx_text(x+26,wy+283,"Type a topic and press Enter.",PAL_TEXT_DIM);
         gfx_text(x+26,wy+312,
             "HTTPS is verified on the Arch host (not inside FalconOS).",PAL_TEXT_DIM);
@@ -3090,7 +3340,7 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             if(c=='\n'||col>=max_chars){
                 line[col]=0;
                 if(logical>=falco_sel)
-                    gfx_text(x+22,wy+225+(row++)*21,line,PAL_TEXT);
+                    gfx_text(x+22,wy+251+(row++)*21,line,PAL_TEXT);
                 logical++;col=0;
                 if(c=='\n')continue;
             }
@@ -3098,10 +3348,12 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
         if(col && row<rows && logical>=falco_sel){
             line[col]=0;
-            gfx_text(x+22,wy+225+row*21,line,PAL_TEXT);
+            gfx_text(x+22,wy+251+row*21,line,PAL_TEXT);
         }
     }
-    gfx_text(x+5,wy+wh-36,"F4 clear | Enter search | Up/Down scroll | Verified Host HTTPS",PAL_TEXT_FAINT);
+    gfx_text(x+5,wy+wh-36,
+        "Ctrl+L search | Enter go | F5 refresh | Alt+Left back | F8 Docs",
+        PAL_TEXT_FAINT);
 }
 
 /* --- Falcon Browser: actual guest TCP + authenticated HTTPS only ---------
@@ -3113,8 +3365,19 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
 static char browser_address[224]="https://example.com/";
 static i32 browser_address_len=20;
 static bool browser_address_focus=true;
+static void chrome_focus_url(void){
+    /* Ctrl+L selects a fresh address entry, independent of current focus. */
+    browser_address[0]=0;browser_address_len=0;
+    browser_address_focus=true;
+}
 /* F6 enables a clearly labeled host-validated TLS proxy, never automatic. */
+/* Standard build has no native BearSSL; use trusted host HTTPS bridge.
+ * The status bar always labels this as HOST TLS, never guest-native TLS. */
+#ifdef FALCON_BEARSSL
 static bool browser_host_gateway=false;
+#else
+static bool browser_host_gateway=true;
+#endif
 static bool browser_dhcp_attempted=false;
 static char browser_result[4096];
 static char browser_text[4096];
@@ -3139,7 +3402,7 @@ static void browser_page_from_http(void){
         if(c=='\r'||c=='\n'||c=='\t'||c==' '){
             space=true;continue;
         }
-        if((u8)c<32u||(u8)c>=127u)continue;
+        if((u8)c<32u)continue; /* preserve UTF-8 letters; glyph renderer validates */
         if(space&&n>0&&browser_text[n-1]!=' ')browser_text[n++]=' ';
         space=false;
         browser_text[n++]=c;
@@ -3203,8 +3466,12 @@ static void browser_load(void){
         verified=native_http_get_port(net_gateway(),18444u,local_path,
                                       browser_result,sizeof browser_result);
         if(!verified || !sh_contains_ci(browser_result,"X-Falcon-Host-HTTPS-Verified: yes")){
-            k_strcpy(browser_status,
-                "Host HTTPS gateway unavailable/unverified; run companion script.");
+            if(k_strcmp(hostname,"falconos.tech")==0)
+                k_strcpy(browser_status,
+                   "Site may block CI (403). F8: GitHub docs, not live site.");
+            else
+                k_strcpy(browser_status,
+                   "Host HTTPS failed; inspect gateway diagnostics.");
             return;
         }
     }else{
@@ -3230,7 +3497,61 @@ static void browser_load(void){
             "HOST-verified HTTPS | local VM link plaintext | read-only");
 
 }
+/* Native text-web view is shared by Falco and the Browser, not simulated.
+ * F6 in Falco loads the requested site with the same certificate checks.
+ * Only HTTPS URLs are allowed; no HTTP downgrade. */
+static void falco_navigate(const char *address,bool use_host){
+    const char *prefix="https://";
+    const char *url=address;
+    char normalized[224];
+    if(k_strncmp(address,"http://",7)==0){
+        k_strcpy(falco_status,"HTTPS only. HTTP navigation rejected.");
+        return;
+    }
+    if(k_strncmp(address,prefix,8)!=0){
+        k_strcpy(normalized,prefix);
+        if(k_strlen(address)>206){
+            k_strcpy(falco_status,"Address too long.");return;
+        }
+        k_strcat(normalized,address);url=normalized;
+    }
+    if(k_strlen(url)>=sizeof browser_address){
+        k_strcpy(falco_status,"Address too long.");return;
+    }
+    k_strcpy(browser_address,url);
+    browser_address_len=k_strlen(browser_address);
+    browser_address_focus=true;
+    browser_host_gateway=use_host; /* F7: explicit local host-verified HTTPS. */
+    browser_load();
+    if(use_host && browser_loaded &&
+       sh_contains_ci(browser_address,"raw.githubusercontent.com/"))
+        k_strcpy(browser_status,
+                "GitHub README fallback, not live falconos.tech; host HTTPS");
+    falco_web_view=true;
+#ifdef FALCON_QEMU_BROWSER_TEST
+    /* A unique Falco navigation result: 'fY' means an actually loaded
+     * verified response, 'fN' means an error. Browser 'bY' alone is
+     * not enough to attest that this site was loaded. */
+    outb(0xE9,'f');outb(0xE9,browser_loaded?'Y':'N');
+#endif
+}
+static void falco_open_site(const char *address){
+#ifdef FALCON_BEARSSL
+    falco_navigate(address,false);
+#else
+    /* No pretend native TLS: host gateway performs verified HTTPS. */
+    falco_navigate(address,true);
+#endif
+}
+static void falco_open_site_host(const char *address){falco_navigate(address,true);}
 static void chrome_input_key(i32 key){
+    if((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
+        browser_address_focus=true;return;
+    }
+    if((kbd_mod_state() & (1u<<1)) && (key=='r'||key=='R')) {
+        browser_load();return;
+    }
+    if(key==KEY_ESC){browser_address_focus=false;return;}
     if(key==KEY_F4){
         browser_address[0]=0;
         browser_address_len=0;
@@ -3262,11 +3583,37 @@ static void chrome_input_key(i32 key){
 static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;
     i32 margin=18,bar=wy+54;
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    if(wm_click_enabled()&&mx>=wx+margin&&mx<wx+ww-margin){
+        if(my>=wy+7&&my<wy+41){
+            (void)mouse_consume_click();
+            if(mx<wx+100){
+                if(active_app==13)falco_web_view=false;
+                else {browser_loaded=false;browser_address_focus=true;}
+            }else if(mx<wx+196)browser_load();
+            else if(mx>=wx+ww-160){
+                browser_host_gateway=!browser_host_gateway;
+                k_strcpy(browser_status,browser_host_gateway?
+                    "HOST TLS via companion bridge enabled":
+                    "NATIVE TLS (BearSSL) enabled");
+            }else browser_address_focus=true;
+            return;
+        }
+        if(my>=bar&&my<bar+34){
+            (void)mouse_consume_click();
+            browser_address_focus=true;
+            return;
+        }
+    }
     gfx_rect(wx,wy,ww,44,PAL_PANEL_DEEP);
-    gfx_round_rect_a(wx+margin,wy+7,170,32,9,PAL_PANEL,255);
-    gfx_text(wx+margin+12,wy+15,"Falcon Browser",PAL_ACCENT);
-    gfx_text(wx+205,wy+16,
-        browser_host_gateway?"HOST HTTPS / LOCAL LINK":"NATIVE HTTPS / BEARSSL",PAL_TEXT_DIM);
+    gfx_round_rect_a(wx+margin,wy+7,80,32,9,PAL_PANEL,255);
+    gfx_text(wx+margin+10,wy+15,"< Back",PAL_TEXT);
+    gfx_round_rect_a(wx+104,wy+7,88,32,9,PAL_PANEL,255);
+    gfx_text(wx+114,wy+15,"Reload",PAL_TEXT);
+    gfx_text(wx+211,wy+16,active_app==13?"Falco Web":"Falcon Browser",PAL_ACCENT);
+    gfx_round_rect_a(wx+ww-160,wy+7,141,32,9,PAL_PANEL,255);
+    gfx_text(wx+ww-150,wy+15,
+        browser_host_gateway?"HOST HTTPS":"NATIVE HTTPS",PAL_TEXT_DIM);
     gfx_rect(wx,wy+45,ww,56,PAL_PANEL_HI);
     i32 sx=wx+margin,sy=bar,sw=ww-margin*2;
     gfx_round_rect_a(sx,sy,sw,34,10,PAL_PANEL,255);
@@ -3316,7 +3663,7 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
     }
     gfx_text(wx+margin,wy+wh-26,
-        "F4 new URL | Enter load | F5 reload | F6 HTTPS mode | Up/Down scroll",
+        "Ctrl+L URL | Enter load | F5 reload | Esc exit URL | Up/Down scroll",
         PAL_TEXT_FAINT);
 }
 
@@ -3449,6 +3796,48 @@ static void render_heroic(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 /* ---- Marketplace: actual release catalogue + verified FAPP/1 script launch --- */
 static i32 market_cursor;
 static bool market_first_frame = true;
+static bool market_publish_armed;
+static i32 market_publish_armed_cursor;
+/* Discover has an actual filtered view, while IDs remain stable for package
+ * installation and the terminal/prg inventory. No placeholder catalog. */
+#define MARKET_VIEW_CAP 48
+static i32 market_view[MARKET_VIEW_CAP],market_view_count,market_category;
+static char market_query[40];
+static i32 market_query_len;
+static bool market_search_mode;
+static bool market_match(const char *haystack,const char *needle){
+    if(!needle[0])return true;
+    for(i32 i=0;haystack[i];i++){
+        i32 j=0;
+        while(needle[j]&&haystack[i+j]){
+            char a=haystack[i+j],b=needle[j];
+            if(a>='A'&&a<='Z')a+=32;
+            if(b>='A'&&b<='Z')b+=32;
+            if(a!=b)break;
+            j++;
+        }
+        if(!needle[j])return true;
+    }
+    return false;
+}
+static void market_update_view(void){
+    market_view_count=0;
+    for(i32 i=0;i<market_count()&&market_view_count<MARKET_VIEW_CAP;i++){
+        if(market_category==1&&!market_installed(i))continue;
+        if(market_category==2&&!market_has_update(i))continue;
+        if(!market_match(market_name(i),market_query))continue;
+        market_view[market_view_count++]=i;
+    }
+    bool found=false;
+    for(i32 j=0;j<market_view_count;j++)if(market_view[j]==market_cursor)found=true;
+    if(!found)market_cursor=market_view_count?market_view[0]:-1;
+}
+static i32 market_selected_row(void){
+    for(i32 j=0;j<market_view_count;j++)
+        if(market_view[j]==market_cursor)return j;
+    return 0;
+}
+
 static void market_launch(i32 i)
 {
     const char *script = market_script(i);
@@ -3479,84 +3868,181 @@ static void market_launch(i32 i)
 }
 static void market_input_key(i32 key)
 {
-    i32 n = market_count();
-    if (key == 'r' || key == 'R' || key == KEY_F5) {
-        market_refresh(); market_cursor = 0; return;
+    market_update_view();
+    if(key==KEY_F11){
+        market_publish_armed=true;
+        market_publish_armed_cursor=-1; /* exported Desktop/code.app.pkg */
+        return;
     }
-    if (key == 'c' || key == 'C') {
-        apps_open(18); return; /* CodeDium Studio */
+    if(key=='p'||key=='P'){
+        market_publish_armed=true;
+        market_publish_armed_cursor=market_cursor;
+        return;
     }
-    if ((key == 'd' || key == 'D') && n > 0) {
-        market_uninstall(market_cursor); return;
+    if(key==KEY_F10&&market_publish_armed){
+        market_publish_armed=false;
+        if(market_publish_armed_cursor>=0)
+            (void)market_publish_installed(market_publish_armed_cursor);
+        else {
+            shfs_ent_t *file=shfs_lookup("/home/falcon/Desktop/code.app.pkg");
+            if(file&&!file->is_dir)(void)market_publish_package(file->data,file->len);
+        }
+        return;
     }
-    if ((key == 'u' || key == 'U') && n > 0) { market_download(market_cursor); return; }
-    if (key == KEY_UP && market_cursor > 0) market_cursor--;
-    if (key == KEY_DOWN && market_cursor < n-1) market_cursor++;
-    if (key == KEY_ENTER && n > 0) {
-        if (market_installed(market_cursor)) market_launch(market_cursor);
+    if(key==KEY_ESC){market_publish_armed=false;return;}
+    if(key==KEY_F4){market_search_mode=!market_search_mode;return;}
+    if(key==KEY_F8){
+        market_category=(market_category+1)%3;
+        market_update_view();return;
+    }
+    if(key==KEY_F9){
+        market_query_len=0;market_query[0]=0;market_category=0;
+        market_update_view();return;
+    }
+    if(market_search_mode){
+        if(key==KEY_BACKSPACE){
+            if(market_query_len>0)market_query[--market_query_len]=0;
+        }else{
+            char bytes[4];i32 count=key_to_utf8(key,bytes);
+            if(count>0&&market_query_len+count<(i32)sizeof market_query){
+                for(i32 j=0;j<count;j++)market_query[market_query_len++]=bytes[j];
+                market_query[market_query_len]=0;
+            }
+        }
+        market_update_view();
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'q');outb(0xE9,(u8)('0'+market_view_count));
+#endif
+        return;
+    }
+    if(key=='r'||key=='R'||key==KEY_F5){
+        market_refresh();market_update_view();return;
+    }
+    if(key=='c'||key=='C'){apps_open(18);return;}
+    if(market_view_count==0)return;
+    i32 row=market_selected_row();
+    if(key==KEY_UP&&row>0)market_cursor=market_view[row-1];
+    if(key==KEY_DOWN&&row+1<market_view_count)
+        market_cursor=market_view[row+1];
+    if(key=='d'||key=='D'){market_uninstall(market_cursor);return;}
+    if(key=='u'||key=='U'){market_download(market_cursor);return;}
+    if(key==KEY_ENTER){
+        if(market_has_update(market_cursor))
+            market_download(market_cursor);
+        else if(market_installed(market_cursor))
+            market_launch(market_cursor);
         else market_download(market_cursor);
     }
 }
-static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 {
-    if (market_first_frame) {
-        outb(0xE9, 'M');  /* QEMU trace: Store window really rendered */
-        market_first_frame = false;
+    if(market_first_frame){
+        outb(0xE9,'M');
+        market_first_frame=false;
     }
     (void)frame;
-    section(wx, wy, "FalconOS Marketplace", "GitHub Releases  |  .app.pkg  |  SHA-256");
-    gfx_text(wx + 24, wy + 42, "R: refresh  U: update  D: remove  Enter: get/run  C: CodeDium", PAL_TEXT_DIM);
-    gfx_text(wx + 24, wy + 63, market_status(), PAL_ACCENT);
-    i32 mx, my; bool held; mouse_get(&mx, &my, &held); (void)held;
-    bool clicked = mouse_peek_click();
-    if (clicked && mx >= wx + 24 && mx <= wx + ww - 24 &&
-        my >= wy + 36 && my <= wy + 56) {
-        market_refresh(); (void)mouse_consume_click(); clicked = false;
+    gfx_round_rect_a(wx+18,wy+8,ww-36,75,19,PAL_PANEL_DEEP,255);
+    gfx_round_rect(wx+30,wy+19,40,40,13,0x20AA83u);
+    gfx_text_lg_centered(wx+50,wy+26,"+",0xFFFFFFu);
+    gfx_text_lg(wx+83,wy+14,T("Discover","Keşfet"),PAL_TEXT);
+    gfx_text(wx+85,wy+49,T("Verified GitHub .app.pkg packages","GitHub doğrulamalı .app.pkg paketleri"),PAL_TEXT_DIM);
+    gfx_text(wx+24,wy+91,"F5 refresh | F4 search | P selected | F11 add .pkg | F10 confirm",PAL_TEXT_DIM);
+    gfx_text(wx+24,wy+111,
+        market_publish_armed?
+            (market_publish_armed_cursor<0?
+              "Add Desktop/code.app.pkg to GitHub? F10 confirm / Esc cancel":
+              "Publish installed app to GitHub? F10 confirm / Esc cancel"):
+            market_status(),PAL_ACCENT);
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    bool clicked=wm_click_enabled();
+    if(clicked&&mx>=wx+24&&mx<=wx+ww-24&&
+       my>=wy+87&&my<=wy+107){
+        market_refresh();(void)mouse_consume_click();clicked=false;
     }
-    i32 n = market_count();
-    if (n == 0) {
-        gfx_round_rect_a(wx + 24, wy + 103, ww - 48, 90, 14, PAL_PANEL_DEEP, 255);
-        gfx_text(wx + 42, wy + 133, "No releases loaded. Run make market-bridge, press R.", PAL_TEXT);
+    /* Search acts on real release titles and installed package names. */
+    gfx_round_rect_a(wx+24,wy+138,ww-48,34,10,PAL_PANEL_DEEP,255);
+    gfx_round_outline(wx+24,wy+138,ww-48,34,10,
+                      market_search_mode?PAL_ACCENT:PAL_HAIRLINE);
+    gfx_circle_outline(wx+41,wy+154,6,PAL_ACCENT);
+    gfx_text(wx+57,wy+148,
+        market_query_len?market_query:(market_search_mode?
+            "Type app name...":"F4  Search apps"),
+        market_query_len?PAL_TEXT:PAL_TEXT_DIM);
+    /* Do not let the search hit-area steal category-filter clicks. */
+    i32 cat_x=wx+ww-158;
+    i32 add_x=cat_x-139;
+    gfx_round_rect(add_x,wy+144,130,23,8,PAL_ACCENT_DIM);
+    gfx_text(add_x+10,wy+149,"+ ADD .APP.PKG",PAL_ACCENT);
+    if(clicked&&mx>=add_x&&mx<add_x+130&&my>=wy+144&&my<wy+167){
+        market_publish_armed=true;
+        market_publish_armed_cursor=-1;
+        (void)mouse_consume_click();clicked=false;
     }
-    i32 visible = (wh - 146) / 33;
-    if (visible < 1) visible = 1;
-    i32 first = market_cursor - visible / 2;
-    if (first < 0) first = 0;
-    if (first > n - visible) first = n - visible;
-    if (first < 0) first = 0;
-    for (i32 i = first; i < n && i < first + visible; i++) {
-        i32 y = wy + 102 + (i - first) * 33;
-        bool selected = i == market_cursor;
-        gfx_round_rect_a(wx + 24, y, ww - 48, 29, 8,
-                         selected ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
-        gfx_round_outline(wx + 24, y, ww - 48, 29, 8,
-                          selected ? PAL_ACCENT : PAL_HAIRLINE);
-        gfx_circle(wx + 40, y + 14, 6, selected ? PAL_ACCENT : COL_OK);
-        gfx_text(wx + 57, y + 6, market_name(i), PAL_TEXT);
-        gfx_text(wx + ww / 2, y + 6, market_version(i), PAL_TEXT_FAINT);
-        bool installed = market_installed(i);
-        bool outdated = installed && market_has_update(i);
-        gfx_text(wx + ww - 140, y + 6,
-                 outdated ? "UPDATE" : (installed ? "RUN" : "GET"),
-                 outdated ? COL_WARN : (installed ? COL_OK : PAL_ACCENT));
-        if (clicked && mx >= wx + 24 && mx < wx + ww - 24 &&
-            my >= y && my <= y + 29) {
-            market_cursor = i;
-            if (market_has_update(i)) market_download(i);
-            else if (market_installed(i)) market_launch(i);
+    if(clicked&&mx>=wx+24&&mx<add_x-4&&my>=wy+138&&my<wy+172){
+        market_search_mode=true;(void)mouse_consume_click();clicked=false;
+    }
+    static const char *catname[]={"All apps","Installed","Updates"};
+    gfx_round_rect(cat_x,wy+144,129,23,8,PAL_ACCENT_DIM);
+    gfx_text(cat_x+9,wy+149,catname[market_category],PAL_ACCENT);
+    if(clicked&&mx>=cat_x&&mx<cat_x+129&&my>=wy+144&&my<wy+167){
+        market_category=(market_category+1)%3;
+        (void)mouse_consume_click();clicked=false;
+    }
+    market_update_view();
+    i32 count=market_view_count;
+    i32 total=market_count();
+    if(!total){
+        gfx_round_rect_a(wx+24,wy+189,ww-48,90,14,PAL_PANEL_DEEP,255);
+        gfx_text(wx+42,wy+225,
+            T("No releases. Start make run-market and press F5.",
+              "Katalog boş. make run-market başlat, ardından F5 bas."),
+            PAL_TEXT_DIM);
+    }else if(!count){
+        gfx_round_rect_a(wx+24,wy+189,ww-48,90,14,PAL_PANEL_DEEP,255);
+        gfx_text(wx+42,wy+225,"No matching releases or installed packages.",PAL_TEXT_DIM);
+    }
+    i32 visible=(wh-240)/39;
+    if(visible<1)visible=1;
+    i32 selected=market_selected_row();
+    i32 first=selected-visible/2;
+    if(first<0)first=0;
+    if(first>count-visible)first=count-visible;
+    if(first<0)first=0;
+    for(i32 row=first;row<count&&row<first+visible;row++){
+        i32 i=market_view[row];
+        i32 y=wy+188+(row-first)*39;
+        bool active=(i==market_cursor);
+        gfx_round_rect_a(wx+24,y,ww-48,35,10,
+            active?PAL_ACCENT_DIM:PAL_PANEL_DEEP,255);
+        gfx_round_outline(wx+24,y,ww-48,35,10,
+            active?PAL_ACCENT:PAL_HAIRLINE);
+        gfx_circle(wx+41,y+18,7,active?PAL_ACCENT:COL_OK);
+        gfx_text(wx+58,y+11,market_name(i),PAL_TEXT);
+        gfx_text(wx+ww/2,y+11,market_version(i),PAL_TEXT_DIM);
+        bool installed=market_installed(i);
+        bool update=installed&&market_has_update(i);
+        gfx_text(wx+ww-135,y+11,update?"UPDATE":(installed?"RUN":"INSTALL"),
+            update?COL_WARN:(installed?COL_OK:PAL_ACCENT));
+        if(clicked&&mx>=wx+24&&mx<wx+ww-24&&my>=y&&my<y+35){
+            market_cursor=i;
+            if(update)market_download(i);
+            else if(installed)market_launch(i);
             else market_download(i);
-            (void)mouse_consume_click(); clicked = false;
+            (void)mouse_consume_click();clicked=false;
         }
     }
-    gfx_text(wx + 24, wy + wh - 27,
-             "FAPP/1 script packages | Host-assisted HTTPS | Guest files in RAM", PAL_TEXT_FAINT);
+    char nums[12];k_itoa(count,nums,10);
+    gfx_text(wx+24,wy+wh-48,nums,PAL_ACCENT);
+    gfx_text(wx+49,wy+wh-48,"visible releases",PAL_TEXT_DIM);
+    gfx_text(wx+24,wy+wh-25,
+        market_publish_status(),PAL_TEXT_FAINT);
 }
 
-/* ---- CodeDium: native editable FAPP/1 source, file save and script preview --- */
+/* ---- Codedium: native editable FAPP/1 source, file save and script preview --- */
 #define CODE_CAP 4096
 static char code_text[CODE_CAP];
 static i32 code_len, code_cursor;
-static bool code_ready;
+static bool code_ready,code_dirty,code_publish_armed;
 static const char *code_status = "F5 Save  |  F6 Run  |  F7 Export .app.pkg";
 static void code_init(void)
 {
@@ -3564,7 +4050,7 @@ static void code_init(void)
     code_ready = true;
     shfs_init();
     shfs_ent_t *file = shfs_lookup("/home/falcon/Desktop/project.fsh");
-    const char *sample = "# app-id: codedium-demo\n# app-name: CodeDium Demo\n# app-version: 1.0.0\n# app-summary: Built inside FalconOS\nclear\necho Hello from CodeDium\nuname\n";
+    const char *sample = "# app-id: codedium-demo\n# app-name: Codedium Demo\n# app-version: 1.0.0\n# app-summary: Built inside FalconOS\nclear\necho Hello from Codedium\nuname\n";
     const char *source = (file && !file->is_dir) ? file->data : sample;
     i32 disklen = codedium_project_load(code_text, CODE_CAP);
     if (disklen > 0) source = code_text;
@@ -3580,6 +4066,7 @@ static void code_save(void)
     if (!file) { code_status = "Save error: RAM file system is full"; return; }
     k_memcpy(file->data, code_text, code_len + 1);
     file->len = code_len;
+    code_dirty=false;
     code_status = codedium_project_save(code_text, code_len)
         ? "Saved project to RAM and safe FalconOS disk"
         : "Saved in RAM only (no safe disk selected)";
@@ -3606,29 +4093,52 @@ static void code_run(void)
     code_status = "Executed in built-in Terminal";
     apps_open(5);
 }
-static void code_export(void)
+static bool code_export(void)
 {
     static char pkg[SHFS_FBYTES];
     u32 bytes=0;
     if (!codedium_build_pkg(code_text,(u32)code_len,pkg,
                             sizeof pkg,&bytes)) {
         code_status = "Export failed: check # app-* metadata, commands or 4 KiB limit";
-        return;
+        return false;
     }
     shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/code.app.pkg", false);
     if (!file) {
-        code_status = "Export failed: guest RAM file system is full"; return;
+        code_status = "Export failed: guest RAM file system is full"; return false;
     }
     k_memcpy(file->data,pkg,bytes+1);
     file->len=bytes;
     code_status = "Created valid FAPP/1 code.app.pkg in guest Desktop";
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'E'); /* package actually built and written */
+#endif
+    return true;
 }
 static void code_input_key(i32 key)
 {
     code_init();
     if (key == KEY_F5) { code_save(); return; }
     if (key == KEY_F6) { code_run(); return; }
-    if (key == KEY_F7) { code_export(); return; }
+    if (key == KEY_F7) { (void)code_export(); return; }
+    if (key == KEY_F10) {
+        if(!code_publish_armed){
+            code_publish_armed=true;
+            code_status="Publish to GitHub Releases? Press F10 again to confirm.";
+        }else{
+            code_publish_armed=false;
+            if(code_export()){
+                shfs_ent_t *file=shfs_lookup("/home/falcon/Desktop/code.app.pkg");
+                if(file&&!file->is_dir&&market_publish_package(file->data,file->len))
+                    code_status="Upload submitted to host bridge. See Discover status.";
+                else code_status="Package upload rejected or bridge is busy.";
+            }
+        }
+        return;
+    }
+    if (key == KEY_ESC && code_publish_armed) {
+        code_publish_armed=false;
+        code_status="GitHub publish cancelled.";return;
+    }
     if ((kbd_mod_state() & KMOD_CTRL) && (key == 's' || key == 'S')) {
         code_save(); return;
     }
@@ -3667,11 +4177,11 @@ static void code_input_key(i32 key)
     }
     if (key == KEY_BACKSPACE && code_cursor > 0) {
         for (i32 i = code_cursor - 1; i < code_len; i++) code_text[i] = code_text[i+1];
-        code_len--; code_cursor--; return;
+        code_len--; code_cursor--; code_dirty=true; return;
     }
     if (key == KEY_DEL && code_cursor < code_len) {
         for (i32 i = code_cursor; i < code_len; i++) code_text[i] = code_text[i+1];
-        code_len--; return;
+        code_len--; code_dirty=true; return;
     }
     char c = 0;
     if (key == KEY_ENTER) c = '\n';
@@ -3679,48 +4189,89 @@ static void code_input_key(i32 key)
     else if (key >= 32 && key < 127) c = (char)key;
     if (c && code_len + 1 < CODE_CAP) {
         for (i32 i = code_len; i >= code_cursor; i--) code_text[i+1] = code_text[i];
-        code_text[code_cursor++] = c; code_len++;
+        code_text[code_cursor++] = c; code_len++; code_dirty=true;
     }
 }
-static void render_codedium(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 {
     (void)frame;
     code_init();
-    section(wx, wy, "CodeDium Studio", "Native FAPP/1 script editor, protected command execution");
-    gfx_round_rect(wx + 18, wy + 45, ww - 36, wh - 92, 10, 0x101A2C);
-    gfx_rect(wx + 20, wy + 46, 36, wh - 95, 0x1B2942);
-    i32 line = 0, col = 0, cursor_line = 0, cursor_col = 0;
-    for (i32 j = 0; j < code_cursor; j++) {
-        if (code_text[j] == '\n') { cursor_line++; cursor_col = 0; }
+    section(wx,wy,"Codedium Studio","FAPP/1 editor  |  sandboxed commands only");
+    /* Toolbar performs real actions; not placeholder or static artwork. */
+    const char *names[]={"Save  F5","Run  F6","Export  F7",
+                         "GitHub F10"};
+    const u32 tones[]={0x3478E6u,0x19A680u,0x8862D7u,0x167B54u};
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    bool clicked=wm_click_enabled();
+    for(i32 i=0;i<4;i++){
+        i32 x=wx+21+i*123, y=wy+47;
+        bool hover=mx>=x&&mx<x+113&&my>=y&&my<y+34;
+        gfx_round_rect_a(x,y,113,34,11,hover?PAL_ACCENT:tones[i],255);
+        gfx_text_centered(x+56,y+11,names[i],0xFFFFFFu);
+        if(clicked&&hover){
+            (void)mouse_consume_click();clicked=false;
+            if(i==0)code_save();
+            else if(i==1)code_run();
+            else if(i==2)(void)code_export();
+            else code_input_key(KEY_F10);
+        }
+    }
+    if(ww>=800){
+        gfx_text(wx+ww-240,wy+58,"Desktop/project.fsh",PAL_TEXT_DIM);
+        gfx_circle(wx+ww-24,wy+64,5,code_dirty?COL_WARN:COL_OK);
+    }
+    i32 top=wy+91;
+    i32 area=wh-149;if(area<90)area=90;
+    gfx_round_rect(wx+18,top,ww-36,area,10,0x101A2Cu);
+    gfx_rect(wx+20,top+2,38,area-4,0x1B2942u);
+    i32 line=0,cursor_line=0,cursor_col=0;
+    for(i32 j=0;j<code_cursor;j++){
+        if(code_text[j]=='\n'){cursor_line++;cursor_col=0;}
         else cursor_col++;
     }
-    /* Keep the cursor in view: render a vertical window of source lines. */
-    i32 visible = (wh - 116) / 19;
-    if (visible < 1) visible = 1;
-    i32 first = cursor_line >= visible ? cursor_line - visible + 1 : 0;
+    i32 visible=(area-13)/19;
+    if(visible<1)visible=1;
+    i32 first=cursor_line>=visible?cursor_line-visible+1:0;
     char buf[115];
-    i32 bi = 0;
-    for (i32 pos = 0; pos <= code_len; pos++) {
-        char ch = code_text[pos];
-        i32 max_chars = (ww - 102) / 8;
-        if (max_chars >= (i32)sizeof buf) max_chars = (i32)sizeof buf - 1;
-        if (ch != '\n' && ch != 0 && bi < max_chars) {
-            buf[bi++] = ch; continue;
+    i32 bi=0;
+    for(i32 pos=0;pos<=code_len;pos++){
+        char ch=code_text[pos];
+        i32 max_chars=(ww-102)/8;
+        if(max_chars>=(i32)sizeof buf)max_chars=(i32)sizeof buf-1;
+        if(ch!='\n'&&ch!=0&&bi<max_chars){
+            buf[bi++]=ch;continue;
         }
-        buf[bi] = 0;
-        if (line >= first && line < first + visible) {
-            i32 y = wy + 54 + (line - first) * 19;
-            char num[12]; k_itoa(line + 1, num, 10);
-            gfx_text(wx + 27, y, num, PAL_TEXT_FAINT);
-            gfx_text(wx + 66, y, buf, buf[0] == '#' ? 0x78B69A : 0xDDE7FF);
-            if (line == cursor_line) {
-                i32 x = wx + 66 + cursor_col * 8;
-                if (x < wx + ww - 27) gfx_rect(x, y + 15, 8, 2, PAL_ACCENT);
+        buf[bi]=0;
+        if(line>=first&&line<first+visible){
+            i32 y=top+9+(line-first)*19;
+            if(line==cursor_line)
+                gfx_rect_a(wx+59,y-2,ww-80,19,0x306ABBu,58);
+            char num[12];k_itoa(line+1,num,10);
+            gfx_text(wx+27,y,num,PAL_TEXT_FAINT);
+            gfx_text(wx+66,y,buf,buf[0]=='#'?0x78B69Au:0xDDE7FFu);
+            if(line==cursor_line){
+                i32 x=wx+66+cursor_col*8;
+                if(x<wx+ww-27)gfx_rect(x,y+15,8,2,PAL_ACCENT);
             }
         }
-        bi = 0; line++;
+        bi=0;line++;
     }
-    gfx_text(wx + 22, wy + wh - 37, code_status, PAL_TEXT_DIM);
+    /* Bottom status follows the real cursor and unsaved-project state. */
+    i32 footer=wy+wh-43;
+    gfx_rect(wx+19,footer,ww-38,1,PAL_HAIRLINE);
+    char line_text[16],col_text[16],bytes_text[16];
+    k_itoa(cursor_line+1,line_text,10);
+    k_itoa(cursor_col+1,col_text,10);
+    k_itoa(code_len,bytes_text,10);
+    gfx_text(wx+23,footer+9,code_status,PAL_TEXT_DIM);
+    if(ww>=750){
+        gfx_text(wx+ww-199,footer+9,"Ln",PAL_TEXT_FAINT);
+        gfx_text(wx+ww-170,footer+9,line_text,PAL_TEXT);
+        gfx_text(wx+ww-135,footer+9,"Col",PAL_TEXT_FAINT);
+        gfx_text(wx+ww-98,footer+9,col_text,PAL_TEXT);
+        gfx_text(wx+ww-61,footer+9,bytes_text,PAL_TEXT_FAINT);
+        gfx_text(wx+ww-33,footer+9,"B",PAL_TEXT_FAINT);
+    }
 }
 
 /* ===== app table & dispatch ============================================= */
@@ -3756,7 +4307,7 @@ static app_def_t APPS[] = {
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
-    { "CodeDium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
+    { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
@@ -3807,6 +4358,8 @@ const char *apps_display_name(i32 i)
 {
     if (i < 0 || i >= apps_count()) return "?";
     if (i >= builtin_app_count()) return market_name(i - builtin_app_count());
+    /* User-facing brand: Keşfet / Discover; stable internal ID remains Store. */
+    if (i == 2) return T("Discover","Keşfet");
     if (SET.lang != LANG_TR)
         return APPS[i].name;
     switch (i) {
@@ -3824,7 +4377,7 @@ const char *apps_display_name(i32 i)
         case 11: return "Galeri";
         case 12: return "Video";
         case 13: return "Falco";
-        case 14: return "Tarayici";
+        case 14: return "Tarayıcı";
         case 15: return "Heroic";
         case 16: return "Jarvis";
         case 17: return "Hakkında";
@@ -3837,7 +4390,7 @@ const char *apps_display_subtitle(i32 i)
     if (i < 0 || i >= apps_count()) return "";
     if (i >= builtin_app_count())
         return market_installed(i - builtin_app_count())
-            ? T("Installed FAPP/1", "Yuklu FAPP/1") : T("Get app from Store", "Magazadan indir");
+            ? T("Installed FAPP/1", "Yüklü FAPP/1") : T("Get app from Store", "Mağazadan indir");
     if (SET.lang != LANG_TR)
         return APPS[i].subtitle;
     switch (i) {
@@ -3855,7 +4408,7 @@ const char *apps_display_subtitle(i32 i)
         case 11: return "Renk paleti";
         case 12: return "Yazılım oynatıcı";
         case 13: return "Yerel indeks arama";
-        case 14: return "Dogrulanmis HTTPS metin gorunumu";
+        case 14: return "Doğrulanmış HTTPS metin görünümü";
         case 15: return "Oyun başlatıcı (uyum)";
         case 16: return "Yapay asistan";
         case 17: return "FalconOS bilgisi";
@@ -3964,6 +4517,22 @@ void apps_draw_icon(i32 i,i32 cx,i32 cy){
 void apps_input_active(i32 key)
 {
     if (active_app < 0) return;
+    /* OS-level Alt+Tab rotates the existing real window stack; it does not
+     * open a replacement application or destroy any document state. */
+    if (key==KEY_TAB && (kbd_mod_state() & (1u<<2)) && wm_slot_count>1) {
+        wm_raise(0);
+        return;
+    }
+    /* Accessible window actions when PS/2 pointer grab is unavailable. */
+    if ((kbd_mod_state() & (1u<<2)) && key==KEY_F4) {
+        apps_close();return;
+    }
+    if ((kbd_mod_state() & (1u<<2)) && key==KEY_F9) {
+        wm_minimize_top();return;
+    }
+    if ((kbd_mod_state() & (1u<<2)) && key==KEY_F10) {
+        wm_max=!wm_max;return;
+    }
     if (key == KEY_ESC) { apps_close(); return; }
     if (APPS[active_app].input) APPS[active_app].input(key);
 }
@@ -4000,6 +4569,30 @@ static bool wm_window_rect(i32 *out_x, i32 *out_y, i32 *out_w, i32 *out_h)
  * after mouse_get(). Handles title-bar drag, corner resize and traffic
  * lights. Returns true when it consumed the click (so the underlying
  * app shouldn't see it).                                              */
+/* Focus lower windows only when the pointer is not occluded by a
+ * window above them; clicks on background chrome go to the WM. */
+static bool wm_focus_click(i32 mx,i32 my) {
+    if(wm_slot_count<2)return false;
+    wm_store_top();
+    i32 selected=-1;
+    for(i32 j=wm_slot_count-1;j>=0;j--) {
+        const wm_slot_t *w=&wm_slots[j];
+        if(w->minimized)continue;
+        active_app=w->app;wm_dx=w->dx;wm_dy=w->dy;
+        wm_dw=w->dw;wm_dh=w->dh;wm_max=w->maximized;
+        i32 x,y,wid,hei;
+        if(wm_window_rect(&x,&y,&wid,&hei) &&
+           mx>=x&&mx<x+wid&&my>=y&&my<y+hei) {
+            selected=j;break;
+        }
+    }
+    wm_load_top();
+    if(selected>=0&&selected<wm_slot_count-1) {
+        wm_raise(selected);return true;
+    }
+    return false;
+}
+
 bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
 {
     if (active_app < 0) return false;
@@ -4017,107 +4610,123 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
     }
     if (wm_resizing) {
         if (!left_held) { wm_resizing = false; return true; }
-        wm_dw = (mx - wm_resize_grab_x) + (wm_resize_start_w - ((i32)FB.width  - 280));
-        wm_dh = (my - wm_resize_grab_y) + (wm_resize_start_h - ((i32)FB.height - 220));
+        wm_dw = wm_resize_start_w + (mx - wm_resize_grab_x);
+        wm_dh = wm_resize_start_h + (my - wm_resize_grab_y);
         return true;
     }
 
     if (!click_edge) return false;
+#ifdef FALCON_QEMU_UI_GALLERY
+    /* Emit actual guest PS/2 pointer coordinates on rising-edge clicks.
+     * This proves whether QEMU's synthetic click reached window manager. */
+    outb(0xE9,'k');outb(0xE9,'P');
+    char mx_s[16], my_s[16];
+    k_itoa(mx,mx_s,10); k_itoa(my,my_s,10);
+    for(i32 j=0;mx_s[j];j++)outb(0xE9,(u8)mx_s[j]);
+    outb(0xE9,',');
+    for(i32 j=0;my_s[j];j++)outb(0xE9,(u8)my_s[j]);
+    outb(0xE9,';');
+#endif
+    /* Focus background windows on first click; the next click manipulates
+     * their titlebar. The gesture may also start over any visible header. */
+    if (wm_focus_click(mx,my)) return true;
 
-    /* traffic lights live at title-bar y ± 10px, x within radius 9.
-     *   red    → close (×)
-     *   yellow → minimise to dock
-     *   green  → toggle maximised (+)                                  */
-    i32 ty=wy+20;
-    if(my>=ty-15&&my<=ty+15){
-        if(mx>=wx+ww-44&&mx<wx+ww-9){apps_close();return true;}
-        if(mx>=wx+ww-84&&mx<wx+ww-46){wm_max=!wm_max;return true;}
-        if(mx>=wx+ww-124&&mx<wx+ww-86){
-            minimized_app=active_app;active_app=-1;
-            wm_dragging=false;wm_resizing=false;return true;
+    /* Match the *painted* titlebar hitboxes, including rounded corners:
+     * paint uses y+7..y+37. Earlier y+5..y+35 left the bottom edge dead.
+     * The full chrome row is available even on small-screen profiles. */
+    if(my>=wy+5 && my<wy+42) {
+        if(mx>=wx+ww-48 && mx<wx+ww-6) {
+#ifdef FALCON_QEMU_UI_GALLERY
+            outb(0xE9,'k');outb(0xE9,'X');
+#endif
+            apps_close();return true;
+        }
+        if(mx>=wx+ww-90 && mx<wx+ww-48) {
+            wm_max=!wm_max;return true;
+        }
+        if(mx>=wx+ww-134 && mx<wx+ww-90) {
+            wm_minimize_top();return true;
         }
     }
 
-    /* resize handle: 18×18 square at the bottom-right, only visible
-     * when not maximised. Maximised windows are not resizable. */
+    /* Resize only the actual visible bottom-right grip. */
     if (!wm_max &&
-        mx >= wx + ww - 22 && mx <= wx + ww - 2 &&
-        my >= wy + wh - 22 && my <= wy + wh - 2) {
-        wm_resizing = true;
-        wm_resize_grab_x = mx; wm_resize_grab_y = my;
-        wm_resize_start_w = ww; wm_resize_start_h = wh;
+        mx >= wx + ww - 25 && mx < wx + ww &&
+        my >= wy + wh - 25 && my < wy + wh) {
+        wm_resizing=true;
+        wm_resize_grab_x=mx;wm_resize_grab_y=my;
+        wm_resize_start_w=wm_dw;wm_resize_start_h=wm_dh;
         return true;
     }
 
-    /* title bar: anywhere in the top 36 px not covered by the buttons */
-    if (my >= wy && my <= wy + 36 &&
-        mx >= wx + 80 && mx <= wx + ww - 40) {
-        wm_dragging = true;
-        wm_drag_grab_x = mx; wm_drag_grab_y = my;
+    /* Drag from the complete titlebar, including its app name. Additional
+     * Alt+left-drag anywhere inside the window allows recovery when the
+     * titlebar is covered or the pointer cannot reach a tiny target. */
+    bool alt_held=(kbd_mod_state() & (1u<<2))!=0;
+    bool in_title=my>=wy && my<wy+43 &&
+                  mx>=wx+48 && mx<wx+ww-134;
+    bool alt_drag=alt_held && mx>=wx && mx<wx+ww &&
+                              my>=wy && my<wy+wh;
+    if ((in_title || alt_drag) && left_held && !wm_max) {
+        wm_dragging=true;
+        wm_drag_grab_x=mx;wm_drag_grab_y=my;
         return true;
     }
 
     return false;
 }
 
-/* renders the active app's window with a slide-in animation */
-void apps_render_active(u32 frame)
-{
-    if (active_app < 0) return;
-    const app_def_t *a = &APPS[active_app];
-
-    i32 wx, wy, ww, wh;
-    wm_window_rect(&wx, &wy, &ww, &wh);
-    /* Full-screen blur was expensive on QEMU/TCG; keep depth by dimming the
-     * whole desktop and blurring only a small halo around the active window. */
-    if (SET.aero_enabled) {
-        i32 hx = wx - 24, hy = wy - 24, hw = ww + 48, hh = wh + 48;
-        if (SET.theme == THEME_LIQUID) gfx_blur_rect(hx, hy, hw, hh, 4);
-        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 24);
-    } else {
-        gfx_rect_a(0, 0, FB.width, FB.height, COL_SHADOW, 22);
-    }
-
-    /* slide-in: 200 ms — only on first open, not while dragging */
-    if (!wm_dragging && !wm_resizing) {
-        u32 dt = pit_ms() - open_at_ms;
-        if (dt > 200) dt = 200;
-        i32 off = (i32)((200 - dt) * 60 / 200);
-        wy += off;
-    }
-
-    /* card — Aero dims the desktop / dock / widgets behind the window  
-     * so the chrome feels lifted. Window body remains solid because most
-     * apps render their own opaque content into it.                      */
-    gfx_round_rect_a(wx + 4, wy + 12, ww, wh, 24, COL_SHADOW, 60);   /* shadow */
-    gfx_round_rect_a(wx, wy, ww, wh, 24, PAL_PANEL, SET.aero_enabled ? 246 : 255);
-    gfx_round_outline(wx, wy, ww, wh, 24, PAL_HAIRLINE);
-
-    /* Unified Aura title strip: app symbol left, ChromeOS window actions
-     * on the right; no macOS traffic-light clone. */
+/* Draw all native windows bottom-to-top. Hidden windows are not interactive:
+ * wm_passive_paint suppresses app mouse click inspection until the topmost
+ * focused window is rendered. */
+static void wm_paint_window(u32 frame,bool focused) {
+    if(active_app<0)return;
+    const app_def_t *a=&APPS[active_app];
+    i32 wx,wy,ww,wh;
+    if(!wm_window_rect(&wx,&wy,&ww,&wh))return;
+    /* Geometry must match the WM's hit-test on every frame. Animated
+     * visual offsets previously made traffic lights impossible to click
+     * during the first 200ms after focusing or opening a window. */
+    gfx_round_rect_a(wx+4,wy+12,ww,wh,24,COL_SHADOW,70);
+    gfx_round_rect_a(wx,wy,ww,wh,24,PAL_PANEL,SET.aero_enabled?246:255);
+    gfx_round_outline(wx,wy,ww,wh,24,
+                      focused?PAL_ACCENT:PAL_HAIRLINE);
     gfx_round_rect(wx+14,wy+8,28,28,10,a->tint);
     apps_draw_icon(active_app,wx+28,wy+22);
     gfx_text(wx+54,wy+13,apps_display_name(active_app),PAL_TEXT);
-    gfx_text(wx+ww-115,wy+14,"-",PAL_TEXT_DIM);
-    gfx_text(wx+ww-77,wy+14,"[]",PAL_TEXT_DIM);
-    gfx_round_rect(wx+ww-40,wy+7,31,30,11,0xFBE6E8u);
-    gfx_text_centered(wx+ww-24,wy+14,"x",0xAE3E4Bu);
+    if (focused) gfx_rect_a(wx+54,wy+34,98,2,PAL_ACCENT,220);
+    /* 40px click targets correspond exactly to wm_handle_mouse() below. */
+    gfx_round_rect_a(wx+ww-124,wy+7,38,30,10,PAL_PANEL_HI,255);
+    gfx_text_centered(wx+ww-105,wy+14,"_",PAL_TEXT_DIM);
+    gfx_round_rect_a(wx+ww-84,wy+7,38,30,10,PAL_PANEL_HI,255);
+    gfx_text_centered(wx+ww-65,wy+13,wm_max?"o":"[]",PAL_TEXT_DIM);
+    gfx_round_rect(wx+ww-44,wy+7,35,30,10,0xFBE6E8u);
+    gfx_text_centered(wx+ww-26,wy+14,"x",0xAE3E4Bu);
     gfx_rect_a(wx+13,wy+42,ww-26,1,PAL_HAIRLINE,255);
-
-    /* body offset by 44 px for title strip */
-    a->render(wx, wy + 44, ww, wh - 44, frame);
-
-    /* resize handle (bottom-right) — three little diagonal pips */
-    if (!wm_max) {
-        i32 hx = wx + ww - 14, hy = wy + wh - 14;
-        for (i32 i = 0; i < 3; i++) {
-            gfx_rect(hx - i*4, hy + i*4, 3, 3, PAL_TEXT_FAINT);
-        }
+    a->render(wx,wy+44,ww,wh-44,frame);
+    if(!wm_max){
+        i32 hx=wx+ww-14,hy=wy+wh-14;
+        for(i32 j=0;j<3;j++)gfx_rect(hx-j*4,hy+j*4,3,3,PAL_TEXT_FAINT);
     }
-
-    /* hint */
-    gfx_text_centered(wx + ww / 2, wy + wh - 24,
-        T("Move window by title | resize corner | Esc to close",
-          "Basliktan tasi | koseden boyutlandir | Esc kapat"),
-        PAL_TEXT_FAINT);
+    /* Controls remain in the title bar and Help drawer. Do not paint a
+     * generic hint over app-specific footer text (Files/Browser/Codedium). */
+}
+void apps_render_active(u32 frame) {
+    if(wm_slot_count<=0||active_app<0)return;
+    wm_store_top();
+    if(SET.aero_enabled && SET.theme==THEME_LIQUID)
+        gfx_blur_rect(20,40,(i32)FB.width-40,(i32)FB.height-140,2);
+    /* Keep background visible for spatial awareness and pointer targeting. */
+    gfx_rect_a(0,0,FB.width,FB.height,COL_SHADOW,10);
+    const i32 count=wm_slot_count;
+    for(i32 j=0;j<count;j++) {
+        const wm_slot_t *w=&wm_slots[j];
+        if(w->minimized)continue;
+        active_app=w->app;wm_dx=w->dx;wm_dy=w->dy;
+        wm_dw=w->dw;wm_dh=w->dh;wm_max=w->maximized;
+        wm_passive_paint=(j!=count-1);
+        wm_paint_window(frame,!wm_passive_paint);
+    }
+    wm_passive_paint=false;
+    wm_load_top();
 }

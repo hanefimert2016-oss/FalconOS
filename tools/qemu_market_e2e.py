@@ -79,7 +79,13 @@ def test_gui(args):
         "version": "1.0.0",
         "release": {"name": "Hello World"},
     }
-    state = {"errors": []}
+    state = {"errors": [], "published": []}
+
+    def fake_publish(raw,metadata):
+        if bridge.validate_package(raw,metadata["id"])["version"] != metadata["version"]:
+            raise ValueError("Invalid guest upload")
+        state["published"].append((raw,metadata))
+        return "app-" + metadata["id"] + "-v" + metadata["version"]
 
     def fake_download(url):
         return checksum if url.endswith(".sha256") else PKG
@@ -99,7 +105,7 @@ def test_gui(args):
              patch.object(bridge, "request_bytes", side_effect=fake_download):
             def serve_bridge():
                 try:
-                    bridge.serve(serial_sock)
+                    bridge.serve(serial_sock,publisher=fake_publish)
                 except (ConnectionError, BrokenPipeError, OSError):
                     return
                 except Exception as exc:
@@ -132,9 +138,12 @@ def test_gui(args):
                 wait_for_marker(debug, b"H", after=prior, timeout=12)
                 hmp(mon, "sendkey esc", 0.4)
                 hmp(mon, "sendkey f2", 0.8)
-                # Functional app list: Store is favorite slot 7.
-                for _ in range(7): hmp(mon, "sendkey right", 0.17)
-                hmp(mon, "sendkey ret", 1.0)
+                # Search by real display name. Positional navigation may drop
+                # repeated key events under TCG software rendering.
+                # Setup chose Turkish; apps_display_name(2) is "Kesfet".
+                for letter in "kesfet":
+                    hmp(mon, "sendkey " + letter, 0.31)
+                hmp(mon, "sendkey ret", 1.1)
                 try:
                     wait_for_marker(debug, b"M", timeout=15)
                 except AssertionError:
@@ -147,9 +156,34 @@ def test_gui(args):
                 prior = len(debug.read_bytes())
                 hmp(mon, "sendkey r", 0.4)
                 wait_for_marker(debug, b"C", after=prior, timeout=20)
+                # Search a *real* package, require one actual filtered match.
+                hmp(mon, "sendkey f4", 0.32)
+                for letter in "world":
+                    hmp(mon, "sendkey " + letter, 0.30)
+                # Match must be emitted AFTER the last key was submitted,
+                # otherwise an earlier prefix match can cause a stale shot.
                 prior = len(debug.read_bytes())
-                hmp(mon, "sendkey ret", 0.5)
+                wait_for_marker(debug, b"q1", after=prior, timeout=25)
+                wait_for_marker(debug, b"gC", after=prior, timeout=25)
+                time.sleep(1.0)
+                hmp(mon, "screendump " + str(root / "market-search.ppm"), 0.6)
+                ppm_to_png(root / "market-search.ppm",
+                           root / "FalconOS-Discover-Search.png")
+                hmp(mon, "sendkey f4", 0.65)  # close search input
+                hmp(mon, "sendkey f9", 0.55)  # clear filters, select real app
+                prior = len(debug.read_bytes())
+                hmp(mon, "sendkey f5", 0.6)  # prove normal mode is active
+                wait_for_marker(debug, b"C", after=prior, timeout=20)
+                prior = len(debug.read_bytes())
+                hmp(mon, "sendkey ret", 0.9)
                 wait_for_marker(debug, b"I", after=prior, timeout=35)
+                # Selected installed package -> explicit P -> F10 -> host publisher.
+                prior = len(debug.read_bytes())
+                hmp(mon, "sendkey p", 0.45)
+                hmp(mon, "sendkey f10", 1.5)
+                wait_for_marker(debug,b"J",after=prior,timeout=35)
+                assert state["published"] and state["published"][0][0] == PKG, \
+                    "The exact installed package was not handed to publisher"
                 prior = len(debug.read_bytes())
                 hmp(mon, "sendkey ret", 1.5)
                 wait_for_marker(debug, b"R", after=prior, timeout=12)
@@ -162,7 +196,7 @@ def test_gui(args):
             ppm_to_png(screen, args.output)
             if state["errors"]:
                 raise RuntimeError("Host bridge errors: " + repr(state["errors"]))
-            print("PASS real guest Store -> COM1 LIST -> GET -> SHA256 install -> Terminal launch")
+            print("PASS real Discover search -> SHA256 install -> P/F10 publish -> Terminal launch")
     finally:
         if serial_sock:
             try: serial_sock.close()
