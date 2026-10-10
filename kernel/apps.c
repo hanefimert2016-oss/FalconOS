@@ -3754,6 +3754,11 @@ static void market_launch(i32 i)
 static void market_input_key(i32 key)
 {
     market_update_view();
+    if(key==KEY_F11){
+        market_publish_armed=true;
+        market_publish_armed_cursor=-1; /* exported Desktop/code.app.pkg */
+        return;
+    }
     if(key=='p'||key=='P'){
         market_publish_armed=true;
         market_publish_armed_cursor=market_cursor;
@@ -3826,10 +3831,12 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
     gfx_text_lg_centered(wx+50,wy+26,"+",0xFFFFFFu);
     gfx_text_lg(wx+83,wy+14,"Discover",PAL_TEXT);
     gfx_text(wx+85,wy+49,"FalconOS Marketplace | verified GitHub .app.pkg",PAL_TEXT_DIM);
-    gfx_text(wx+24,wy+91,"F5 refresh | F4 search | F8 filter | P publish | F10 confirm",PAL_TEXT_DIM);
+    gfx_text(wx+24,wy+91,"F5 refresh | F4 search | P selected | F11 add .pkg | F10 confirm",PAL_TEXT_DIM);
     gfx_text(wx+24,wy+111,
         market_publish_armed?
-            "Publish selected .app.pkg to GitHub? F10 confirm / Esc cancel":
+            (market_publish_armed_cursor<0?
+              "Add Desktop/code.app.pkg to GitHub? F10 confirm / Esc cancel":
+              "Publish installed app to GitHub? F10 confirm / Esc cancel"):
             market_status(),PAL_ACCENT);
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool clicked=wm_click_enabled();
@@ -3848,7 +3855,15 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
         market_query_len?PAL_TEXT:PAL_TEXT_DIM);
     /* Do not let the search hit-area steal category-filter clicks. */
     i32 cat_x=wx+ww-158;
-    if(clicked&&mx>=wx+24&&mx<cat_x-4&&my>=wy+138&&my<wy+172){
+    i32 add_x=cat_x-139;
+    gfx_round_rect(add_x,wy+144,130,23,8,PAL_ACCENT_DIM);
+    gfx_text(add_x+10,wy+149,"+ ADD .APP.PKG",PAL_ACCENT);
+    if(clicked&&mx>=add_x&&mx<add_x+130&&my>=wy+144&&my<wy+167){
+        market_publish_armed=true;
+        market_publish_armed_cursor=-1;
+        (void)mouse_consume_click();clicked=false;
+    }
+    if(clicked&&mx>=wx+24&&mx<add_x-4&&my>=wy+138&&my<wy+172){
         market_search_mode=true;(void)mouse_consume_click();clicked=false;
     }
     static const char *catname[]={"All apps","Installed","Updates"};
