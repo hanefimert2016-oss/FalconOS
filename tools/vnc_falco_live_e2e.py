@@ -78,8 +78,21 @@ def main():
                 shot(c,"FalconOS-Falco-Before-Navigation")
                 off=len(events())
                 k(c,"f7" if args.via_host else "f6")
-                wait(b"fS",off,seconds=115) # NOT merely a 200 or generic HTTP result
-                wait(b"fY",off,seconds=115)
+                # Capture the actual guest screen even when the upstream
+                # rejects the site; an error screenshot is NOT success.
+                until=time.monotonic()+115
+                while time.monotonic()<until:
+                    stream=events()[off:]
+                    if b"fS" in stream and b"fY" in stream:
+                        break
+                    if b"fN" in stream:
+                        pause(1.0)
+                        shot(c,"FalconOS-Falco-Failed-Navigation")
+                        raise AssertionError("Guest Falco reported failed site load: "+repr(stream[-250:]))
+                    pause(.22)
+                else:
+                    shot(c,"FalconOS-Falco-Failed-Navigation")
+                    raise TimeoutError("Falco website loading never verified; events "+repr(events()[off:][-250:]))
                 pause(2)
                 shot(c,"FalconOS-Falco-Live-falconos-tech")
                 STATE["checks"].append("Real Falco rendered CA-verified FalconOS Contour HTML text")
