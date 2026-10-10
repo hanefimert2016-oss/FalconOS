@@ -83,7 +83,7 @@ endif
 
 # Build-time baked glTF boot sprites are generated into build/ only.
 # Use ENABLE_BOOT_GLB=1 after tools/bake_boot_intro.py is run.
-ENABLE_BOOT_GLB ?= 0
+ENABLE_BOOT_GLB ?= 1
 ifeq ($(ENABLE_BOOT_GLB),1)
 BOOT_GLB_FLAGS := -DFALCON_BOOT_GLB -I$(BUILD)
 else
@@ -165,10 +165,25 @@ $(BUILD)/kernel/https_bearssl.o: kernel/https_bearssl.c kernel/falcon.h $(TLS_LI
 	$(CC) $(filter-out -nostdinc,$(CFLAGS)) -c $< -o $@
 endif
 
-# ---- link kernel --------------------------------------------------------------
+# ---- original user-provided boot intro -----------------------------------------
+# Bake real 3D keyframes from the uploaded GLB at build time; OS itself has
+# only a bounded, freestanding RGB sprite player. Use a private venv when the
+# host lacks Python 3D dependencies: never modify the host's Python install.
 ifeq ($(ENABLE_BOOT_GLB),1)
+$(BUILD)/boot_model_frames.inc: assets/boot/falconos_boot_intro_animation.glb tools/bake_boot_intro.py | $(BUILD)
+	@if python3 -c 'import numpy, cv2, trimesh, PIL' >/dev/null 2>&1; then \
+	  python3 tools/bake_boot_intro.py --source $< --out $@ --frames 48; \
+	else \
+	  python3 -m venv $(BUILD)/boot-intro-venv && \
+	  $(BUILD)/boot-intro-venv/bin/pip install --disable-pip-version-check 'numpy<3' trimesh opencv-python-headless pillow && \
+	  $(BUILD)/boot-intro-venv/bin/python tools/bake_boot_intro.py --source $< --out $@ --frames 48; \
+	fi
+
 $(BUILD)/kernel/boot_glb_animation.o: $(BUILD)/boot_model_frames.inc
+$(BUILD)/kernel/main.o: $(BUILD)/boot_model_frames.inc
 endif
+
+# ---- link kernel --------------------------------------------------------------
 
 $(KERNEL): $(ASM_OBJS) $(C_OBJS) $(TLS_OBJECTS) $(TLS_LIBRARY) linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(ASM_OBJS) $(C_OBJS) $(TLS_OBJECTS) $(TLS_LIBRARY)
