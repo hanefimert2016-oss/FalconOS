@@ -3754,7 +3754,11 @@ static void market_input_key(i32 key)
                 market_query[market_query_len]=0;
             }
         }
-        market_update_view();return;
+        market_update_view();
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'q');outb(0xE9,(u8)('0'+market_view_count));
+#endif
+        return;
     }
     if(key=='r'||key=='R'||key==KEY_F5){
         market_refresh();market_update_view();return;
@@ -3937,6 +3941,9 @@ static void code_export(void)
     k_memcpy(file->data,pkg,bytes+1);
     file->len=bytes;
     code_status = "Created valid FAPP/1 code.app.pkg in guest Desktop";
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'E'); /* package actually built and written */
+#endif
 }
 static void code_input_key(i32 key)
 {
