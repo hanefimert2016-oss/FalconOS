@@ -30,20 +30,31 @@ installed package and press P then F10 to publish the *exact saved .app.pkg*;
 when no release is selected it publishes `/home/falcon/Desktop/code.app.pkg`.
 All packages remain strict, maximum 4 KiB FAPP/1 scripts — NOT native GUI apps.
 
-**GitHub publishing opt-in (Arch Linux host only):**
+**Host-only GitHub publishing (Arch Linux, FalconOS does NOT boot):**
 ```bash
-sudo pacman -S github-cli
-gh auth login
+sudo pacman -S --needed github-cli
 gh auth status
-make run-market-publish
+cd ~/FalconOS-Publisher
+make run-market-publish PKG=/path/to/code.app.pkg
 ```
-`run-market` remains **download-only**. `run-market-publish` explicitly
-authorizes this VM to publish a new **public** immutable GitHub Release to
-`hanefimert2016-oss/FalconOS-Marketplace` via the authenticated host
-`gh` client. You must also confirm inside the guest. Tokens NEVER enter the
-guest or `.app.pkg`. Existing tags fail closed; change `# app-version`
-for updates. The repository's automatic build-from-source workflow is a
-separate publication path.
+You can also run `make run-market-publish` and enter the existing local
+`.app.pkg` path when asked. The command checks the package format and requests
+explicit confirmation (type `PUBLISH`) before creating a **public** immutable
+GitHub Release with its SHA-256 checksum. There is **no** dependency on
+`nasm`, QEMU, GRUB, a booted guest, or an ISO. To validate without publishing:
+`python3 tools/publish_app.py --package /path/to/code.app.pkg --check-only`.
+
+**Publishing directly from Codedium/Discover *inside* FalconOS:**
+```bash
+make run-market-publish-vm
+```
+That separate target boots QEMU and enables a guest-confirmed publisher bridge.
+`market-bridge-publish` enables the same bridge if FalconOS is *already*
+running with its matching QEMU serial socket. `run-market` stays download-only.
+The host's `gh` client owns GitHub credentials; none enter the guest. Existing
+release tags fail closed; increase `# app-version` before another release.
+Both publish routes upload an existing validated FAPP/1 script, not native GUI
+executables. Automatic source-to-release workflows are a different path.
 
 **Falco:** F6 attempts guest-native HTTPS to `falconos.tech`, F7 attempts
 host-verified HTTPS. The site currently returns **HTTP 403 on GitHub Actions
