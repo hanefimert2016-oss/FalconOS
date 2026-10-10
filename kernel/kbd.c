@@ -18,7 +18,7 @@
 #define PS2_DATA   0x60
 #define PS2_STATUS 0x64
 
-#define KBUF 64
+#define KBUF 256
 static volatile i32 KBD_BUF[KBUF];
 static volatile u32 KBD_HEAD = 0, KBD_TAIL = 0;
 
