@@ -147,6 +147,16 @@ def test_gui(args):
                 prior = len(debug.read_bytes())
                 hmp(mon, "sendkey r", 0.4)
                 wait_for_marker(debug, b"C", after=prior, timeout=20)
+                # Search a *real* package, require one actual filtered match.
+                hmp(mon, "sendkey f4", 0.32)
+                prior = len(debug.read_bytes())
+                for letter in "world":
+                    hmp(mon, "sendkey " + letter, 0.24)
+                wait_for_marker(debug, b"q1", after=prior, timeout=20)
+                hmp(mon, "screendump " + str(root / "market-search.ppm"), 0.6)
+                ppm_to_png(root / "market-search.ppm",
+                           root / "FalconOS-Discover-Search.png")
+                hmp(mon, "sendkey f4", 0.4)  # back to Install/Run mode
                 prior = len(debug.read_bytes())
                 hmp(mon, "sendkey ret", 0.5)
                 wait_for_marker(debug, b"I", after=prior, timeout=35)
@@ -162,7 +172,7 @@ def test_gui(args):
             ppm_to_png(screen, args.output)
             if state["errors"]:
                 raise RuntimeError("Host bridge errors: " + repr(state["errors"]))
-            print("PASS real guest Store -> COM1 LIST -> GET -> SHA256 install -> Terminal launch")
+            print("PASS real Discover search q1 -> COM1 LIST -> SHA256 verified install -> Terminal launch")
     finally:
         if serial_sock:
             try: serial_sock.close()
