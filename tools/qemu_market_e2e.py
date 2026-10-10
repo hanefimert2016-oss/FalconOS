@@ -79,7 +79,13 @@ def test_gui(args):
         "version": "1.0.0",
         "release": {"name": "Hello World"},
     }
-    state = {"errors": []}
+    state = {"errors": [], "published": []}
+
+    def fake_publish(raw,metadata):
+        if bridge.validate_package(raw,metadata["id"])["version"] != metadata["version"]:
+            raise ValueError("Invalid guest upload")
+        state["published"].append((raw,metadata))
+        return "app-" + metadata["id"] + "-v" + metadata["version"]
 
     def fake_download(url):
         return checksum if url.endswith(".sha256") else PKG
@@ -99,7 +105,7 @@ def test_gui(args):
              patch.object(bridge, "request_bytes", side_effect=fake_download):
             def serve_bridge():
                 try:
-                    bridge.serve(serial_sock)
+                    bridge.serve(serial_sock,publisher=fake_publish)
                 except (ConnectionError, BrokenPipeError, OSError):
                     return
                 except Exception as exc:
@@ -164,6 +170,13 @@ def test_gui(args):
                 prior = len(debug.read_bytes())
                 hmp(mon, "sendkey ret", 0.5)
                 wait_for_marker(debug, b"I", after=prior, timeout=35)
+                # Selected installed package -> explicit P -> F10 -> host publisher.
+                prior = len(debug.read_bytes())
+                hmp(mon, "sendkey p", 0.45)
+                hmp(mon, "sendkey f10", 1.5)
+                wait_for_marker(debug,b"J",after=prior,timeout=35)
+                assert state["published"] and state["published"][0][0] == PKG, \
+                    "The exact installed package was not handed to publisher"
                 prior = len(debug.read_bytes())
                 hmp(mon, "sendkey ret", 1.5)
                 wait_for_marker(debug, b"R", after=prior, timeout=12)
@@ -176,7 +189,7 @@ def test_gui(args):
             ppm_to_png(screen, args.output)
             if state["errors"]:
                 raise RuntimeError("Host bridge errors: " + repr(state["errors"]))
-            print("PASS real Discover search q1 -> COM1 LIST -> SHA256 verified install -> Terminal launch")
+            print("PASS real Discover search -> SHA256 install -> P/F10 publish -> Terminal launch")
     finally:
         if serial_sock:
             try: serial_sock.close()
