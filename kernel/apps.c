@@ -3664,6 +3664,46 @@ static void render_heroic(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 /* ---- Marketplace: actual release catalogue + verified FAPP/1 script launch --- */
 static i32 market_cursor;
 static bool market_first_frame = true;
+/* Discover has an actual filtered view, while IDs remain stable for package
+ * installation and the terminal/prg inventory. No placeholder catalog. */
+#define MARKET_VIEW_CAP 48
+static i32 market_view[MARKET_VIEW_CAP],market_view_count,market_category;
+static char market_query[40];
+static i32 market_query_len;
+static bool market_search_mode;
+static bool market_match(const char *haystack,const char *needle){
+    if(!needle[0])return true;
+    for(i32 i=0;haystack[i];i++){
+        i32 j=0;
+        while(needle[j]&&haystack[i+j]){
+            char a=haystack[i+j],b=needle[j];
+            if(a>='A'&&a<='Z')a+=32;
+            if(b>='A'&&b<='Z')b+=32;
+            if(a!=b)break;
+            j++;
+        }
+        if(!needle[j])return true;
+    }
+    return false;
+}
+static void market_update_view(void){
+    market_view_count=0;
+    for(i32 i=0;i<market_count()&&market_view_count<MARKET_VIEW_CAP;i++){
+        if(market_category==1&&!market_installed(i))continue;
+        if(market_category==2&&!market_has_update(i))continue;
+        if(!market_match(market_name(i),market_query))continue;
+        market_view[market_view_count++]=i;
+    }
+    bool found=false;
+    for(i32 j=0;j<market_view_count;j++)if(market_view[j]==market_cursor)found=true;
+    if(!found)market_cursor=market_view_count?market_view[0]:-1;
+}
+static i32 market_selected_row(void){
+    for(i32 j=0;j<market_view_count;j++)
+        if(market_view[j]==market_cursor)return j;
+    return 0;
+}
+
 static void market_launch(i32 i)
 {
     const char *script = market_script(i);
@@ -3694,81 +3734,135 @@ static void market_launch(i32 i)
 }
 static void market_input_key(i32 key)
 {
-    i32 n = market_count();
-    if (key == 'r' || key == 'R' || key == KEY_F5) {
-        market_refresh(); market_cursor = 0; return;
+    market_update_view();
+    if(key==KEY_F4){market_search_mode=!market_search_mode;return;}
+    if(key==KEY_F8){
+        market_category=(market_category+1)%3;
+        market_update_view();return;
     }
-    if (key == 'c' || key == 'C') {
-        apps_open(18); return; /* CodeDium Studio */
+    if(key==KEY_F9){
+        market_query_len=0;market_query[0]=0;market_category=0;
+        market_update_view();return;
     }
-    if ((key == 'd' || key == 'D') && n > 0) {
-        market_uninstall(market_cursor); return;
+    if(market_search_mode){
+        if(key==KEY_BACKSPACE){
+            if(market_query_len>0)market_query[--market_query_len]=0;
+        }else{
+            char bytes[4];i32 count=key_to_utf8(key,bytes);
+            if(count>0&&market_query_len+count<(i32)sizeof market_query){
+                for(i32 j=0;j<count;j++)market_query[market_query_len++]=bytes[j];
+                market_query[market_query_len]=0;
+            }
+        }
+        market_update_view();return;
     }
-    if ((key == 'u' || key == 'U') && n > 0) { market_download(market_cursor); return; }
-    if (key == KEY_UP && market_cursor > 0) market_cursor--;
-    if (key == KEY_DOWN && market_cursor < n-1) market_cursor++;
-    if (key == KEY_ENTER && n > 0) {
-        if (market_installed(market_cursor)) market_launch(market_cursor);
+    if(key=='r'||key=='R'||key==KEY_F5){
+        market_refresh();market_update_view();return;
+    }
+    if(key=='c'||key=='C'){apps_open(18);return;}
+    if(market_view_count==0)return;
+    i32 row=market_selected_row();
+    if(key==KEY_UP&&row>0)market_cursor=market_view[row-1];
+    if(key==KEY_DOWN&&row+1<market_view_count)
+        market_cursor=market_view[row+1];
+    if(key=='d'||key=='D'){market_uninstall(market_cursor);return;}
+    if(key=='u'||key=='U'){market_download(market_cursor);return;}
+    if(key==KEY_ENTER){
+        if(market_has_update(market_cursor))
+            market_download(market_cursor);
+        else if(market_installed(market_cursor))
+            market_launch(market_cursor);
         else market_download(market_cursor);
     }
 }
-static void render_market(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
+static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 {
-    if (market_first_frame) {
-        outb(0xE9, 'M');  /* QEMU trace: Store window really rendered */
-        market_first_frame = false;
+    if(market_first_frame){
+        outb(0xE9,'M');
+        market_first_frame=false;
     }
     (void)frame;
     gfx_round_rect_a(wx+18,wy+8,ww-36,75,19,PAL_PANEL_DEEP,255);
     gfx_round_rect(wx+30,wy+19,40,40,13,0x20AA83u);
     gfx_text_lg_centered(wx+50,wy+26,"+",0xFFFFFFu);
     gfx_text_lg(wx+83,wy+14,"Discover",PAL_TEXT);
-    gfx_text(wx+85,wy+49,"FalconOS-Marketplace / GitHub Releases / FAPP/1",PAL_TEXT_DIM);
-    gfx_text(wx+24,wy+91,"R refresh | U update | D remove | Enter install/run | C CodeDium",PAL_TEXT_DIM);
-    gfx_text(wx + 24, wy + 114, market_status(), PAL_ACCENT);
-    i32 mx, my; bool held; mouse_get(&mx, &my, &held); (void)held;
-    bool clicked = wm_click_enabled();
-    if (clicked && mx >= wx + 24 && mx <= wx + ww - 24 &&
-        my >= wy + 87 && my <= wy + 107) {
-        market_refresh(); (void)mouse_consume_click(); clicked = false;
+    gfx_text(wx+85,wy+49,"FalconOS Marketplace | verified GitHub .app.pkg",PAL_TEXT_DIM);
+    gfx_text(wx+24,wy+91,"F5 refresh | F4 search | F8 filter | F9 reset | Enter run/install",PAL_TEXT_DIM);
+    gfx_text(wx+24,wy+111,market_status(),PAL_ACCENT);
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    bool clicked=wm_click_enabled();
+    if(clicked&&mx>=wx+24&&mx<=wx+ww-24&&
+       my>=wy+87&&my<=wy+107){
+        market_refresh();(void)mouse_consume_click();clicked=false;
     }
-    i32 n = market_count();
-    if (n == 0) {
-        gfx_round_rect_a(wx + 24, wy + 149, ww - 48, 90, 14, PAL_PANEL_DEEP, 255);
-        gfx_text(wx + 42, wy + 179, "No releases yet. Start make market-bridge, then press R.", PAL_TEXT);
+    /* Search acts on real release titles and installed package names. */
+    gfx_round_rect_a(wx+24,wy+138,ww-48,34,10,PAL_PANEL_DEEP,255);
+    gfx_round_outline(wx+24,wy+138,ww-48,34,10,
+                      market_search_mode?PAL_ACCENT:PAL_HAIRLINE);
+    gfx_circle_outline(wx+41,wy+154,6,PAL_ACCENT);
+    gfx_text(wx+57,wy+148,
+        market_query_len?market_query:(market_search_mode?
+            "Type app name...":"F4  Search apps"),
+        market_query_len?PAL_TEXT:PAL_TEXT_DIM);
+    if(clicked&&mx>=wx+24&&mx<wx+ww-24&&my>=wy+138&&my<wy+172){
+        market_search_mode=true;(void)mouse_consume_click();clicked=false;
     }
-    i32 visible = (wh - 189) / 38;
-    if (visible < 1) visible = 1;
-    i32 first = market_cursor - visible / 2;
-    if (first < 0) first = 0;
-    if (first > n - visible) first = n - visible;
-    if (first < 0) first = 0;
-    for (i32 i = first; i < n && i < first + visible; i++) {
-        i32 y = wy + 150 + (i - first) * 38;
-        bool selected = i == market_cursor;
-        gfx_round_rect_a(wx + 24, y, ww - 48, 34, 10,
-                         selected ? PAL_ACCENT_DIM : PAL_PANEL_DEEP, 255);
-        gfx_round_outline(wx + 24, y, ww - 48, 34, 10,
-                          selected ? PAL_ACCENT : PAL_HAIRLINE);
-        gfx_circle(wx + 40, y + 17, 6, selected ? PAL_ACCENT : COL_OK);
-        gfx_text(wx + 57, y + 9, market_name(i), PAL_TEXT);
-        gfx_text(wx + ww / 2, y + 9, market_version(i), PAL_TEXT_FAINT);
-        bool installed = market_installed(i);
-        bool outdated = installed && market_has_update(i);
-        gfx_text(wx + ww - 140, y + 9,
-                 outdated ? "UPDATE" : (installed ? "RUN" : "GET"),
-                 outdated ? COL_WARN : (installed ? COL_OK : PAL_ACCENT));
-        if (clicked && mx >= wx + 24 && mx < wx + ww - 24 &&
-            my >= y && my <= y + 34) {
-            market_cursor = i;
-            if (market_has_update(i)) market_download(i);
-            else if (market_installed(i)) market_launch(i);
+    static const char *catname[]={"All apps","Installed","Updates"};
+    i32 cat_x=wx+ww-158;
+    gfx_round_rect(cat_x,wy+144,129,23,8,PAL_ACCENT_DIM);
+    gfx_text(cat_x+9,wy+149,catname[market_category],PAL_ACCENT);
+    if(clicked&&mx>=cat_x&&mx<cat_x+129&&my>=wy+144&&my<wy+167){
+        market_category=(market_category+1)%3;
+        (void)mouse_consume_click();clicked=false;
+    }
+    market_update_view();
+    i32 count=market_view_count;
+    i32 total=market_count();
+    if(!total){
+        gfx_round_rect_a(wx+24,wy+189,ww-48,90,14,PAL_PANEL_DEEP,255);
+        gfx_text(wx+42,wy+225,
+            "Catalog offline or empty. Run make market-bridge and press F5.",
+            PAL_TEXT_DIM);
+    }else if(!count){
+        gfx_round_rect_a(wx+24,wy+189,ww-48,90,14,PAL_PANEL_DEEP,255);
+        gfx_text(wx+42,wy+225,"No matching releases or installed packages.",PAL_TEXT_DIM);
+    }
+    i32 visible=(wh-240)/39;
+    if(visible<1)visible=1;
+    i32 selected=market_selected_row();
+    i32 first=selected-visible/2;
+    if(first<0)first=0;
+    if(first>count-visible)first=count-visible;
+    if(first<0)first=0;
+    for(i32 row=first;row<count&&row<first+visible;row++){
+        i32 i=market_view[row];
+        i32 y=wy+188+(row-first)*39;
+        bool active=(i==market_cursor);
+        gfx_round_rect_a(wx+24,y,ww-48,35,10,
+            active?PAL_ACCENT_DIM:PAL_PANEL_DEEP,255);
+        gfx_round_outline(wx+24,y,ww-48,35,10,
+            active?PAL_ACCENT:PAL_HAIRLINE);
+        gfx_circle(wx+41,y+18,7,active?PAL_ACCENT:COL_OK);
+        gfx_text(wx+58,y+11,market_name(i),PAL_TEXT);
+        gfx_text(wx+ww/2,y+11,market_version(i),PAL_TEXT_DIM);
+        bool installed=market_installed(i);
+        bool update=installed&&market_has_update(i);
+        gfx_text(wx+ww-135,y+11,update?"UPDATE":(installed?"RUN":"INSTALL"),
+            update?COL_WARN:(installed?COL_OK:PAL_ACCENT));
+        if(clicked&&mx>=wx+24&&mx<wx+ww-24&&my>=y&&my<y+35){
+            market_cursor=i;
+            if(update)market_download(i);
+            else if(installed)market_launch(i);
             else market_download(i);
-            (void)mouse_consume_click(); clicked = false;
+            (void)mouse_consume_click();clicked=false;
         }
     }
-    gfx_text(wx + 24, wy + wh - 27,
-             "Reviewed .app.pkg | SHA-256 checked | GitHub Releases + local guest storage", PAL_TEXT_FAINT);
+    char nums[12];k_itoa(count,nums,10);
+    gfx_text(wx+24,wy+wh-48,nums,PAL_ACCENT);
+    gfx_text(wx+49,wy+wh-48,"visible releases",PAL_TEXT_DIM);
+    gfx_text(wx+24,wy+wh-25,
+        "SHA-256 verified | U update | D uninstall | C CodeDium | FAPP/1 scripts",
+        PAL_TEXT_FAINT);
 }
 
 /* ---- CodeDium: native editable FAPP/1 source, file save and script preview --- */
