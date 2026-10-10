@@ -184,19 +184,26 @@ $(ISO): $(KERNEL) boot/grub.cfg
 # ---- run ----------------------------------------------------------------------
 # Run FalconOS first, then start this in a second terminal to enable
 # GitHub Releases downloads through the opt-in COM1 bridge.
-.PHONY: market-bridge market-bridge-publish run-market run-market-publish
+.PHONY: market-bridge market-bridge-publish run-market run-market-publish run-market-publish-vm
 market-bridge:
 	python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock
 
-# Only start this when you want confirmed guest operations to publish
-# publicly using the host's authenticated gh CLI. No credentials in VM.
+# Host-only upload: reads an existing .app.pkg and creates a public Release.
+# No kernel build, NASM, QEMU, ISO or VM is required.
+# Usage: make run-market-publish PKG=/path/to/your.app.pkg
+#        make run-market-publish  # prompts for a file path and confirmation
+run-market-publish:
+	@python3 tools/publish_app.py
+
+# Separate, opt-in bridge mode for publishing from Codedium / Discover
+# *inside a running FalconOS guest*. Kept for existing VM workflows.
 market-bridge-publish:
 	python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock --enable-publish
 
-run-market-publish: $(ISO) $(BUILD)/falcon-safe.raw
+run-market-publish-vm: $(ISO) $(BUILD)/falcon-safe.raw
 	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock --enable-publish & \
-	  bridge_pid=$$!; \
-	  trap 'kill $$bridge_pid 2>/dev/null || true' EXIT; \
+	  bridge_pid=$!; \
+	  trap 'kill $bridge_pid 2>/dev/null || true' EXIT; \
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 # All-in-one QEMU + HTTPS-to-COM1 bridge; kill the bridge when QEMU exits.
