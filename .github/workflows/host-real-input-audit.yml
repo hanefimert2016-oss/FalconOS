@@ -1,0 +1,47 @@
+name: FalconOS real desktop mouse+keyboard audit
+on:
+  push:
+    branches: [audit/real-input-20261010]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  gtk-hid-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install X11 virtual desktop and real GUI input utilities
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb xauth xdotool qemu-system-x86 qemu-system-gui
+      - name: Download SHA-verified latest original Aura ISO (not a mock UI)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build
+          gh run download 38044760051 -R hanefimert2016-oss/FalconOS -n FalconOS-Aura-upgrade-ISO -D build
+          echo '51a8cfa41475812795c7b05c1cb7d902868abc50d0c76b221d21687f5e711646  build/FalconOS.iso' | sha256sum -c -
+      - name: Drive guest via GTK window with host XTest mouse and keyboard (no QMP/HMP input)
+        id: gui
+        continue-on-error: true
+        run: |
+          timeout 260s xvfb-run -a -s '-screen 0 3200x2000x24' python3 tools/host_real_input_audit.py
+      - name: Upload screenshots, guest events, mouse coordinates and QEMU error log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Host-Real-Mouse-Keyboard-Audit
+          path: |
+            build/FalconOS-Host-*.png
+            build/host-real-hid-report.json
+            build/host-real-hid-debug.log
+            build/qemu-gtk-stderr.log
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Fail CI when actual graphical HID path fails
+        if: steps.gui.outcome != 'success'
+        run: |
+          echo 'The live GTK/XTest keyboard+mouse test failed. See the previous diagnostic step and artifact.' >&2
+          exit 1
