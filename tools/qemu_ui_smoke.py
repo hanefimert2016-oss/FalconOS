@@ -245,10 +245,18 @@ def main():
             for _ in range(3): command(sock,"mouse_move 0 20",.09)
             command(sock,"mouse_move 0 4",.13)
             command(sock,"mouse_move 0 3",.15)
+            ppm=root/"FalconOS-Aura-Pointer-Before-Close.ppm"
+            screenshot(sock,ppm)
+            ppm_to_png(ppm,root/"FalconOS-Aura-Pointer-Before-Close.png")
             click_offset=len(debug.read_bytes())
             command(sock,"mouse_button 1",.35)
             command(sock,"mouse_button 0",.40)
-            wait_for_marker(debug,b"kX",after=click_offset,timeout=15)
+            try:
+                wait_for_marker(debug,b"kX",after=click_offset,timeout=15)
+            except (AssertionError, RuntimeError):
+                events=debug.read_bytes()[click_offset:]
+                print("MOUSE DIAGNOSTICS: "+repr(events[-450:]),flush=True)
+                raise
             ppm=root/"FalconOS-Aura-Window-Close-Clicked.ppm"
             screenshot(sock,ppm)
             ppm_to_png(ppm,root/"FalconOS-Aura-Window-Close-Clicked.png")
