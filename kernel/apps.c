@@ -3234,7 +3234,7 @@ static void falco_search(void){
     i32 n=0;
     while(body[n]&&n<(i32)sizeof falco_results-1){
         u8 c=(u8)body[n];
-        falco_results[n]=(c<32&&c!='\n')?' ':((c>126)?'?':(char)c);
+        falco_results[n]=(c<32&&c!='\n')?' ':(char)c; /* retain validated UTF-8 for Turkish */
         n++;
     }
     falco_results[n]=0;
@@ -3371,7 +3371,13 @@ static void chrome_focus_url(void){
     browser_address_focus=true;
 }
 /* F6 enables a clearly labeled host-validated TLS proxy, never automatic. */
+/* Standard build has no native BearSSL; use trusted host HTTPS bridge.
+ * The status bar always labels this as HOST TLS, never guest-native TLS. */
+#ifdef FALCON_BEARSSL
 static bool browser_host_gateway=false;
+#else
+static bool browser_host_gateway=true;
+#endif
 static bool browser_dhcp_attempted=false;
 static char browser_result[4096];
 static char browser_text[4096];
@@ -3396,7 +3402,7 @@ static void browser_page_from_http(void){
         if(c=='\r'||c=='\n'||c=='\t'||c==' '){
             space=true;continue;
         }
-        if((u8)c<32u||(u8)c>=127u)continue;
+        if((u8)c<32u)continue; /* preserve UTF-8 letters; glyph renderer validates */
         if(space&&n>0&&browser_text[n-1]!=' ')browser_text[n++]=' ';
         space=false;
         browser_text[n++]=c;
@@ -3529,7 +3535,14 @@ static void falco_navigate(const char *address,bool use_host){
     outb(0xE9,'f');outb(0xE9,browser_loaded?'Y':'N');
 #endif
 }
-static void falco_open_site(const char *address){falco_navigate(address,false);}
+static void falco_open_site(const char *address){
+#ifdef FALCON_BEARSSL
+    falco_navigate(address,false);
+#else
+    /* No pretend native TLS: host gateway performs verified HTTPS. */
+    falco_navigate(address,true);
+#endif
+}
 static void falco_open_site_host(const char *address){falco_navigate(address,true);}
 static void chrome_input_key(i32 key){
     if((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
