@@ -184,9 +184,20 @@ $(ISO): $(KERNEL) boot/grub.cfg
 # ---- run ----------------------------------------------------------------------
 # Run FalconOS first, then start this in a second terminal to enable
 # GitHub Releases downloads through the opt-in COM1 bridge.
-.PHONY: market-bridge run-market
+.PHONY: market-bridge market-bridge-publish run-market run-market-publish
 market-bridge:
 	python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock
+
+# Only start this when you want confirmed guest operations to publish
+# publicly using the host's authenticated gh CLI. No credentials in VM.
+market-bridge-publish:
+	python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock --enable-publish
+
+run-market-publish: $(ISO) $(BUILD)/falcon-safe.raw
+	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock --enable-publish & \
+	  bridge_pid=$!; \
+	  trap 'kill $bridge_pid 2>/dev/null || true' EXIT; \
+	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 # All-in-one QEMU + HTTPS-to-COM1 bridge; kill the bridge when QEMU exits.
 run-market: $(ISO) $(BUILD)/falcon-safe.raw
