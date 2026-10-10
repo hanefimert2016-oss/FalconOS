@@ -30,24 +30,53 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Connection","close")
         self.end_headers()
         self.wfile.write(body)
-    def safe_tls_fetch(self,url):
-        parsed=urllib.parse.urlparse(url)
-        if parsed.scheme!="https" or not parsed.hostname:return None
-        # Only public destinations. Never follow redirects to private networks.
-        for answer in socket.getaddrinfo(parsed.hostname,443,type=socket.SOCK_STREAM):
-            if not ipaddress.ip_address(answer[4][0]).is_global:
-                raise ValueError("Destination refused (not globally routable)")
-        handler=urllib.request.build_opener(
+    def validated_https_request(self,url,max_bytes,accept="text/html,text/plain"):
+        """Follow at most four safe HTTPS redirects with CA/hostname checks.
+
+        Refuse HTTP downgrade, credential-bearing URLs, non-public DNS answers,
+        custom ports, and URL cycles. Never turn this into an open localhost proxy.
+        """
+        seen=set()
+        redirects=(301,302,303,307,308)
+        opener=urllib.request.build_opener(
             urllib.request.HTTPSHandler(context=ssl.create_default_context()),
             NoRedirect())
-        req=urllib.request.Request(url,headers={
-            "User-Agent":"FalconOS-Search/0.5 (education)",
-            "Accept-Encoding":"identity",
-            "Connection":"close"})
-        with handler.open(req,timeout=12) as response:
-            if response.status!=200:
-                raise ValueError("Upstream status not 200")
-            return response.read(120000)
+        for hop in range(5):
+            parsed=urllib.parse.urlsplit(url)
+            host=parsed.hostname or ""
+            if (parsed.scheme!="https" or parsed.username is not None or
+                parsed.password is not None or parsed.port not in (None,443) or
+                not (1<=len(host)<=190) or
+                not re.fullmatch(r"[a-zA-Z0-9.-]+",host) or
+                host[0] in ".-" or host[-1] in ".-"):
+                raise ValueError("Blocked unsafe redirect destination")
+            if url in seen:
+                raise ValueError("Redirect loop blocked")
+            seen.add(url)
+            answers=socket.getaddrinfo(host,443,type=socket.SOCK_STREAM)
+            if not answers or any(not ipaddress.ip_address(a[4][0]).is_global
+                                  for a in answers):
+                raise ValueError("Blocked non-public HTTPS destination")
+            request=urllib.request.Request(url,headers={
+                "User-Agent":"FalconOS-VerifiedText/1.0",
+                "Accept-Encoding":"identity","Accept":accept,
+                "Connection":"close"})
+            try:
+                with opener.open(request,timeout=12) as response:
+                    if response.status!=200:
+                        raise ValueError("Unexpected upstream status "+str(response.status))
+                    return response.read(max_bytes)
+            except urllib.error.HTTPError as error:
+                if error.code not in redirects:
+                    raise ValueError("Upstream HTTP "+str(error.code)) from error
+                location=error.headers.get("Location")
+                if not location or hop>=4:
+                    raise ValueError("Redirect missing target or exceeded limit")
+                url=urllib.parse.urljoin(url,location)
+        raise ValueError("Too many HTTPS redirects")
+    def safe_tls_fetch(self,url):
+        return self.validated_https_request(url,120000,accept="application/json")
+
     def verified_text(self,body):
         output=body.encode("utf-8") if isinstance(body,str) else body
         if len(output)>2700:output=output[:2700]
@@ -97,28 +126,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
            (c.isalnum() or c in "-.") for c in host) or host[0] in "-.":
             return self.send_text(400,"Invalid hostname")
         try:
-            # Block local/private targets, including IPv4/IPv6 DNS answers.
-            for answer in socket.getaddrinfo(host,443,type=socket.SOCK_STREAM):
-                ip=ipaddress.ip_address(answer[4][0])
-                if not ip.is_global:
-                    return self.send_text(403,"Private/reserved destination denied")
+            # HTTPS-only redirects and every DNS hop are checked above.
             url="https://"+host+"/"+tail
-            opener=urllib.request.build_opener(
-                urllib.request.HTTPSHandler(context=ssl.create_default_context()),
-                NoRedirect())
-            request=urllib.request.Request(url,headers={
-                "User-Agent":"FalconOS-VerifiedText/0.1",
-                "Accept-Encoding":"identity","Accept":"text/html,text/plain",
-                "Connection":"close"})
-            try:
-                with opener.open(request,timeout=12) as response:
-                    status=response.status
-                    data=response.read(2401)
-            except urllib.error.HTTPError as e:
-                return self.send_text(502,
-                    "Upstream HTTP error (redirects not followed): "+str(e.code))
-            if status!=200:
-                return self.send_text(502,"Invalid HTTPS status")
+            data=self.validated_https_request(url,2401)
             # Compact bounded text is more useful than rejecting common pages.
             # No JS/CSS executes on the guest.
             if len(data)>2350:
@@ -136,7 +146,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
         except (OSError,ssl.SSLError,ValueError) as e:
-            self.send_text(502,"TLS verification or HTTPS network failed: "+str(e)[:160])
+            print("HTTPS_FETCH_FAILURE",host,repr(e),flush=True)
+            self.send_text(502,"HTTPS source unavailable: "+str(e)[:180])
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--bind",required=True,help="127.0.0.1 (QEMU) or virbr0 IPv4 (libvirt)")
