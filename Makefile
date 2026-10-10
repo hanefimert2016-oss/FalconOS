@@ -112,12 +112,16 @@ CPUS          ?= 6
 VRAM          ?= 256
 DISK_CAPACITY ?= 4G
 
-QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
+# Boot the GRUB CD-ROM before the unbootable persistent data disk.
+# This must match the explicit -boot d used by our real QEMU CI tests.
+QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -boot order=d \
+                 -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
                  -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display sdl -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
-HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
+HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -boot order=d \
+                 -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
                  -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display none -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
