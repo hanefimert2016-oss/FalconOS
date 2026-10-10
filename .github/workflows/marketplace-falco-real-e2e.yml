@@ -62,7 +62,7 @@ jobs:
           /tmp/falcon-e2e/bin/pip -q install vncdotool pillow
       - name: Compile native FalconOS with BearSSL
         run: |
-          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_TLS_PUBLIC_TEST -DFALCON_QEMU_UI_GALLERY'
           grub-file --is-x86-multiboot2 build/falcon.elf
       - name: Open EXACT falconos.tech in Falco from guest desktop and prove Contour content
         id: falco
