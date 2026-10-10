@@ -363,7 +363,7 @@ static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 /* --- Files: live SHFS browser with real folders and a searchable list. ---
  * This UI never fabricates files; only SHFS enumerated entries are displayed.
  * F4 search, Left/Right locations, Up/Down scroll. The same exact file state
- * is shared with Notes, CodeDium and downloaded FAPP/1 packages. */
+ * is shared with Notes, Codedium and downloaded FAPP/1 packages. */
 static i32 files_scroll, files_scope;
 static bool files_search_mode;
 static char files_filter[40];
@@ -3922,7 +3922,7 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
         market_publish_status(),PAL_TEXT_FAINT);
 }
 
-/* ---- CodeDium: native editable FAPP/1 source, file save and script preview --- */
+/* ---- Codedium: native editable FAPP/1 source, file save and script preview --- */
 #define CODE_CAP 4096
 static char code_text[CODE_CAP];
 static i32 code_len, code_cursor;
@@ -3934,7 +3934,7 @@ static void code_init(void)
     code_ready = true;
     shfs_init();
     shfs_ent_t *file = shfs_lookup("/home/falcon/Desktop/project.fsh");
-    const char *sample = "# app-id: codedium-demo\n# app-name: CodeDium Demo\n# app-version: 1.0.0\n# app-summary: Built inside FalconOS\nclear\necho Hello from CodeDium\nuname\n";
+    const char *sample = "# app-id: codedium-demo\n# app-name: Codedium Demo\n# app-version: 1.0.0\n# app-summary: Built inside FalconOS\nclear\necho Hello from Codedium\nuname\n";
     const char *source = (file && !file->is_dir) ? file->data : sample;
     i32 disklen = codedium_project_load(code_text, CODE_CAP);
     if (disklen > 0) source = code_text;
@@ -4080,7 +4080,7 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 {
     (void)frame;
     code_init();
-    section(wx,wy,"CodeDium Studio","FAPP/1 editor  |  sandboxed commands only");
+    section(wx,wy,"Codedium Studio","FAPP/1 editor  |  sandboxed commands only");
     /* Toolbar performs real actions; not placeholder or static artwork. */
     const char *names[]={"Save  F5","Run  F6","Export  F7",
                          "GitHub F10"};
@@ -4191,7 +4191,7 @@ static app_def_t APPS[] = {
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
-    { "CodeDium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
+    { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
@@ -4551,7 +4551,7 @@ static void wm_paint_window(u32 frame,bool focused) {
         for(i32 j=0;j<3;j++)gfx_rect(hx-j*4,hy+j*4,3,3,PAL_TEXT_FAINT);
     }
     /* Controls remain in the title bar and Help drawer. Do not paint a
-     * generic hint over app-specific footer text (Files/Browser/CodeDium). */
+     * generic hint over app-specific footer text (Files/Browser/Codedium). */
 }
 void apps_render_active(u32 frame) {
     if(wm_slot_count<=0)return;
