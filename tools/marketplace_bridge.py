@@ -13,6 +13,7 @@ import re
 import socket
 import time
 import urllib.request
+import urllib.error
 import subprocess
 import tempfile
 from pathlib import Path
@@ -20,6 +21,7 @@ from pathlib import Path
 API = "https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases?per_page=100"
 ALLOWED = {"echo", "date", "uname", "uptime", "whoami", "pwd", "ls", "help", "cal", "hwinfo", "free", "df", "clear"}
 MAX_BYTES = 4096
+STATIC_ROOT = "https://raw.githubusercontent.com/hanefimert2016-oss/FalconOS-Marketplace/main/site/native/"
 APP_ID = re.compile(r"[a-z][a-z0-9-]{1,31}\Z")
 NAME = re.compile(r"[A-Za-z0-9 .,:!?+/_()\-]{2,75}\Z")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?\Z")
@@ -31,7 +33,8 @@ def request_json(url):
 
 def request_bytes(url):
     if not (url.startswith("https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/")
-            or url.startswith("https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases/assets/")):
+            or url.startswith("https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases/assets/")
+            or (url.startswith(STATIC_ROOT) and re.fullmatch(r"[a-z][a-z0-9-]{1,31}-v[0-9a-z.\-]+\.app\.pkg(?:\.sha256)?", url[len(STATIC_ROOT):]))):
         raise ValueError("untrusted asset URL")
     req = urllib.request.Request(url, headers={"User-Agent": "FalconOS-Bridge/1.0"})
     with urllib.request.urlopen(req, timeout=25) as response:
@@ -105,7 +108,11 @@ def semver_key(version):
 def releases():
     result = {}
     for page in range(1, 6):
-        batch = request_json(API + f"&page={page}")
+        try:
+            batch = request_json(API + f"&page={page}")
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print("GitHub Releases API unavailable, trying reviewed static catalog:", exc, flush=True)
+            break
         if not batch:
             break
         for release in batch:
@@ -131,7 +138,41 @@ def releases():
                     continue
                 result[m.group(1)] = {"asset": a, "checksum_asset": sha_asset,
                                        "version": m.group(2), "release": release}
+    if not result:
+        result = static_catalog()
     return dict(sorted(result.items())[:48])
+
+
+def static_catalog():
+    """Read the reviewed HTTPS fallback catalog when GitHub API is limited.
+
+    Never use unsigned arbitrary host paths. Filenames, IDs, versions and
+    checksums are validated, and GET verifies package SHA-256 again.
+    """
+    req=urllib.request.Request(STATIC_ROOT+"catalog.fcat",
+                               headers={"User-Agent":"FalconOS-Bridge/1.0"})
+    with urllib.request.urlopen(req,timeout=15) as response:
+        raw=response.read(8193)
+    if len(raw)>8192 or not raw.startswith(b"FCAT/1\n"):
+        raise ValueError("invalid static Marketplace catalog")
+    entries={}
+    for line in raw.decode("ascii").splitlines()[1:]:
+        fields=line.split("|")
+        if len(fields)!=6 or fields[0]!="CAT":
+            raise ValueError("invalid catalog row")
+        _,app_id,ver,name,digest,filename=fields
+        if (not APP_ID.fullmatch(app_id) or not VERSION.fullmatch(ver)
+            or not NAME.fullmatch(name) or not re.fullmatch(r"[0-9a-f]{64}",digest)
+            or filename != f"{app_id}-v{ver}.app.pkg"):
+            raise ValueError("unsafe catalog metadata")
+        entries[app_id]={
+          "asset":{"name":filename,"browser_download_url":STATIC_ROOT+filename},
+          "checksum_asset":{"name":filename+".sha256",
+                            "browser_download_url":STATIC_ROOT+filename+".sha256"},
+          "version":ver,"release":{"name":name,"tag_name":f"app-{app_id}-v{ver}"},
+          "static_digest":digest,
+        }
+    return entries
 
 
 REPO = "hanefimert2016-oss/FalconOS-Marketplace"
@@ -267,6 +308,8 @@ def serve(sock, publisher=None):
                 published = checksum.decode("ascii").split()[0]
                 if not re.fullmatch(r"[0-9a-f]{64}", published) or published != digest:
                     raise ValueError("Published Release checksum does not match package")
+                if entry.get("static_digest") and digest != entry["static_digest"]:
+                    raise ValueError("Static catalog SHA-256 mismatch")
                 # SHA-256 is independently checked again by the guest.
                 send_acknowledged(sock, "BEGIN|" + app_id + "|" + str(len(raw)) + "|" + digest)
                 for start in range(0, len(raw), 16):
