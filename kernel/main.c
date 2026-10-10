@@ -605,7 +605,7 @@ void long_start(u64 magic, u64 info_ptr)
         /* Sign out / Sleep from the power menu set lockscreen back to
          * locked — re-enter the lockscreen modal until unlocked again.   */
         if (!lockscreen_is_unlocked()) {
-            while (apps_active() >= 0) apps_close();
+            apps_close_all();
             if (launchpad_is_open()) launchpad_close();
             power_menu_close();
             kbd_drain(); mouse_drain();
@@ -625,7 +625,7 @@ void long_start(u64 magic, u64 info_ptr)
             }
             /* F1: switch between Personal and Developer shells. */
             if (k == KEY_F1) {
-                while (apps_active() >= 0) apps_close();
+                apps_close_all();
                 if (launchpad_is_open()) launchpad_close();
                 g_mode = (g_mode == MODE_PERSONAL) ? MODE_DEVELOPER : MODE_PERSONAL;
                 continue;
