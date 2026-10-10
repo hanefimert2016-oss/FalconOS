@@ -57,7 +57,7 @@ def main():
         proc=subprocess.Popen(cmd,stdout=subprocess.DEVNULL,stderr=err)
         try:
             wid=window()
-            xdo('windowactivate','--sync',wid,pause=1)
+            xdo('windowfocus','--sync',wid,pause=1)
             xdo('mousemove','--window',wid,600,430,pause=.8)
             wait_mark(b'L',t=75)
             for m in (b'T',b'A',b'K',b'D',b'U'):
