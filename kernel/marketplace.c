@@ -118,6 +118,11 @@ static void on_line(char *line) {
     }
     if (k_strcmp(line, "DONE") == 0) {
         status_text = "Catalog ready. Enter: download/run, R: refresh";
+#ifdef FALCON_QEMU_UI_GALLERY
+        /* An accepted CAT entry is not the end of a multi-release transfer.
+         * GUI tests must wait for this marker before searching the catalog. */
+        outb(0xE9,'m');outb(0xE9,'D');
+#endif
         return;
     }
     if (k_strncmp(line, "ERR|", 4) == 0) {
