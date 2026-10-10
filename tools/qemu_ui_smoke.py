@@ -233,6 +233,26 @@ def main():
             screenshot(sock,ppm)
             ppm_to_png(ppm,root/"FalconOS-Aura-Clock.png")
             print("PASS: six concurrently running native windows; clock and launcher render")
+            # Verify a real pointer-driven titlebar action, not just keyboard
+            # app switches.  PS/2 driver starts at (480,360).  In the 2560x1440
+            # default 2K guest, the sixth cascading window has its close icon
+            # centered at approximately (1786,520).  Small relative motions
+            # avoid 8-bit PS/2 packet overflow; the kernel's 2.5x acceleration
+            # maps 26 * raw 20 + raw 4 to about 1306 pixels horizontally.
+            # QEMU monitor mouse_move targets the real guest PS/2 device.
+            for _ in range(26): command(sock,"mouse_move 20 0",.09)
+            command(sock,"mouse_move 4 0",.13)
+            for _ in range(3): command(sock,"mouse_move 0 20",.09)
+            command(sock,"mouse_move 0 4",.13)
+            command(sock,"mouse_move 0 3",.15)
+            click_offset=len(debug.read_bytes())
+            command(sock,"mouse_button 1",.35)
+            command(sock,"mouse_button 0",.40)
+            wait_for_marker(debug,b"kX",after=click_offset,timeout=15)
+            ppm=root/"FalconOS-Aura-Window-Close-Clicked.ppm"
+            screenshot(sock,ppm)
+            ppm_to_png(ppm,root/"FalconOS-Aura-Window-Close-Clicked.png")
+            print("PASS: PS/2 pointer physically clicked native upper-right Close button")
         score = picture_difference(before, after)
         ppm_to_png(last, args.output)
         events = debug.read_bytes() if debug.exists() else b""
