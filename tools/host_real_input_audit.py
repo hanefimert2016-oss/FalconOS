@@ -39,7 +39,12 @@ def window():
         time.sleep(.3)
     raise RuntimeError('GTK QEMU window not found')
 def click():
-    start=len(read());xdo('click','1',pause=.5);part=read()[start:]
+    start=len(read())
+    # Human-length press plus motion while held forces a PS/2 packet, unlike an instantaneous XTest click.
+    xdo('mousedown','1',pause=.45)
+    xdo('mousemove_relative','--sync','--',1,0,pause=.22)
+    xdo('mouseup','1',pause=.5)
+    part=read()[start:]
     pts=re.findall(rb'kP(\d+),(\d+);',part)
     if b'mL' not in part or not pts:raise RuntimeError('Host mouse failed to reach PS/2 WM: '+repr(part[-180:]))
     x,y=map(int,pts[-1]);STATE['mouse_click_events'].append([x,y])
