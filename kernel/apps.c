@@ -39,7 +39,7 @@ static i32 builtin_app_count(void);
  * Geometry lives per window; the selected window alone receives keyboard
  * and mouse events. This is OS framebuffer code, not the web preview. */
 #define WM_MAX_WINDOWS 6
-typedef struct { i32 app, dx, dy, dw, dh; bool maximized; } wm_slot_t;
+typedef struct { i32 app, dx, dy, dw, dh; bool maximized, minimized; } wm_slot_t;
 static wm_slot_t wm_slots[WM_MAX_WINDOWS];
 static i32 wm_slot_count;
 static i32 wm_dx, wm_dy, wm_dw, wm_dh;
@@ -52,7 +52,7 @@ static bool wm_click_enabled(void) {
     return !wm_passive_paint && mouse_peek_click();
 }
 static void wm_store_top(void) {
-    if (wm_slot_count <= 0) return;
+    if (wm_slot_count <= 0 || active_app < 0) return;
     wm_slot_t *w=&wm_slots[wm_slot_count-1];
     w->dx=wm_dx; w->dy=wm_dy; w->dw=wm_dw; w->dh=wm_dh;
     w->maximized=wm_max;
@@ -63,19 +63,36 @@ static void wm_load_top(void) {
         return;
     }
     const wm_slot_t *w=&wm_slots[wm_slot_count-1];
-    active_app=w->app; wm_dx=w->dx; wm_dy=w->dy;
+    active_app=w->minimized?-1:w->app;
+    wm_dx=w->dx; wm_dy=w->dy;
     wm_dw=w->dw; wm_dh=w->dh; wm_max=w->maximized;
 }
 static void wm_raise(i32 index) {
-    if (index<0||index>=wm_slot_count||index==wm_slot_count-1)return;
+    if (index<0||index>=wm_slot_count)return;
     wm_store_top();
+    if(index==wm_slot_count-1){
+        wm_slots[index].minimized=false;wm_load_top();return;
+    }
     wm_slot_t raised=wm_slots[index];
+    raised.minimized=false;
     for(i32 j=index;j<wm_slot_count-1;j++) wm_slots[j]=wm_slots[j+1];
     wm_slots[wm_slot_count-1]=raised;
     wm_load_top();
     wm_dragging=wm_resizing=false;
     open_at_ms=pit_ms();
 }
+static void wm_minimize_top(void) {
+    if(wm_slot_count<=0 || active_app<0)return;
+    wm_store_top();
+    wm_slot_t hidden=wm_slots[wm_slot_count-1];
+    hidden.minimized=true;
+    for(i32 j=wm_slot_count-1;j>0;j--)wm_slots[j]=wm_slots[j-1];
+    wm_slots[0]=hidden;
+    minimized_app=hidden.app;
+    wm_load_top();
+    wm_dragging=wm_resizing=false;
+}
+i32 apps_window_count(void) {return wm_slot_count;}
 bool apps_is_open(i32 app) {
     for(i32 j=0;j<wm_slot_count;j++)if(wm_slots[j].app==app)return true;
     return false;
@@ -108,7 +125,7 @@ void apps_open(i32 app) {
     static const i32 y_off[6]={-95,-35,45,105,0,80};
     i32 cascade=wm_slot_count;
     wm_slot_t item={.app=app,.dx=x_off[cascade],.dy=y_off[cascade],
-                    .dw=0,.dh=0,.maximized=false};
+                    .dw=0,.dh=0,.maximized=false,.minimized=false};
     wm_slots[wm_slot_count++]=item;
     wm_load_top();
     if(app==2)outb(0xE9,'S');
@@ -118,7 +135,7 @@ void apps_open(i32 app) {
     wm_dragging=wm_resizing=false;
 }
 void apps_close(void) {
-    if(wm_slot_count>0)wm_slot_count--;
+    if(wm_slot_count>0&&active_app>=0)wm_slot_count--;
     wm_load_top();
     wm_dragging=wm_resizing=false;
 }
@@ -4521,6 +4538,7 @@ static bool wm_focus_click(i32 mx,i32 my) {
     i32 selected=-1;
     for(i32 j=wm_slot_count-1;j>=0;j--) {
         const wm_slot_t *w=&wm_slots[j];
+        if(w->minimized)continue;
         active_app=w->app;wm_dx=w->dx;wm_dy=w->dy;
         wm_dw=w->dw;wm_dh=w->dh;wm_max=w->maximized;
         i32 x,y,wid,hei;
@@ -4570,7 +4588,7 @@ bool apps_wm_handle_mouse(i32 mx, i32 my, bool left_held, bool click_edge)
         if(mx>=wx+ww-44&&mx<wx+ww-9){apps_close();return true;}
         if(mx>=wx+ww-84&&mx<wx+ww-46){wm_max=!wm_max;return true;}
         if(mx>=wx+ww-124&&mx<wx+ww-86){
-            minimized_app=active_app;apps_close();return true;
+            wm_minimize_top();return true;
         }
     }
 
@@ -4632,7 +4650,7 @@ static void wm_paint_window(u32 frame,bool focused) {
      * generic hint over app-specific footer text (Files/Browser/Codedium). */
 }
 void apps_render_active(u32 frame) {
-    if(wm_slot_count<=0)return;
+    if(wm_slot_count<=0||active_app<0)return;
     wm_store_top();
     if(SET.aero_enabled && SET.theme==THEME_LIQUID)
         gfx_blur_rect(20,40,(i32)FB.width-40,(i32)FB.height-140,2);
@@ -4641,6 +4659,7 @@ void apps_render_active(u32 frame) {
     const i32 count=wm_slot_count;
     for(i32 j=0;j<count;j++) {
         const wm_slot_t *w=&wm_slots[j];
+        if(w->minimized)continue;
         active_app=w->app;wm_dx=w->dx;wm_dy=w->dy;
         wm_dw=w->dw;wm_dh=w->dh;wm_max=w->maximized;
         wm_passive_paint=(j!=count-1);
