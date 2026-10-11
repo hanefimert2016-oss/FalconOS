@@ -131,7 +131,9 @@ def main():
                     wait(b"t0",off,35);wait(b"c0",off,35)
                     light=capture_theme("Light")
                     chrome=(500,115,950,145)
-                    document=(450,350,950,610)
+                    # Exclude the immutable guest pointer at x~470,y~350;
+                    # only the actual site document may enter this ROI.
+                    document=(520,400,940,600)
                     def differs(a,b,rect):
                         return ImageChops.difference(a.crop(rect),b.crop(rect)).getbbox() is not None
                     if not (differs(liquid,dark,chrome) and
