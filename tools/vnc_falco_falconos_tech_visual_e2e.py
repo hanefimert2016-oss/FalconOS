@@ -83,7 +83,12 @@ def main():
                 wait(b"zNn1",offset,65);wait(b"gN",offset,65)
                 pause(.8);snap(client,"FalconOS-Falco-Tech-Before")
                 STATE["checks"].append("Real FalconOS Falco app painted")
-                offset=len(events());k(client,"f9")
+                # Test the USER FLOW, not an F9-only showcase:
+                # type the public URL in the actual Falco omnibox and Enter.
+                k(client,"f4")
+                t(client,"falconos.tech")
+                offset=len(events());k(client,"enter")
+                STATE["checks"].append("Typed falconos.tech into native Falco omnibox and pressed Enter")
                 try:
                     wait(b"vY",offset,95)
                     wait(b"nY",offset,20)
