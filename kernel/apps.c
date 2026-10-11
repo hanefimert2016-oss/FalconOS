@@ -4925,6 +4925,7 @@ static app_def_t APPS[] = {
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
     { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
     { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,fapp_gui_input,icon_fapp_runner },
+    { "Capture Studio","first-party screen recorder",0x346DDA,capture_studio_render,capture_studio_input,capture_studio_icon },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
@@ -4934,9 +4935,9 @@ static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
  * connected AI) are deliberately absent rather than mislabeled as working.
  * USB UVC camera is not yet implemented and is never faked.
  */
-static const i32 LAUNCH_FAVORITES[] = {1,14,13,6,7,3,5,2,8};
-static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,18,5};
-static const i32 LAUNCH_ALL[] = {1,14,13,6,7,3,5,2,8,9,4,17,18};
+static const i32 LAUNCH_FAVORITES[] = {1,14,13,20,6,7,3,5,2,8};
+static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,18,20,5};
+static const i32 LAUNCH_ALL[] = {1,14,13,20,6,7,3,5,2,8,9,4,17,18};
 i32 apps_launcher_count(i32 group) {
     if(group==0) return (i32)(sizeof LAUNCH_FAVORITES/sizeof *LAUNCH_FAVORITES);
     if(group==1) return (i32)(sizeof LAUNCH_SYSTEM/sizeof *LAUNCH_SYSTEM);
@@ -5000,6 +5001,7 @@ const char *apps_display_name(i32 i)
         case 15: return "Heroic";
         case 16: return "Jarvis";
         case 17: return "Hakkında";
+        case 20: return "Capture Studio";
         default: return APPS[i].name;
     }
 }
@@ -5033,6 +5035,7 @@ const char *apps_display_subtitle(i32 i)
         case 15: return "Oyun başlatıcı (uyum)";
         case 16: return "Yapay asistan";
         case 17: return "FalconOS bilgisi";
+        case 20: return "Gerçek ekran kaydı ve canlı önizleme";
         default: return APPS[i].subtitle;
     }
 }
@@ -5118,6 +5121,11 @@ void apps_draw_icon(i32 i,i32 cx,i32 cy){
         gfx_line(cx,cy-9,cx,cy+6,white);
         gfx_line(cx-6,cy+2,cx,cy+8,white);
         gfx_line(cx+6,cy+2,cx,cy+8,white);
+        break;
+    case 20: /* FalconOS Capture Studio */
+        gfx_round_rect(cx-12,cy-8,20,16,5,white);
+        gfx_circle(cx-2,cy,5,0x204176u);
+        gfx_circle(cx+12,cy-9,4,0xFF6678u);
         break;
     case 17: /* Information */
         gfx_circle_outline(cx,cy,12,white);
