@@ -133,6 +133,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if len(out)<=4:out.append("No public repositories found.")
         return self.verified_text("\n".join(out)[:2200])
 
+    def download_native_pkg(self,path):
+        """Download an explicitly requested public HTTPS .app.pkg; never run it.
+
+        Host validates origin/hostname via system CA bundle; guest separately
+        validates strict FAPP/1 and only writes a bounded Downloads document.
+        No untrusted host command or executable native code is invoked.
+        """
+        if len(path)>340 or any(c in path for c in ("#","\\","?")):
+            return self.send_text(400,"Invalid .app.pkg download path")
+        host,sep,tail=path.partition("/")
+        if not sep or not host or not re.fullmatch(r"[A-Za-z0-9.-]{1,130}",host):
+            return self.send_text(400,"Invalid download hostname")
+        if not tail.endswith(".app.pkg") or not tail or ".." in tail:
+            return self.send_text(400,"Direct .app.pkg HTTPS URL required")
+        name=tail.rsplit("/",1)[-1]
+        if len(name)>32 or not re.fullmatch(r"[A-Za-z0-9_.-]+\.app\.pkg",name):
+            return self.send_text(400,"Unsafe or too long package filename")
+        try:
+            upstream="https://"+host+"/"+tail
+            # All redirects validated, including nonpublic IPs and HTTPS only.
+            content=self.validated_https_request(upstream,4097,
+                    accept="application/octet-stream,application/x-fapp")
+            if not (70<=len(content)<=4095) or b"\x00" in content or not content.startswith(b"FAPP/1\n"):
+                return self.send_text(422,"Unsupported or oversized FAPP/1 payload")
+            self.send_response(200)
+            self.send_header("Content-Type","application/x-fapp")
+            self.send_header("Content-Length",str(len(content)))
+            self.send_header("X-Falcon-Pkg-TLS","host-ca-verified")
+            self.send_header("X-Falcon-Pkg-Source",host)
+            self.send_header("Connection","close")
+            self.end_headers()
+            self.wfile.write(content)
+        except (OSError,ssl.SSLError,ValueError,urllib.error.HTTPError) as exc:
+            print("FAPP_FETCH_FAILED",repr(exc),flush=True)
+            self.send_text(502,"HTTPS package download failed")
+
     def do_GET(self):
         # No open Internet proxy on a public network.
         try:
@@ -140,6 +176,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not (client.is_private or client.is_loopback):
                 return self.send_text(403,"Denied outside trusted VM NAT.")
         except ValueError:return self.send_text(403,"Unknown client.")
+        if self.path.startswith("/download/") and len(self.path)<=400:
+            return self.download_native_pkg(self.path[len("/download/"):])
         if self.path.startswith("/search/") and len(self.path)<=390:
             query=urllib.parse.unquote(self.path[8:])
             try:
