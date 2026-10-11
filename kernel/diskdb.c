@@ -123,13 +123,25 @@ static bool validate_and_import(const u8 *buf)
     /* Legacy saved accounts and packages MUST survive wallpaper upgrades.
      * Field was appended at the end, so old records remain byte-compatible. */
     u32 old_size=(u32)__builtin_offsetof(settings_t,wallpaper_style);
-    if(h->length != sizeof(settings_t) && h->length != old_size)return false;
+    u32 previous_size=(u32)__builtin_offsetof(settings_t,user_theme_active);
+    if(h->length!=sizeof(settings_t) &&
+       h->length!=previous_size && h->length!=old_size)return false;
     const u8 *payload = buf + sizeof(super_hdr_t);
     if (fletcher16(payload,h->length) != h->checksum)return false;
     k_memset(&SET,0,sizeof SET);
     k_memcpy(&SET,payload,h->length);
     if(h->length==old_size)SET.wallpaper_style=0;
     if(SET.wallpaper_style>3u)SET.wallpaper_style=0;
+    if(h->length<=previous_size){
+        SET.user_theme_active=0;
+        SET.user_wallpaper_top=0x0B193Au;
+        SET.user_wallpaper_bottom=0x2B72A5u;
+        SET.user_accent_color=0x72E1D0u;
+    }
+    SET.user_theme_active=SET.user_theme_active?1u:0u;
+    SET.user_wallpaper_top &= 0xFFFFFFu;
+    SET.user_wallpaper_bottom &= 0xFFFFFFu;
+    SET.user_accent_color &= 0xFFFFFFu;
     return true;
 }
 
