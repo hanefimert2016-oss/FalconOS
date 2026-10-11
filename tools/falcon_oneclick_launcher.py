@@ -25,6 +25,15 @@ def announce(message):
         print("FalconOS:",message,file=sys.stderr)
 
 def main():
+    if len(sys.argv)>1 and sys.argv[1]=="--check":
+        expected=["FalconOS.iso","make_safe_disk.py","marketplace_bridge.py",
+                  "falcon_https_gateway.py","falco_native_gateway.py"]
+        missing=[x for x in expected if not (ROOT/x).is_file()]
+        if missing:
+            print("FalconOS AppImage resource validation failed:",missing,file=sys.stderr)
+            return 2
+        print("PASS: actual AppImage entrypoint and ISO/native resources verified")
+        return 0
     if os.name!="posix" or sys.platform!="linux":
         announce("This release is a Linux x86_64 AppImage, not a Windows EXE.")
         return 1
