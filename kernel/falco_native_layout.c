@@ -109,7 +109,7 @@ void falco_native_paint(i32 x,i32 y,i32 w,i32 h,i32 scroll,u32 frame){
     gfx_circle(x+36,y+30,13,0x3588FFu);
     gfx_text_centered(x+36,y+22,"F",0xFFFFFFu);
     gfx_text_lg(x+63,y+16,"Falco Native",0xF8FBFFu);
-    gfx_text(x+w-196,y+25,"HTML/CSS subset",0xB8D5FFu);
+    gfx_text(x+w-164,y+25,"Native HTML",0xB8D5FFu);
     gfx_round_rect(x+20,y+75,w-40,42,12,0xFFFFFFu);
     gfx_round_outline(x+20,y+75,w-40,42,12,0xDDE6F4u);
     gfx_circle(x+37,y+96,6,0x14A879u);
@@ -139,14 +139,19 @@ void falco_native_paint(i32 x,i32 y,i32 w,i32 h,i32 scroll,u32 frame){
         if(rows>5)rows=5;
         i32 height=(heading?46:24)+rows*fontrow;
         if(height<62)height=62;
-        if(cy+height>=y+169 && cy<bottom){
+        /* No global scissor rectangle exists in this framebuffer API.
+         * Draw only complete cards in the content viewport; otherwise the
+         * previous build painted through the bottom status bar and Shelf. */
+        if(cy>=y+169 && cy+height<=bottom){
             u32 bg=heading?0xECF3FFu:(subtitle?0xEFF8FBu:0xFFFFFFu);
             gfx_round_rect(bx,cy,column,height,heading?19:12,bg);
             gfx_round_outline(bx,cy,column,height,heading?19:12,0xDCE7F6u);
             if(heading)gfx_rect(bx+15,cy+16,4,height-32,0x3178F6u);
             if(b->role=='A'||b->role=='B'){
-                gfx_round_rect(bx+column-64,cy+13,47,22,10,0xD5E7FFu);
-                gfx_text(bx+column-58,cy+16,b->role=='A'?"LINK":"GO",0x2356A7u);
+                /* A genuine hyperlink is exposed as a semantic tag, but this
+                 * prototype has no arbitrary URL navigation yet. Never
+                 * disguise inert content as a working clickable button. */
+                gfx_text(bx+column-86,cy+19,"LINK TEXT",0x6880A1u);
             }
             (void)native_paragraph(bx+30,cy+17,column-61,cy+height-8,
                                     b->text,heading,heading?navy:ink);
