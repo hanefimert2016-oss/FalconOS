@@ -726,6 +726,44 @@ void gfx_text(i32 x, i32 y, const char *s, u32 c)
     }
 }
 
+
+/* Pixel-center resampling of 8x16 ALPHA glyphs, not upscaled bitmaps or
+ * a binary 16x32 font. The bilinear filter samples native grayscale
+ * coverage at 12x24 or 16x32 for smooth multi-resolution typography. */
+static void gfx_text_antialiased(i32 x,i32 y,const char *s,u32 color,
+                                 i32 glyphw,i32 glyphh){
+    while(*s){
+        u32 cp=utf8_next(&s);
+        i32 glyph=glyph_index(cp);
+        if(glyph<0)glyph='?'-0x20;
+        const u8 *source=FONT8X16[glyph];
+        for(i32 py=0;py<glyphh;py++){
+            i32 yy=((2*py+1)*16*128)/glyphh-128;
+            i32 sy=yy>>8;
+            i32 wy=yy-(sy<<8);
+            for(i32 px=0;px<glyphw;px++){
+                i32 xx=((2*px+1)*8*128)/glyphw-128;
+                i32 sx=xx>>8;
+                i32 wx=xx-(sx<<8);
+                u32 a00=_font8_at(source,sx,sy);
+                u32 a10=_font8_at(source,sx+1,sy);
+                u32 a01=_font8_at(source,sx,sy+1);
+                u32 a11=_font8_at(source,sx+1,sy+1);
+                u32 a=(a00*(256-wx)*(256-wy)+a10*wx*(256-wy)+
+                       a01*(256-wx)*wy+a11*wx*wy+32768u)>>16;
+                if(a)gfx_pixel_a(x+px,y+py,color,(u8)a);
+            }
+        }
+        x+=glyphw;
+    }
+}
+void gfx_text_medium(i32 x,i32 y,const char *s,u32 color){
+    gfx_text_antialiased(x,y,s,color,12,24);
+}
+void gfx_text_smooth_lg(i32 x,i32 y,const char *s,u32 color){
+    gfx_text_antialiased(x,y,s,color,16,32);
+}
+
 void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c)
 {
     gfx_text(cx - gfx_text_width(s) / 2, y, s, c);
