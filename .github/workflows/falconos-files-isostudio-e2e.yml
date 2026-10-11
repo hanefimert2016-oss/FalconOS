@@ -1,0 +1,48 @@
+name: FalconOS Files + ISO Studio real guest
+on:
+  push:
+    branches: [feature/falconos-files-personalization-isostudio-20261011]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-iso-and-files:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU toolchain and VNC
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv
+          python3 -m venv /tmp/falcon-iso
+          /tmp/falcon-iso/bin/pip -q install pillow vncdotool
+      - name: Build custom bare metal kernel with ISO Studio and native Files
+        run: |
+          PATH="/tmp/falcon-iso/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 \
+            EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Real Marketplace application and ISO9660 Files GUI test
+        id: isostudio
+        continue-on-error: true
+        run: timeout 660s /tmp/falcon-iso/bin/python tools/vnc_iso_studio_files_e2e.py
+      - name: Deliver actual QEMU PNGs logs and result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Files-ISOStudio-Real-QEMU-PNG
+          path: |
+            build/FalconOS-ISO-Studio-*.png
+            build/FalconOS-Files-*.png
+            build/iso-studio-*.log
+            build/iso-studio-*.json
+          if-no-files-found: warn
+      - name: Deliver verified ISO
+        if: steps.isostudio.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Files-ISOStudio-Bootable-ISO
+          path: build/FalconOS.iso
+      - name: Fail real workflow on invalid Marketplace download or ISO9660 build
+        if: steps.isostudio.outcome != 'success'
+        run: exit 1
