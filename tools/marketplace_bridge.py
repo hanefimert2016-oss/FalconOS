@@ -165,6 +165,8 @@ def static_catalog():
             or not NAME.fullmatch(name) or not re.fullmatch(r"[0-9a-f]{64}",digest)
             or filename != f"{app_id}-v{ver}.app.pkg"):
             raise ValueError("unsafe catalog metadata")
+        if app_id in entries and semver_key(ver) <= semver_key(entries[app_id]["version"]):
+            continue
         entries[app_id]={
           "asset":{"name":filename,"browser_download_url":STATIC_ROOT+filename},
           "checksum_asset":{"name":filename+".sha256",
@@ -286,7 +288,8 @@ def serve(sock, publisher=None):
                 cache = releases()
                 for app_id, entry in list(cache.items())[:48]:
                     asset = entry["asset"]
-                    name = entry["release"].get("name", app_id)
+                    name = entry["release"].get("name") or app_id
+                    if not isinstance(name,str):name=app_id
                     name = re.sub(r"[^A-Za-z0-9 .,_-]", "", name)[:38] or app_id
                     send_acknowledged(sock, "CAT|" + app_id + "|" + entry["version"] + "|" + name)
                 send(sock, "DONE")
@@ -305,9 +308,11 @@ def serve(sock, publisher=None):
                     raise ValueError("manifest version mismatch")
                 digest = hashlib.sha256(raw).hexdigest()
                 checksum = request_bytes(entry["checksum_asset"]["browser_download_url"])
-                published = checksum.decode("ascii").split()[0]
-                if not re.fullmatch(r"[0-9a-f]{64}", published) or published != digest:
+                fields=checksum.decode("ascii").split()
+                if not fields or len(fields)>2 or not re.fullmatch(r"[0-9a-f]{64}",fields[0]) or fields[0]!=digest:
                     raise ValueError("Published Release checksum does not match package")
+                if len(fields)==2 and fields[1].lstrip("*")!=entry["asset"]["name"]:
+                    raise ValueError("Published checksum points to a different package")
                 if entry.get("static_digest") and digest != entry["static_digest"]:
                     raise ValueError("Static catalog SHA-256 mismatch")
                 # SHA-256 is independently checked again by the guest.
