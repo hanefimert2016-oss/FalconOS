@@ -59,3 +59,58 @@ jobs:
       - name: Enforce exact user-specified double-click behavior
         if: steps.pkg.outcome != 'success' || steps.guest_url.outcome != 'success'
         run: exit 1
+
+  github-release:
+    needs: app-pkg-native
+    if: github.ref == 'refs/heads/feature/falco-app-pkg-doubleclick-20261011'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      contents: write
+    steps:
+      - name: Retrieve freshly verified ISO
+        uses: actions/download-artifact@v4
+        with:
+          name: FalconOS-APP-PKG-DoubleClick-Verified-ISO
+          path: release
+      - name: Retrieve real QEMU screenshots
+        uses: actions/download-artifact@v4
+        with:
+          name: FalconOS-APP-PKG-DoubleClick-Real-QEMU-PNG
+          path: release
+      - name: Retrieve genuine HTTPS SHA256 checked FAPP package
+        env:
+          FAPP_URL: https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/app-hello-world-v1.0.0/hello-world-v1.0.0.app.pkg
+          FAPP_SHA256: eb045bbfa6feed47ff21adbca4af4af256fcc744c7799f1e21f56461dbe743ad
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 "$FAPP_URL" -o release/hello-world-v1.0.0.app.pkg
+          echo "$FAPP_SHA256  release/hello-world-v1.0.0.app.pkg" | sha256sum -c -
+          sha256sum release/FalconOS.iso release/hello-world-v1.0.0.app.pkg \
+            > release/SHA256SUMS.txt
+          ls -lh release/FalconOS.iso release/hello-world-v1.0.0.app.pkg
+      - name: Publish FalconOS native executable package release WITHOUT AppImage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG="v0.3.0-falcon-app-pkg-20261011"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/FalconOS.iso \
+              release/hello-world-v1.0.0.app.pkg release/SHA256SUMS.txt \
+              release/FalconOS-Downloads-APP-PKG.png \
+              release/FalconOS-DoubleClick-PKG-App-Running.png \
+              release/FalconOS-Falco-Direct-HTTPS-PKG-Downloaded.png \
+              --clobber
+          else
+            gh release create "$TAG" \
+              release/FalconOS.iso \
+              release/hello-world-v1.0.0.app.pkg release/SHA256SUMS.txt \
+              release/FalconOS-Downloads-APP-PKG.png \
+              release/FalconOS-DoubleClick-PKG-App-Running.png \
+              release/FalconOS-Falco-Direct-HTTPS-PKG-Downloaded.png \
+              --target "$GITHUB_SHA" --prerelease \
+              --title "FalconOS native .app.pkg launch preview — no AppImage" \
+              --notes "Inside FalconOS, download a real .app.pkg through Falco or Discover, open Files → Downloads, and double-click the app to launch its own FAPP Runner window. Tested on real QEMU native mouse/keyboard using real GitHub Releases bytes and SHA-256. FalconOS itself runs from the bootable ISO; do not download a Linux AppImage. FAPP/1 is currently a bounded allowlisted script application format, not an x86 machine-code EXE. Falco Contour is site-specific software rendered; not a general HTML/CSS/JS browser. No Chromium."
+          fi
