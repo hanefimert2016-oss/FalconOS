@@ -17,7 +17,8 @@ jobs:
           sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86             python3-venv ca-certificates curl file
           python3 -m venv /tmp/falcon-native
           /tmp/falcon-native/bin/pip -q install pillow vncdotool
-          /tmp/falcon-native/bin/python -m py_compile tools/falco_native_gateway.py             tools/falcon_oneclick_launcher.py tools/vnc_native_upgrade_e2e.py
+          /tmp/falcon-native/bin/python -m py_compile tools/falco_native_gateway.py             tools/falcon_oneclick_launcher.py tools/vnc_native_upgrade_e2e.py \
+            tools/vnc_wallpaper_persistence_e2e.py
       - name: Compile full-resolution FalconOS-owned GUI and BearSSL
         run: |
           make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1             EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
@@ -26,6 +27,10 @@ jobs:
         id: native
         continue-on-error: true
         run: timeout 610s /tmp/falcon-native/bin/python tools/vnc_native_upgrade_e2e.py
+      - name: Verify persistent safe virtual disk across shutdown and reboot
+        id: persistence
+        continue-on-error: true
+        run: timeout 440s /tmp/falcon-native/bin/python tools/vnc_wallpaper_persistence_e2e.py
       - name: Store individual real FalconOS PNG files and diagnostic logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -38,9 +43,12 @@ jobs:
             build/FalconOS-New-Lockscreen-*.png
             build/native-*.log
             build/native-*.json
+            build/FalconOS-Persistent-*.png
+            build/persist-*.json
+            build/persist-*.log
           if-no-files-found: warn
       - name: Build single downloadable executable AppImage ONLY after QEMU tests pass
-        if: steps.native.outcome == 'success'
+        if: steps.native.outcome == 'success' && steps.persistence.outcome == 'success'
         env:
           FALCON_OUT: build/FalconOS-Native-Desktop-x86_64.AppImage
         run: |
@@ -48,7 +56,7 @@ jobs:
           test -s build/FalconOS-Native-Desktop-x86_64.AppImage
           test -s build/FalconOS.iso
       - name: Deliver bootable ISO and user-openable AppImage
-        if: steps.native.outcome == 'success'
+        if: steps.native.outcome == 'success' && steps.persistence.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: FalconOS-Native-OneClick-Verified-ISO-AppImage
@@ -58,5 +66,5 @@ jobs:
             build/FalconOS.iso
           retention-days: 14
       - name: Prevent publishing if native browser or password safety failed
-        if: steps.native.outcome != 'success'
+        if: steps.native.outcome != 'success' || steps.persistence.outcome != 'success'
         run: exit 1
