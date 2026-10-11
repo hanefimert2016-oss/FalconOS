@@ -1,0 +1,62 @@
+name: FalconOS native web + wallpaper + passwordless login + desktop AppImage
+on:
+  push:
+    branches: [feature/native-falco-wallpaper-setup-20261011]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-visual-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler, QEMU and Python VNC
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86             python3-venv ca-certificates curl file
+          python3 -m venv /tmp/falcon-native
+          /tmp/falcon-native/bin/pip -q install pillow vncdotool
+          /tmp/falcon-native/bin/python -m py_compile tools/falco_native_gateway.py             tools/falcon_oneclick_launcher.py tools/vnc_native_upgrade_e2e.py
+      - name: Compile full-resolution FalconOS-owned GUI and BearSSL
+        run: |
+          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1             EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Real QEMU VNC test of native browser wallpaper installer and both login cases
+        id: native
+        continue-on-error: true
+        run: timeout 610s /tmp/falcon-native/bin/python tools/vnc_native_upgrade_e2e.py
+      - name: Store individual real FalconOS PNG files and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Native-Falco-Setup-Wallpaper-REAL-PNG
+          path: |
+            build/FalconOS-Native-*.png
+            build/FalconOS-Falco-*.png
+            build/FalconOS-Wallpaper-*.png
+            build/FalconOS-New-Lockscreen-*.png
+            build/native-*.log
+            build/native-*.json
+          if-no-files-found: warn
+      - name: Build single downloadable executable AppImage ONLY after QEMU tests pass
+        if: steps.native.outcome == 'success'
+        env:
+          FALCON_OUT: build/FalconOS-Native-Desktop-x86_64.AppImage
+        run: |
+          PATH="/tmp/falcon-native/bin:$PATH" bash tools/build_appimage.sh
+          test -s build/FalconOS-Native-Desktop-x86_64.AppImage
+          test -s build/FalconOS.iso
+      - name: Deliver bootable ISO and user-openable AppImage
+        if: steps.native.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Native-OneClick-Verified-ISO-AppImage
+          path: |
+            build/FalconOS-Native-Desktop-x86_64.AppImage
+            build/FalconOS-AppImage-SHA256.txt
+            build/FalconOS.iso
+          retention-days: 14
+      - name: Prevent publishing if native browser or password safety failed
+        if: steps.native.outcome != 'success'
+        run: exit 1
