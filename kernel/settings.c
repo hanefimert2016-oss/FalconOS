@@ -62,7 +62,7 @@ void settings_init(void)
     diskdb_load();
 #ifdef FALCON_QEMU_UI_GALLERY
     outb(0xE9,'w');outb(0xE9,'B');
-    outb(0xE9,(u8)('0'+(SET.wallpaper_style%4u)));
+    outb(0xE9,(u8)('0'+(SET.wallpaper_style%8u)));
 #endif
 }
 
