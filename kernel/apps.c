@@ -3305,8 +3305,17 @@ static void falco_input_key(i32 key){
     if(falco_native_view){
         if(key==KEY_F3 || key==KEY_ESC){falco_native_view=false;return;}
         if(key==KEY_F5){falco_native_open();return;}
+        if(key=='1')falco_native_scroll=0;   /* Contour hero */
+        if(key=='2')falco_native_scroll=8;   /* Features */
+        if(key=='3')falco_native_scroll=16;  /* Architecture */
+        if(key=='4')falco_native_scroll=24;  /* Install */
         if(key==KEY_UP&&falco_native_scroll>0)falco_native_scroll--;
-        if(key==KEY_DOWN&&falco_native_scroll<60)falco_native_scroll++;
+        if(key==KEY_DOWN&&falco_native_scroll<30)falco_native_scroll++;
+#ifdef FALCON_QEMU_BROWSER_TEST
+        outb(0xE9,'s');
+        outb(0xE9,(u8)('0'+(falco_native_scroll<8?0:
+                           falco_native_scroll<16?1:falco_native_scroll<24?2:3)));
+#endif
         return;
     }
     if ((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
@@ -3343,8 +3352,44 @@ static void falco_input_key(i32 key){
 }
 static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     if(falco_native_view){
-        falco_native_paint(wx+5,wy+5,ww-10,wh-10,
-                           falco_native_scroll,frame);
+        i32 ox=wx+5,oy=wy+5,sw=ww-10,sh=wh-10;
+        falco_native_paint(ox,oy,sw,sh,falco_native_scroll,frame);
+        if(wm_click_enabled()){
+            i32 mx,my;bool down;mouse_get(&mx,&my,&down);(void)down;
+            i32 nav=ox+sw/2-175,sy=oy+54;
+            i32 requested=-1;
+            /* These are actual on-page anchors, not demo buttons:
+             * mouse clicks navigate the page's own header and hero.
+             * GitHub external navigation stays unavailable, as our HTML
+             * engine does not implement arbitrary off-site links yet. */
+            if(my>=sy+8&&my<sy+65){
+                if(mx>=nav&&mx<nav+123)requested=8;
+                else if(mx>=nav+131&&mx<nav+226)requested=16;
+                else if(mx>=nav+241&&mx<nav+338)requested=24;
+                else if(mx>=nav+339&&mx<nav+500)requested=30;
+                if(mx>=ox+35&&mx<ox+190)requested=0;
+            }
+            if(falco_native_scroll<8){
+                i32 siteh=sh-78;
+                i32 header=sy+(siteh/5<125?125:siteh/5>240?240:siteh/5);
+                i32 leftw=sw*49/100-45;
+                i32 shift=leftw>690?89:55;
+                i32 buttons=header+60+shift*2+151;
+                i32 lx=ox+(sw/24<31?31:sw/24>82?82:sw/24);
+                if(my>=buttons&&my<buttons+56){
+                    if(mx>=lx&&mx<lx+215)requested=24;
+                    if(mx>=lx+249&&mx<lx+495)requested=8;
+                }
+            }
+            if(requested>=0){
+                (void)mouse_consume_click();
+                falco_native_scroll=requested;
+#ifdef FALCON_QEMU_BROWSER_TEST
+                outb(0xE9,'s');outb(0xE9,(u8)('0'+(
+                    requested<8?0:requested<16?1:requested<24?2:3)));
+#endif
+            }
+        }
         return;
     }
     if(falco_web_view){render_browser(wx,wy,ww,wh,frame);return;}
