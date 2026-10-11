@@ -25,7 +25,7 @@ def guest_mouse_pos():
     return tuple(map(int,samples[-1])) if samples else None
 def click(c):
     c.mouseDown(1);pause(.28);c.mouseUp(1);pause(.29)
-def point(c,target=(1090,456)):
+def point(c,target=(1090,534)):
     x,y=380,240
     c.mouseMove(x,y);pause(.25)
     for a,b in [(405,263),(440,285),(465,307)]:
@@ -90,6 +90,7 @@ def main():
                 point(c)
                 mark=len(data())
                 click(c)
+                wait(b"dS",mark,25)
                 pause(.26)
                 click(c)
                 wait(b"dC",mark,45)
