@@ -405,6 +405,117 @@ static char fapp_running_source[SHFS_PATH];
 static bool fapp_running_valid;
 static void files_launch_pkg(const char *path);
 
+static char files_folder[SHFS_PATH];
+static bool files_edit_mode;
+static i32 files_edit_action; /* 1 folder, 2 text, 3 rename */
+static char files_edit_name[33];
+static i32 files_edit_len;
+static u32 files_delete_confirm_until;
+static const char *files_current_dir(void){
+    if(files_folder[0])return files_folder;
+    if(files_scope==0)return "/home/falcon";
+    return FILES_ROOTS[files_scope];
+}
+static bool files_basename_ok(const char *n){
+    if(!n||!n[0]||n[0]=='.')return false;
+    u32 len=(u32)k_strlen(n);
+    if(len>27u)return false;
+    for(u32 i=0;i<len;i++){
+        char c=n[i];
+        if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+             (c>='0'&&c<='9')||c=='.'||c=='_'||c=='-'||c==' '))return false;
+    }
+    return true;
+}
+static bool files_join(char path[SHFS_PATH],const char *parent,const char *name){
+    if(!files_basename_ok(name)||!parent)return false;
+    u32 a=(u32)k_strlen(parent),b=(u32)k_strlen(name);
+    if(a+1u+b>=SHFS_PATH)return false;
+    k_strcpy(path,parent);k_strcat(path,"/");k_strcat(path,name);
+    return true;
+}
+static void files_enter_dir(const char *path){
+    if(!path||!path[0])return;
+    shfs_ent_t *e=shfs_lookup(path);
+    if(!e||!e->is_dir)return;
+    if(k_strlen(path)>=SHFS_PATH)return;
+    k_strcpy(files_folder,path);
+    files_scroll=0;files_selected[0]=0;
+    files_action_status="Folder opened. Backspace: parent";
+}
+static void files_parent(void){
+    if(!files_folder[0])return;
+    i32 len=(i32)k_strlen(files_folder),i=len-1;
+    while(i>=0&&files_folder[i]!='/')i--;
+    if(i<0){files_folder[0]=0;return;}
+    files_folder[i]=0;
+    if(k_strcmp(files_folder,"/home/falcon")==0 ||
+       files_folder[0]==0)files_folder[0]=0;
+    files_scroll=0;files_selected[0]=0;
+}
+static void files_begin_edit(i32 action){
+    files_edit_action=action;
+    files_edit_mode=true;
+    files_edit_len=0;
+    files_edit_name[0]=0;
+    if(action==3){
+        if(!files_selected[0]){
+            files_edit_mode=false;files_action_status="Select a file to rename";return;
+        }
+        const char *name=files_selected;
+        for(u32 i=0;files_selected[i];i++)
+            if(files_selected[i]=='/')name=files_selected+i+1;
+        while(name[files_edit_len]&&files_edit_len<27){
+            files_edit_name[files_edit_len]=name[files_edit_len];
+            files_edit_len++;
+        }
+        files_edit_name[files_edit_len]=0;
+    }
+}
+static void files_commit_edit(void){
+    char path[SHFS_PATH];
+    if(!files_basename_ok(files_edit_name)){
+        files_action_status="Invalid filename (letters, digits, ._- spaces)";
+        files_edit_mode=false;return;
+    }
+    if(files_edit_action==3){
+        if(!files_selected[0])return;
+        char parent[SHFS_PATH];
+        k_strcpy(parent,files_selected);
+        i32 n=(i32)k_strlen(parent)-1;
+        while(n>=0 && parent[n]!='/')n--;
+        if(n<1){files_action_status="Cannot rename root";return;}
+        parent[n]=0;
+        if(!files_join(path,parent,files_edit_name))return;
+        bool ok=shfs_rename_abs(files_selected,path);
+        files_action_status=ok?"Renamed (persisted by FalconFS)":"Rename refused: name exists or too long";
+        if(ok)k_strcpy(files_selected,path);
+    }else{
+        if(!files_join(path,files_current_dir(),files_edit_name)){
+            files_action_status="Path too long";files_edit_mode=false;return;
+        }
+        bool ok=files_edit_action==1?shfs_mkdir_abs(path):shfs_touch_abs(path);
+        files_action_status=ok?(files_edit_action==1?"Folder created":"Document created"):
+                              "No free file slots";
+    }
+    files_edit_mode=false;files_scroll=0;
+}
+static void files_request_delete(void){
+    if(!files_selected[0]){
+        files_action_status="Select a file first";return;
+    }
+    u32 now=pit_ms();
+    if(!files_delete_confirm_until || now>files_delete_confirm_until){
+        files_delete_confirm_until=now+5500u;
+        files_action_status="DELETE AGAIN within 5 sec to confirm";
+        return;
+    }
+    bool ok=shfs_rm_abs(files_selected);
+    files_action_status=ok?"File removed safely":"Remove denied (folder not empty)";
+    files_delete_confirm_until=0;files_selected[0]=0;
+}
+
+
 static bool files_search_mode;
 static char files_filter[40];
 static i32 files_filter_len;
@@ -416,12 +527,16 @@ static const char *FILES_LABELS[5] = {
     "All files", "Home", "Desktop", "Downloads", "Apps"
 };
 static bool files_matches(const char *path) {
-    const char *root=FILES_ROOTS[files_scope];
+    const char *root=files_folder[0]?files_folder:FILES_ROOTS[files_scope];
     i32 root_len=k_strlen(root);
-    /* Scope to child entries, not the folder itself; Downloads should
-     * show downloaded app.pkg files immediately, not its own root row. */
     if(root_len && (k_strncmp(path,root,root_len)!=0 ||
         path[root_len]!='/'))return false;
+    /* When a folder is opened (or a sidebar location is chosen) show
+     * immediate children, not recursive paths from unrelated subfolders. */
+    if(root_len){
+        const char *tail=path+root_len+1;
+        for(u32 j=0;tail[j];j++)if(tail[j]=='/')return false;
+    }
     if(!files_filter_len)return true;
     for(i32 i=0;path[i];i++) {
         i32 j=0;
@@ -437,6 +552,24 @@ static bool files_matches(const char *path) {
     return false;
 }
 static void files_input_key(i32 key) {
+    if(files_edit_mode){
+        if(key==KEY_ENTER){files_commit_edit();return;}
+        if(key==KEY_BACKSPACE){
+            if(files_edit_len>0)files_edit_name[--files_edit_len]=0;
+            return;
+        }
+        if(key==KEY_ESC){files_edit_mode=false;return;}
+        if(key>=32&&key<=126&&files_edit_len<27){
+            files_edit_name[files_edit_len++]=(char)key;
+            files_edit_name[files_edit_len]=0;
+        }
+        return;
+    }
+    if(key==KEY_F6){files_begin_edit(1);return;}
+    if(key==KEY_F7){files_begin_edit(2);return;}
+    if(key==KEY_F8){files_begin_edit(3);return;}
+    if(key==KEY_DEL){files_request_delete();return;}
+    if(key==KEY_BACKSPACE&&!files_search_mode){files_parent();return;}
     if(key==KEY_F4){files_search_mode=!files_search_mode;return;}
     if(files_search_mode){
         if(key==KEY_BACKSPACE){
@@ -451,8 +584,8 @@ static void files_input_key(i32 key) {
         }
         return;
     }
-    if(key==KEY_LEFT){files_scope=(files_scope+4)%5;files_scroll=0;files_selected[0]=0;}
-    if(key==KEY_RIGHT){files_scope=(files_scope+1)%5;files_scroll=0;files_selected[0]=0;}
+    if(key==KEY_LEFT){files_scope=(files_scope+4)%5;files_folder[0]=0;files_scroll=0;files_selected[0]=0;}
+    if(key==KEY_RIGHT){files_scope=(files_scope+1)%5;files_folder[0]=0;files_scroll=0;files_selected[0]=0;}
     if(key==KEY_ENTER&&!files_search_mode){files_launch_pkg(files_selected);return;}
     if(key==KEY_UP&&files_scroll>0)files_scroll--;
     if(key==KEY_DOWN&&files_scroll<SHFS_MAX_ENTRIES-1)files_scroll++;
@@ -487,7 +620,7 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
         k_strcpy(files_selected,path);
         k_strcpy(files_last_click_path,path);
         files_last_click_ms=now;
-        if(double_click&&!is_dir)k_strcpy(c->open_path,path);
+        if(double_click)k_strcpy(c->open_path,path);
         (void)mouse_consume_click();
         c->consumed=true;
 #ifdef FALCON_QEMU_UI_GALLERY
@@ -518,7 +651,7 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_text_centered(sx+32,wy+33,"F",0xFFFFFFu);
     gfx_text_lg(sx+62,wy+16,T("Files","Dosyalar"),PAL_TEXT);
     gfx_text(sx+62,wy+51,
-        T("Your actual FalconOS files","FalconOS dosyalarin"),PAL_TEXT_DIM);
+        files_folder[0]?files_folder:T("Your actual FalconOS files","FalconOS dosyaların"),PAL_TEXT_DIM);
     gfx_round_rect_a(sx,wy+top,sidebar,wh-top-bottom,13,PAL_PANEL_DEEP,255);
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool clicked=wm_click_enabled();
@@ -529,7 +662,7 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             chosen?PAL_ACCENT_DIM:PAL_PANEL);
         gfx_text(sx+19,sy+11,FILES_LABELS[i],chosen?PAL_ACCENT:PAL_TEXT_DIM);
         if(clicked&&mx>=sx+7&&mx<sx+sidebar-7&&my>=sy&&my<sy+36){
-            files_scope=i;files_scroll=0;files_selected[0]=0;
+            files_folder[0]=0;files_scope=i;files_scroll=0;files_selected[0]=0;
             (void)mouse_consume_click();clicked=false;
         }
     }
@@ -539,7 +672,8 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_circle_outline(main_x+19,wy+top+18,7,PAL_ACCENT);
     gfx_line(main_x+24,wy+top+23,main_x+30,wy+top+29,PAL_ACCENT);
     gfx_text(main_x+38,wy+top+12,
-        files_filter_len?files_filter:(files_search_mode?"Type to search...":"F4: Search files"),
+        files_edit_mode?files_edit_name:
+        (files_filter_len?files_filter:(files_search_mode?"Type to search...":"F4: Search files")),
         files_filter_len?PAL_TEXT:PAL_TEXT_DIM);
     if(clicked&&mx>=main_x&&mx<main_x+main_w&&my>=wy+top&&my<wy+top+38){
         files_search_mode=true;(void)mouse_consume_click();
@@ -552,15 +686,24 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     shfs_foreach_path(files_row,&ctx);
     /* Run OUTSIDE the SHFS enumeration callback. Never trust the file
      * extension alone: market_validate_app_pkg checks all manifest/body. */
-    if(ctx.open_path[0])files_launch_pkg(ctx.open_path);
+    if(ctx.open_path[0]){
+        shfs_ent_t *target=shfs_lookup(ctx.open_path);
+        if(target&&target->is_dir)files_enter_dir(ctx.open_path);
+        else files_launch_pkg(ctx.open_path);
+    }
     if(ctx.seen==0)
         gfx_text(main_x+16,wy+top+89,
             files_filter_len?"No matching files":"No files in this location",PAL_TEXT_DIM);
-    gfx_text(main_x+9,wy+wh-64,files_action_status,PAL_TEXT_DIM);
+    gfx_text(main_x+9,wy+wh-64,
+        files_edit_mode?(files_edit_action==1?"New folder: type name + Enter":
+        (files_edit_action==2?"New document: type name + Enter":
+         "Rename: edit name + Enter")):files_action_status,
+        files_edit_mode?PAL_ACCENT:PAL_TEXT_DIM);
     gfx_rect(sx,wy+wh-36,ww-2*margin,1,PAL_HAIRLINE);
     char count[16];k_itoa(ctx.files,count,10);
     gfx_text(sx+4,wy+wh-26,count,PAL_ACCENT);
-    gfx_text(sx+35,wy+wh-26,"files | Downloads | double click .app.pkg / Enter to run | F4 search",
+    gfx_text(sx+35,wy+wh-26,
+        "F6 folder  F7 file  F8 rename  Del (confirm)  Backspace back  Doubleclick open",
         PAL_TEXT_DIM);
 }
 
