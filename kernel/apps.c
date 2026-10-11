@@ -4749,10 +4749,22 @@ static void app_setup_input_key(i32 key){
     const char *name=install_source_path;
     for(i32 j=0;install_source_path[j];j++)
         if(install_source_path[j]=='/')name=install_source_path+j+1;
+    char installed_name[SHFS_PATH];
     if(k_strcmp(name,"kurulum.app.pkg")==0)name="installed.app.pkg";
     if(k_strcmp(name,"code.app.pkg")==0)name="codedium-project.app.pkg";
-    if(k_strcmp(name,"my-app.setup.app.pkg")==0)name="my-app.app.pkg";
+    u32 filename_length=(u32)k_strlen(name);
+    if(filename_length>14 &&
+       k_strcmp(name+filename_length-14,".setup.app.pkg")==0){
+        if(filename_length>33){
+            install_message="Installer filename too long";return;
+        }
+        k_memcpy(installed_name,name,filename_length-14);
+        installed_name[filename_length-14]=0;
+        k_strcat(installed_name,".app.pkg");
+        name=installed_name;
+    }
     const char *dir=install_choice?"/home/falcon/Desktop/":"/home/falcon/apps/";
+    if(!install_choice)(void)shfs_mkdir_abs("/home/falcon/apps");
     char path[SHFS_PATH];
     if(k_strlen(dir)+k_strlen(name)>=SHFS_PATH){
         install_message="Package name too long for destination";return;
