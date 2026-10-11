@@ -21,6 +21,7 @@
  * ============================================================================= */
 #include "falcon.h"
 #include "shfs.h"
+#include "falco_theme.h"
 
 static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
@@ -3371,6 +3372,17 @@ static void falco_search(void){
          "Live Wikipedia results - host certificate verified");
 }
 static void falco_input_key(i32 key){
+#ifdef FALCON_QEMU_FALCO_THEME_TEST
+    /* Test-only cycle: Liquid -> Dark -> Light -> Liquid, using a real
+     * PS/2 F10 event. Never shipped as an undocumented user setting. */
+    if(key==KEY_F10){
+        SET.theme=SET.theme==THEME_LIQUID?THEME_DARK:
+                  (SET.theme==THEME_DARK?THEME_LIGHT:THEME_LIQUID);
+        outb(0xE9,'t');
+        outb(0xE9,(u8)('0'+SET.theme));
+        return;
+    }
+#endif
     if(key==KEY_F9){falco_native_open();return;}
     if(falco_native_view){
         if((kbd_mod_state() & KMOD_CTRL) && (key=='l'||key=='L')){
@@ -3507,32 +3519,36 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             return;
         }
     }
-    gfx_round_rect_a(x,wy+12,w,84,20,0xDBEAFE,240);
-    gfx_round_rect(x+14,wy+26,48,48,16,0x2269D9);
-    gfx_text_lg_centered(x+38,wy+34,"F",0xFFFFFF);
-    gfx_text_lg(x+80,wy+31,"Falco Search",0x16355F);
-    gfx_text(x+80,wy+62,"Live results, not an offline demo index",0x597698);
-    gfx_round_rect_a(x,wy+109,w,51,18,PAL_PANEL,255);
-    gfx_round_outline(x,wy+109,w,51,18,PAL_ACCENT);
-    gfx_circle_outline(x+23,wy+134,8,0x487CCA);
-    gfx_line(x+28,wy+139,x+35,wy+146,0x487CCA);
-    gfx_text(x+51,wy+127,falco_query_len?falco_query:"Search Wikipedia...",PAL_TEXT);
-    gfx_round_rect(x+w-110,wy+117,100,35,13,0x246DE8);
-    gfx_text_centered(x+w-60,wy+128,"Enter",0xFFFFFF);
+    const falco_theme_t style=falco_theme_current();
+    /* Neutral, OS-native surface: accent appears only on actionable state. */
+    gfx_round_rect(x,wy+12,w,84,20,style.surface_alt);
+    gfx_round_outline(x,wy+12,w,84,20,style.chrome_border);
+    gfx_round_rect(x+14,wy+26,48,48,15,style.accent);
+    gfx_text_lg_centered(x+38,wy+34,"F",style.accent_ink);
+    gfx_text_lg(x+80,wy+31,"Falco Search",style.text);
+    gfx_text(x+80,wy+62,"Private browser | verified HTTPS reader",style.muted);
+    gfx_round_rect(x,wy+109,w,51,16,style.omnibox);
+    gfx_round_outline(x,wy+109,w,51,16,style.omnibox_focus);
+    gfx_circle_outline(x+23,wy+134,8,style.accent);
+    gfx_line(x+28,wy+139,x+35,wy+146,style.accent);
+    gfx_text(x+51,wy+127,falco_query_len?falco_query:"Search or enter an address",style.text);
+    gfx_round_rect(x+w-110,wy+117,100,35,11,style.accent);
+    gfx_text_centered(x+w-60,wy+128,"Enter",style.accent_ink);
     /* Explicit clickable HTTPS navigation; no fake "button" labels. */
     const char *actions[4]={"Live site","Host HTTPS","GitHub docs","Native Visual"};
     for(i32 i=0;i<4;i++){
         i32 bx=x+i*166;
         if(bx+157>x+w)break;
-        gfx_round_rect_a(bx,wy+165,157,34,10,
-            i==0?0x246DE8u:PAL_PANEL_HI,250);
-        gfx_round_outline(bx,wy+165,157,34,10,PAL_HAIRLINE);
+        gfx_round_rect(bx,wy+165,157,34,11,
+            i==0?style.accent:style.tab_inactive);
+        gfx_round_outline(bx,wy+165,157,34,11,
+            i==0?style.accent:style.hairline);
         gfx_text_centered(bx+78,wy+175,actions[i],
-            i==0?0xFFFFFFu:PAL_TEXT);
+            i==0?style.accent_ink:style.text);
     }
-    gfx_text(x+4,wy+207,falco_status,0x4B779E);
-    gfx_round_rect_a(x,wy+230,w,wh-290,19,PAL_PANEL,240);
-    gfx_round_outline(x,wy+230,w,wh-290,19,PAL_HAIRLINE);
+    gfx_text(x+4,wy+207,falco_status,style.muted);
+    gfx_round_rect(x,wy+230,w,wh-290,18,style.surface);
+    gfx_round_outline(x,wy+230,w,wh-290,18,style.hairline);
     if(!falco_has_results){
         gfx_text_lg(x+26,wy+253,"Discover something new",PAL_TEXT);
         gfx_text(x+26,wy+283,"Type a topic and press Enter.",PAL_TEXT_DIM);
@@ -3947,30 +3963,35 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             return;
         }
     }
-    gfx_rect(wx,wy,ww,44,PAL_PANEL_DEEP);
-    gfx_round_rect_a(wx+margin,wy+7,80,32,9,PAL_PANEL,255);
-    gfx_text(wx+margin+10,wy+15,"< Back",PAL_TEXT);
-    gfx_round_rect_a(wx+104,wy+7,88,32,9,PAL_PANEL,255);
-    gfx_text(wx+114,wy+15,"Reload",PAL_TEXT);
-    gfx_text(wx+211,wy+16,active_app==13?"Falco Web":"Falcon Browser",PAL_ACCENT);
-    gfx_round_rect_a(wx+ww-160,wy+7,141,32,9,PAL_PANEL,255);
+    const falco_theme_t style=falco_theme_current();
+    gfx_rect(wx,wy,ww,44,style.chrome);
+    gfx_rect(wx,wy+43,ww,1,style.chrome_border);
+    gfx_round_rect(wx+margin,wy+7,80,32,10,style.tab);
+    gfx_round_outline(wx+margin,wy+7,80,32,10,style.chrome_border);
+    gfx_text(wx+margin+10,wy+15,"< Back",style.text);
+    gfx_round_rect(wx+104,wy+7,88,32,10,style.tab_inactive);
+    gfx_text(wx+114,wy+15,"Reload",style.muted);
+    gfx_text(wx+211,wy+16,active_app==13?"Falco Web":"Falcon Browser",style.text);
+    gfx_rect(wx+208,wy+42,114,2,style.accent);
+    gfx_round_rect(wx+ww-160,wy+7,141,32,10,style.tab_inactive);
+    gfx_round_outline(wx+ww-160,wy+7,141,32,10,style.chrome_border);
     gfx_text(wx+ww-150,wy+15,
-        browser_host_gateway?"HOST HTTPS":"NATIVE HTTPS",PAL_TEXT_DIM);
-    gfx_rect(wx,wy+45,ww,56,PAL_PANEL_HI);
+        browser_host_gateway?"HOST HTTPS":"NATIVE HTTPS",style.muted);
+    gfx_rect(wx,wy+45,ww,56,style.surface_alt);
     i32 sx=wx+margin,sy=bar,sw=ww-margin*2;
-    gfx_round_rect_a(sx,sy,sw,34,10,PAL_PANEL,255);
-    gfx_round_outline(sx,sy,sw,34,10,
-                      browser_address_focus?PAL_ACCENT:PAL_HAIRLINE);
-    gfx_circle(sx+15,sy+17,5,COL_OK);
-    gfx_text(sx+27,sy+11,browser_address,PAL_TEXT);
-    gfx_rect(wx,wy+102,ww,34,PAL_PANEL_DEEP);
+    gfx_round_rect(sx,sy,sw,34,11,style.omnibox);
+    gfx_round_outline(sx,sy,sw,34,11,
+                      browser_address_focus?style.accent:style.hairline);
+    gfx_circle(sx+15,sy+17,5,style.secure);
+    gfx_text(sx+27,sy+11,browser_address,style.text);
+    gfx_rect(wx,wy+102,ww,34,style.chrome);
     gfx_text(wx+margin,wy+113,browser_status,
-             browser_loaded?COL_OK:PAL_TEXT_DIM);
+             browser_loaded?style.secure:style.muted);
     i32 py=wy+146;
     i32 height=wh-184;
     if(height<70)height=70;
-    gfx_round_rect_a(sx,py,sw,height,10,PAL_PANEL,255);
-    gfx_round_outline(sx,py,sw,height,10,PAL_HAIRLINE);
+    gfx_round_rect(sx,py,sw,height,12,style.surface);
+    gfx_round_outline(sx,py,sw,height,12,style.hairline);
     if(!browser_loaded){
         gfx_text_lg(sx+20,py+26,"Falcon Browser",PAL_TEXT);
         gfx_text(sx+20,py+76,"Open a real HTTPS page using Enter.",PAL_TEXT);
