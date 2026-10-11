@@ -101,6 +101,110 @@ static bool check_package(void) {
     }
     return has_cmd && line[0] == 0;
 }
+
+/* FalconOS .app.pkg executable document (FAPP/1), not host ELF/.exe.
+ * Parsed as a bounded script only. Uncatalogued packages have no GitHub
+ * provenance and are therefore labelled LOCAL/UNVERIFIED in the GUI.
+ * Never execute unless every source line passes the existing strict
+ * FAPP allowlist and the manifest is structurally complete. */
+bool market_validate_app_pkg(const char *p,u32 len){
+    if(!p||len<70||len>4095||k_strncmp(p,"FAPP/1\nid=",10)!=0 ||
+       p[len]!=0 || p[len-1]!='\n')return false;
+    for(u32 i=0;i<len;i++){
+        u8 c=(u8)p[i];
+        if(c==0||c=='\r'||(c<32&&c!='\n')||c>=127)return false;
+    }
+    const char *fields[]={"id=","name=","version=","summary="};
+    u32 pos=7;char id[33],version[25];
+    for(u32 field=0;field<4;field++){
+        u32 width=(u32)k_strlen(fields[field]);
+        if(pos+width>=len||k_strncmp(p+pos,fields[field],width)!=0)
+            return false;
+        pos+=width;u32 st=pos;
+        while(pos<len&&p[pos]!='\n'){
+            if(pos-st>80)return false;
+            pos++;
+        }
+        if(pos>=len||pos==st)return false;
+        u32 n=pos-st;
+        if(field==0){
+            if(n>32)return false;
+            k_memcpy(id,p+st,n);id[n]=0;
+            if(!safe_id(id))return false;
+        }
+        if(field==1 && n>40)return false;
+        if(field==2){
+            if(n>=sizeof version)return false;
+            k_memcpy(version,p+st,n);version[n]=0;
+            if(!market_version_valid(version))return false;
+        }
+        if(field==3&&n>75)return false;
+        pos++;
+    }
+    if(pos>=len||p[pos]!='\n')return false;
+    pos++;
+    bool command=false;
+    while(pos<len){
+        u32 start=pos;
+        while(pos<len&&p[pos]!='\n'){
+            if(pos-start>182)return false;
+            pos++;
+        }
+        if(pos==len)return false;
+        u32 n=pos-start;
+        if(n&&p[start]!='#'){
+            if(!market_line_allowed(p+start,(i32)n))return false;
+            command=true;
+        }
+        pos++;
+    }
+    return command;
+}
+/* Make the RELEASE-DOWNLOADED package visible as .app.pkg under Downloads.
+ * The original verified catalog package remains installed in /apps.
+ * Filename is bounded to SHFS_PATH and stable on restart. */
+static void download_path(char dest[SHFS_PATH],const char *id){
+    k_strcpy(dest,"/home/falcon/Downloads/");
+    u32 idlen=(u32)k_strlen(id),out=(u32)k_strlen(dest);
+    if(idlen<=21){
+        for(u32 i=0;i<idlen;i++)dest[out++]=id[i];
+    }else{
+        for(u32 i=0;i<12;i++)dest[out++]=id[i];
+        dest[out++]='-';
+        /* Deterministic suffix avoids overwriting distinct long IDs. */
+        u8 hash[32];char hex[65];
+        sha256_hash((const u8*)id,idlen,hash);hex_encode(hash,32,hex);
+        for(u32 i=0;i<8;i++)dest[out++]=hex[i];
+    }
+    const char *extension=".app.pkg";
+    for(u32 i=0;extension[i];i++)dest[out++]=extension[i];
+    dest[out]=0;
+}
+static void create_download_copy(const char *id,const char *p,u32 len){
+    if(!id||!market_validate_app_pkg(p,len))return;
+    (void)shfs_mkdir_abs("/home/falcon/Downloads");
+    char path[SHFS_PATH];download_path(path,id);
+    shfs_ent_t *copy=shfs_open_w_abs(path,false);
+    if(copy){
+        k_memcpy(copy->data,p,len);
+        copy->data[len]=0;copy->len=len;
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'f');outb(0xE9,'D'); /* genuine .app.pkg on guest disk */
+#endif
+    }
+}
+static void restore_download_copy(const char *path,bool dir,u32 len,void *unused){
+    (void)unused;
+    if(dir||!path||k_strncmp(path,"/home/falcon/apps/",18)!=0)return;
+    shfs_ent_t *source=shfs_lookup(path);
+    if(!source||source->is_dir||len<70||len>4095)return;
+    char id[33];u32 at=10,n=0;
+    if(k_strncmp(source->data,"FAPP/1\nid=",10)!=0)return;
+    while(at<len&&source->data[at]!='\n'&&n<32)id[n++]=source->data[at++];
+    id[n]=0;
+    if(at>=len||!safe_id(id))return;
+    create_download_copy(id,source->data,len);
+}
 static void on_line(char *line) {
     if(k_strncmp(line,"PUBOK|",6)==0){
         publish_busy=false;
@@ -200,6 +304,7 @@ static void on_line(char *line) {
                 k_memcpy(file->data, rx_data, rx_used);
                 file->data[rx_used] = 0;
                 file->len = rx_used;
+                create_download_copy(rx_id,rx_data,(u32)rx_used);
                 status_text = market_disk_save(rx_id, rx_data, rx_used)
                     ? "Verified app installed to safe disk"
                     : "Verified app installed to RAM (secure session)";
@@ -292,6 +397,7 @@ void market_init(void) {
     outb(PORT + 4, 3);
     market_disk_restore();
     market_rebuild_cached();
+    shfs_foreach_path(restore_download_copy,NULL);
 }
 void market_consume_byte(char c);
 void market_poll(void) {
@@ -397,6 +503,7 @@ static bool direct_https_download(i32 i){
     shfs_ent_t *file=shfs_open_w_abs(path,false);
     if(!file)return false;
     k_memcpy(file->data,rx_data,n);file->data[n]=0;file->len=n;
+    create_download_copy(app->id,rx_data,n);
     bool saved=market_disk_save(app->id,rx_data,n);
     status_text=saved ? "HTTPS verified: app saved to disk" :
                         "HTTPS verified: installed to RAM only";
