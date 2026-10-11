@@ -477,9 +477,12 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
 #endif
         c->clicked=false;
     }
+    u32 pathlen=k_strlen(path);
+    bool executable=!is_dir && pathlen>=8u &&
+        k_strcmp(path+pathlen-8,".app.pkg")==0;
     gfx_round_rect(c->x+9,y+7,24,20,6,
-        is_dir?0xF3BC5Du:0x548FEBu);
-    gfx_text_centered(c->x+21,y+10,is_dir?"D":"F",0xFFFFFFu);
+        is_dir?0xF3BC5Du:(executable?0x16A58Eu:0x548FEBu));
+    gfx_text_centered(c->x+21,y+10,is_dir?"D":(executable?"A":"F"),0xFFFFFFu);
     const char *name=path;
     for(i32 i=0;path[i];i++)if(path[i]=='/'&&path[i+1])name=path+i+1;
     char clipped[53];i32 max=(c->w-135)/8;
@@ -488,6 +491,9 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
     clipped[k]=0;
     gfx_text(c->x+42,y+10,clipped,PAL_TEXT);
     if(!is_dir){
+        if(executable){
+            gfx_text(c->x+c->w-145,y+10,"APP",0x16A58Eu);
+        }
         char digits[16];k_itoa(len,digits,10);
         gfx_text(c->x+c->w-83,y+10,digits,PAL_TEXT_DIM);
         gfx_text(c->x+c->w-44,y+10,"B",PAL_TEXT_FAINT);
