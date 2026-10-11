@@ -1,0 +1,15 @@
+FalconOS Native OneClick Preview - October 11, 2026
+
+This marker intentionally publishes v0.2.0-native-20261011 as a GitHub
+prerelease ONLY AFTER the GitHub Actions job has verified:
+- native GUI and real HTML content from falconos.tech without Chromium,
+- passwordless default-account autologin,
+- password-protected lockscreen and manually entered password,
+- second-account prompt default No,
+- user wallpaper switch in Settings,
+- dedicated virtual FalconFS wallpaper and account persistence across QEMU reboot,
+- executable Linux AppImage extraction and bundled resources.
+
+This is a prototype: HTML semantic layout, not full CSS/JS.
+The AppImage uses installed Linux QEMU and Python3.
+It never formats or touches physical host disks.
