@@ -44,6 +44,28 @@ def redirect(url,location,code=301):
     return urllib.error.HTTPError(url,code,"Moved",headers,None)
 
 
+
+class SemanticHTMLTests(unittest.TestCase):
+    def test_real_headings_lists_links_and_inert_scripts(self):
+        raw=(b"<html><head><title>Example</title><style>hidden-css</style></head>"
+             b"<body><h1>Headline</h1><p>First paragraph</p>"
+             b"<ul><li>One</li><li>Two</li></ul>"
+             b"<a href='https://example.com/docs'>Docs</a>"
+             b"<script>maliciousJavascript()</script></body></html>")
+        text=gateway.semantic_html_text(raw).decode("utf-8")
+        self.assertIn("# Headline",text)
+        self.assertIn("First paragraph",text)
+        self.assertIn("- One",text)
+        self.assertIn("https://example.com/docs",text)
+        self.assertNotIn("maliciousJavascript",text)
+        self.assertNotIn("hidden-css",text)
+
+    def test_document_is_bounded_valid_utf8(self):
+        raw=("<html><body><p>"+"ğ"*8000+"</p></body></html>").encode()
+        value=gateway.semantic_html_text(raw)
+        self.assertLessEqual(len(value),2650)
+        self.assertIn("ğ",value.decode("utf-8"))
+
 class GatewaySecurityTests(unittest.TestCase):
     def fetch(self,start,routes,resolver=None):
         instance=object.__new__(gateway.Handler)
