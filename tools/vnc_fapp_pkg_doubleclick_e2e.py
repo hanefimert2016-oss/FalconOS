@@ -160,6 +160,7 @@ def main():
                 c.mouseDown(1);pause(.35);c.mouseUp(1)
                 wait(b"f2",before,40)
                 wait(b"fR",before,45)
+                wait(b"fW",before,50)
                 STATE["steps"].append("Real second click launched FAPP/1 executable document in native guest Terminal")
                 pause(1.3)
                 shot(c,"FalconOS-DoubleClick-PKG-App-Running")
