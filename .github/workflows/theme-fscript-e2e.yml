@@ -1,0 +1,37 @@
+name: FalconOS Theme Creator FScript App Setup real boot
+on:
+  push:
+    branches: [feature/themecreator-fscript-setup-20261011]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bare-metal compiler and QEMU VNC dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv
+          python3 -m venv /tmp/falcon-fscript
+          /tmp/falcon-fscript/bin/pip -q install pillow vncdotool
+      - name: Compile all new C applications and ISO
+        run: |
+          PATH="/tmp/falcon-fscript/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Verify direct FalconOS boot and native UI, no menu keystroke
+        run: timeout 240s /tmp/falcon-fscript/bin/python tools/vnc_theme_fscript_e2e.py
+      - name: Save screenshots and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-ThemeCreator-FScript-Real-QEMU
+          path: |
+            build/FalconOS-Theme-*.png
+            build/FalconOS-FScript-*.png
+            build/theme-fscript*.json
+            build/theme-fscript*.log
+            build/FalconOS.iso
+          if-no-files-found: warn
