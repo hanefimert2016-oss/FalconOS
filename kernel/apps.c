@@ -3235,7 +3235,7 @@ static void render_gallery(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
  * No fabricated result cards or static fake search engine.
  * Guest-to-host NAT hop is plain TCP; real TLS is validated on trusted host.
  */
-static char falco_query[80]="FalconOS";
+static char falco_query[240]="FalconOS";
 static i32 falco_query_len=8;
 static i32 falco_sel=0;
 static char falco_http[4096],falco_results[3100];
@@ -3276,7 +3276,7 @@ static void falco_native_open(void){
 
 static void falco_set_query(const char *q){
     falco_query_len=0;
-    while(q&&q[falco_query_len]&&falco_query_len<79){
+    while(q&&q[falco_query_len]&&falco_query_len<(i32)sizeof falco_query-1){
         falco_query[falco_query_len]=q[falco_query_len];
         falco_query_len++;
     }
@@ -3297,7 +3297,16 @@ static void falco_search(void){
     }
     if(!has_space && (has_dot || k_strncmp(falco_query,"https://",8)==0 ||
                       k_strncmp(falco_query,"http://",7)==0)){
-        falco_open_site(falco_query);return;
+        falco_open_site(falco_query);
+        /* Downloaded FAPP files stay INERT in FalconOS Downloads until the
+         * user opens Files and double clicks them. No auto-execution. */
+        i32 l=falco_query_len;
+        if(l>=8&&k_strcmp(falco_query+l-8,".app.pkg")==0){
+            falco_web_view=false;
+            if(k_strlen(browser_status)<sizeof falco_status)
+                k_strcpy(falco_status,browser_status);
+        }
+        return;
     }
     if(!net_present()){
         k_strcpy(falco_status,"No RTL8139 network card is active");
@@ -3391,7 +3400,7 @@ static void falco_input_key(i32 key){
         sh_buf_pop_utf8(falco_query,&falco_query_len);
         return;
     }
-    (void)sh_buf_append_key(falco_query,&falco_query_len,80,key);
+    (void)sh_buf_append_key(falco_query,&falco_query_len,(i32)sizeof falco_query,key);
 }
 static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     if(falco_native_view){
