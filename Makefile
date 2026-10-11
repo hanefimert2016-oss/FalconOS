@@ -243,6 +243,20 @@ run-market: $(ISO) $(BUILD)/falcon-safe.raw
 	  trap 'kill $bridge_pid $web_pid 2>/dev/null || true' EXIT; \
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
+# Opt-in rasterized visual browser: real Chromium on Linux renders HTTPS,
+# Falco displays actual RGB332 pixels inside its native guest window.
+# This is HOST rendering, not a guest-native Chromium or bot impersonation.
+.PHONY: run-falco-visual
+run-falco-visual: $(ISO) $(BUILD)/falcon-safe.raw
+	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock & \
+	  bridge_pid=$!; \
+	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
+	  web_pid=$!; \
+	  python3 tools/falco_visual_bridge.py --bind 127.0.0.1 & \
+	  visual_pid=$!; \
+	  trap 'kill $bridge_pid $web_pid $visual_pid 2>/dev/null || true' EXIT; \
+	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
+
 run: run-disk
 
 run-cdrom: $(ISO)
