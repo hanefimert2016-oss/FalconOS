@@ -32,6 +32,10 @@ def make_image(path: Path, size: int) -> None:
     mbr = bytearray(512)
     struct.pack_into("<B3sB3sII", mbr, 446, 0, b"\0" * 3, 0xFA, b"\0" * 3,
                      PART_START, sectors - PART_START)
+    # Marker in unused MBR boot-code bytes, NOT in any partition or OS data.
+    # Only FalconOS's own isolated VM image receives an automatic save target.
+    # Existing physical disks never receive this marker.
+    mbr[400:419] = b"FALCONOS-VM-DISK-01"
     mbr[510:512] = b"\x55\xAA"
     with path.open("xb") as target:
         target.truncate(size)
