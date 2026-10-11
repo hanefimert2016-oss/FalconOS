@@ -41,6 +41,7 @@ jobs:
           path: |
             build/FalconOS-Downloads-APP-PKG.png
             build/FalconOS-DoubleClick-PKG-App-Running.png
+            build/FalconOS-Falco-HTTPS-PKG-DoubleClick-Running.png
             build/pkg-doubleclick-*.log
             build/pkg-doubleclick-*.json
             build/falco-pkg-https-*.log
@@ -102,6 +103,7 @@ jobs:
               release/FalconOS-Downloads-APP-PKG.png \
               release/FalconOS-DoubleClick-PKG-App-Running.png \
               release/FalconOS-Falco-Direct-HTTPS-PKG-Downloaded.png \
+              release/FalconOS-Falco-HTTPS-PKG-DoubleClick-Running.png \
               --clobber
           else
             gh release create "$TAG" \
@@ -110,6 +112,7 @@ jobs:
               release/FalconOS-Downloads-APP-PKG.png \
               release/FalconOS-DoubleClick-PKG-App-Running.png \
               release/FalconOS-Falco-Direct-HTTPS-PKG-Downloaded.png \
+              release/FalconOS-Falco-HTTPS-PKG-DoubleClick-Running.png \
               --target "$GITHUB_SHA" --prerelease \
               --title "FalconOS native .app.pkg launch preview — no AppImage" \
               --notes "Inside FalconOS, download a real .app.pkg through Falco or Discover, open Files → Downloads, and double-click the app to launch its own FAPP Runner window. Tested on real QEMU native mouse/keyboard using real GitHub Releases bytes and SHA-256. FalconOS itself runs from the bootable ISO; do not download a Linux AppImage. FAPP/1 is currently a bounded allowlisted script application format, not an x86 machine-code EXE. Falco Contour is site-specific software rendered; not a general HTML/CSS/JS browser. No Chromium."
