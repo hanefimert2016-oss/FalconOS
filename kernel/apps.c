@@ -2653,7 +2653,7 @@ static void render_calc(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
  *  and uses left/right (or Enter) to toggle / cycle the value.            */
 typedef enum {
     SR_THEME = 0, SR_ACCENT, SR_AERO, SR_LANG, SR_KBD, SR_TZ, SR_DOCK,
-    SR_ANIM, SR_WIDGETS, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_DRIVERS,
+    SR_ANIM, SR_WIDGETS, SR_WALLPAPER, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_DRIVERS,
     SR_SAVE, SR_LOCK, SR_COUNT
 } set_row_t;
 
@@ -2762,6 +2762,13 @@ static void set_input_key(i32 key)
         case SR_WIDGETS:
             SET.widgets_shown = !SET.widgets_shown;
             break;
+        case SR_WALLPAPER: {
+            i32 v=(i32)SET.wallpaper_style+d;
+            if(v<0)v=3;
+            SET.wallpaper_style=(u32)(v%4);
+            (void)diskdb_save(); /* save only on a valid selected disk */
+            break;
+        }
         case SR_VIEWPORT:
             { i32 n = (i32)(sizeof VIEWPORT_NAMES / sizeof *VIEWPORT_NAMES);
               i32 v = (set_viewport_idx + d + n) % n;
@@ -2930,6 +2937,17 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
           SET.widgets_shown ? T("shown", "açık") : T("hidden", "gizli"),
           set_row == SR_WIDGETS,
           SET.widgets_shown ? COL_OK : PAL_TEXT_DIM);
+
+    /* Wallpaper --------------------------------------------- */
+    {
+        static const char *wallpapers[]={
+            "Aurora", "Midnight blue", "Violet", "Sunset"
+        };
+        s_row(sx,sy+SR_WALLPAPER*step,sw,
+              T("Wallpaper", "Arka plan"),
+              wallpapers[SET.wallpaper_style%4u],
+              set_row==SR_WALLPAPER,PAL_ACCENT);
+    }
 
     /* Viewport / resolution ------------------------------------------- */
     s_row(sx, sy + SR_VIEWPORT * step, sw,
