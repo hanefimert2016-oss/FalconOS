@@ -1,0 +1,49 @@
+name: FalconOS .app.pkg double click real guest test
+on:
+  push:
+    branches: [feature/falco-app-pkg-doubleclick-20261011]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  app-pkg-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ISO compiler QEMU and VNC
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv
+          python3 -m venv /tmp/falcon-pkg
+          /tmp/falcon-pkg/bin/pip -q install pillow vncdotool
+      - name: Build FalconOS native non-Chromium system
+        run: |
+          PATH="/tmp/falcon-pkg/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 \
+            EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Real GitHub HTTPS package and TWO PS2 file manager clicks
+        id: pkg
+        continue-on-error: true
+        run: |
+          timeout 510s /tmp/falcon-pkg/bin/python tools/vnc_fapp_pkg_doubleclick_e2e.py
+      - name: Save separate real FalconOS PNG files and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-APP-PKG-DoubleClick-Real-QEMU-PNG
+          path: |
+            build/FalconOS-Downloads-APP-PKG.png
+            build/FalconOS-DoubleClick-PKG-App-Running.png
+            build/pkg-doubleclick-*.log
+            build/pkg-doubleclick-*.json
+          if-no-files-found: warn
+      - name: Publish bootable .app.pkg enabled ISO only when native clicks pass
+        if: steps.pkg.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-APP-PKG-DoubleClick-Verified-ISO
+          path: build/FalconOS.iso
+      - name: Enforce exact user-specified double-click behavior
+        if: steps.pkg.outcome != 'success'
+        run: exit 1
