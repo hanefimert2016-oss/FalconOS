@@ -130,7 +130,7 @@ void apps_open(i32 app) {
     static const i32 y_off[8]={-95,-35,45,105,0,80,115,-115};
     i32 cascade=wm_slot_count;
     wm_slot_t item={.app=app,.dx=x_off[cascade],.dy=y_off[cascade],
-                    .dw=0,.dh=0,.maximized=false,.minimized=false};
+                    .dw=0,.dh=0,.maximized=(app==13),.minimized=false};
     wm_slots[wm_slot_count++]=item;
     wm_load_top();
     if(app==2)outb(0xE9,'S');
