@@ -22,6 +22,17 @@ jobs:
           PATH="/tmp/falcon-iso/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 \
             EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
           grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Validate own public HTTPS HTML reader and loopback protections
+        id: reader
+        continue-on-error: true
+        run: |
+          /tmp/falcon-iso/bin/python -m py_compile tools/falco_native_gateway.py \
+            tools/test_falco_general_reader.py tools/vnc_falco_generic_e2e.py
+          timeout 115s /tmp/falcon-iso/bin/python tools/test_falco_general_reader.py
+      - name: Real Falco visual reader for typed public HTTPS origin in QEMU
+        id: browser
+        continue-on-error: true
+        run: timeout 245s /tmp/falcon-iso/bin/python tools/vnc_falco_generic_e2e.py
       - name: Real Marketplace application and ISO9660 Files GUI test
         id: isostudio
         continue-on-error: true
@@ -36,13 +47,17 @@ jobs:
             build/FalconOS-Files-*.png
             build/iso-studio-*.log
             build/iso-studio-*.json
+            build/FalconOS-Falco-Generic-*.png
+            build/falco-generic-*.json
+            build/falco-generic-*.log
+            build/falco-general-html-results.json
           if-no-files-found: warn
       - name: Deliver verified ISO
-        if: steps.isostudio.outcome == 'success'
+        if: steps.isostudio.outcome == 'success' && steps.reader.outcome == 'success' && steps.browser.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: FalconOS-Files-ISOStudio-Bootable-ISO
           path: build/FalconOS.iso
       - name: Fail real workflow on invalid Marketplace download or ISO9660 build
-        if: steps.isostudio.outcome != 'success'
+        if: steps.isostudio.outcome != 'success' || steps.reader.outcome != 'success' || steps.browser.outcome != 'success'
         run: exit 1
