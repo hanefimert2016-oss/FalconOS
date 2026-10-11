@@ -400,6 +400,8 @@ static i32 files_scroll, files_scope;
 static char files_selected_path[SHFS_PATH];
 static u32 files_previous_click_ms;
 static const char *files_status="Double-click .app.pkg to run | Enter to open";
+static char fapp_active_title[76]="FalconOS Application";
+static char fapp_active_path[SHFS_PATH];
 static bool files_search_mode;
 static char files_filter[40];
 static i32 files_filter_len;
@@ -4023,6 +4025,8 @@ static void fapp_run_file(const char *path){
 #endif
         return;
     }
+    k_strcpy(fapp_active_title,name);
+    k_strcpy(fapp_active_path,path);
     term_init();
     term_push("FalconOS .app.pkg | native FAPP/1 application");
     term_push(name);
@@ -4044,7 +4048,7 @@ static void fapp_run_file(const char *path){
 #ifdef FALCON_QEMU_UI_GALLERY
     outb(0xE9,'d');outb(0xE9,'Y');
 #endif
-    apps_open(5);
+    apps_open(19); /* dedicated native FAPP application window */
 }
 static void market_launch(i32 i)
 {
@@ -4482,6 +4486,29 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
     }
 }
 
+/* Native application surface: every .app.pkg launches as a FalconOS
+ * application window, not a Linux or Windows executable. FAPP/1 commands
+ * run with a strict permission allowlist, and their real guest output is
+ * rendered directly in this app window. */
+static void render_installed_package(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    (void)frame;
+    gfx_round_rect(wx+14,wy+15,ww-28,112,18,0x0A2532u);
+    gfx_circle(wx+62,wy+71,28,0x6DEBC1u);
+    gfx_text_lg_centered(wx+62,wy+56,"F",0x0C2C32u);
+    gfx_text_lg(wx+112,wy+32,fapp_active_title,0xF6FFFDu);
+    gfx_text(wx+115,wy+80,"FalconOS application   |   FAPP/1",0x94D5C6u);
+    gfx_round_rect(wx+16,wy+148,ww-32,wh-207,16,0x101C2Du);
+    gfx_text(wx+33,wy+166,"APPLICATION OUTPUT",0x71ECC6u);
+    i32 maxrows=(wh-250)/23;
+    if(maxrows<1)maxrows=1;
+    if(maxrows>TERM_LINES-1)maxrows=TERM_LINES-1;
+    i32 first=TERM_LINES-maxrows;
+    for(i32 i=0;i<maxrows;i++){
+        const char *line=term_buf[first+i];
+        if(line[0])gfx_text(wx+35,wy+200+i*23,line,0xE0ECFAu);
+    }
+    gfx_text(wx+24,wy+wh-42,"Close window to exit   |   Program executed inside FalconOS only",PAL_TEXT_DIM);
+}
 /* ===== app table & dispatch ============================================= */
 typedef void (*app_render_fn)(i32 x, i32 y, i32 w, i32 h, u32 f);
 typedef void (*app_input_fn)(i32 key);
@@ -4516,6 +4543,7 @@ static app_def_t APPS[] = {
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
     { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
+    { "Package",    "FAPP executable",     0x15BA93, render_installed_package, NULL, icon_term },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
@@ -4554,6 +4582,7 @@ i32 apps_launcher_id(i32 group,i32 index) {
 i32 apps_count(void) { return builtin_app_count() + market_count(); }
 const char *apps_name(i32 i) {
     if (i < 0 || i >= apps_count()) return "?";
+    if(i==19)return fapp_active_title;
     return i < builtin_app_count() ? APPS[i].name : market_name(i - builtin_app_count());
 }
 const char *apps_subtitle(i32 i) {
@@ -4565,6 +4594,7 @@ const char *apps_subtitle(i32 i) {
 const char *apps_display_name(i32 i)
 {
     if (i < 0 || i >= apps_count()) return "?";
+    if (i==19)return fapp_active_title;
     if (i >= builtin_app_count()) return market_name(i - builtin_app_count());
     /* User-facing brand: Keşfet / Discover; stable internal ID remains Store. */
     if (i == 2) return T("Discover","Keşfet");
