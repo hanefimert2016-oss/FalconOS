@@ -45,6 +45,14 @@ typedef struct {
 extern fb_t FB;
 u32  gfx_back_w(void);
 u32  gfx_back_h(void);
+/* First-party Falcon Capture Studio live backbuffer preview. */
+void gfx_capture_thumbnail(u32 *pixels,u32 w,u32 h);
+void capture_studio_render(i32 x,i32 y,i32 w,i32 h,u32 frame);
+void capture_studio_input(i32 key);
+void capture_studio_icon(i32 cx,i32 cy);
+bool capture_studio_hotkey(i32 key);
+void capture_studio_after_present(void);
+bool capture_studio_recording(void);
 
 /* ---- theme system (FalconOS 1) ------------------------------------------- */
 /*  Palette is selected at runtime; mutate SET.theme and the next frame
