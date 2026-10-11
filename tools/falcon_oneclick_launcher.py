@@ -28,6 +28,10 @@ def main():
     if len(sys.argv)>1 and sys.argv[1]=="--check":
         expected=["FalconOS.iso","make_safe_disk.py","marketplace_bridge.py",
                   "falcon_https_gateway.py","falco_native_gateway.py"]
+        runtime=Path(sys.executable).resolve()
+        q=shutil.which("qemu-system-x86_64")
+        if not runtime.is_file() or not q or not Path(q).is_file():
+            raise RuntimeError("Executable portable Python/QEMU runtime missing")
         missing=[x for x in expected if not (ROOT/x).is_file()]
         if missing:
             print("FalconOS AppImage resource validation failed:",missing,file=sys.stderr)
@@ -71,6 +75,9 @@ def main():
                        "-serial",f"unix:{SOCK},server=on,wait=off",
                        "-vga","std","-global","VGA.vgamem_mb=256",
                        "-accel","kvm","-accel","tcg","-no-reboot"]
+            firmware=os.environ.get("FALCON_QEMU_FIRMWARE")
+            if firmware and Path(firmware).is_dir():
+                qemu_base += ["-L",firmware]
             # GTK is a regular QEMU display backend, not a browser engine.
             with (STORE/"qemu.log").open("a") as qlog:
                 cmd=qemu_base+["-display","gtk"]
