@@ -25,15 +25,16 @@ def announce(message):
         print("FalconOS:",message,file=sys.stderr)
 
 def main():
-    if len(sys.argv)>1 and sys.argv[1]=="--smoke-boot":
+    if len(sys.argv)>1 and sys.argv[1] in ("--smoke-boot","--smoke-gui"):
         import tempfile
+        graphic=sys.argv[1]=="--smoke-gui"
         if QEMU is None or not ISO.is_file():
             raise RuntimeError("Portable QEMU or ISO missing")
         with tempfile.TemporaryDirectory(prefix="falconos-smoke-") as testdir:
             proof=Path(testdir)/"qemu-debugcon.log"
             command=[QEMU,"-accel","tcg","-m","768",
                      "-cdrom",str(ISO),"-boot","d",
-                     "-display","none","-vga","std",
+                     "-display","gtk" if graphic else "none","-vga","std",
                      "-netdev","user,id=net0","-device","rtl8139,netdev=net0",
                      "-serial","none","-monitor","none",
                      "-debugcon",f"file:{proof}",
@@ -46,7 +47,7 @@ def main():
                 try:
                     for step in range(125):
                         if proof.exists() and b"L" in proof.read_bytes():
-                            print("PASS: bundled QEMU firmware booted FalconOS ISO to actual installer")
+                            print("PASS: bundled QEMU firmware booted FalconOS ISO to actual installer"+(" WITH GTK DISPLAY" if graphic else ""))
                             return 0
                         if guest.poll() is not None:
                             raise RuntimeError("Bundled QEMU terminated before installer")
