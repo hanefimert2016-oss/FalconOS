@@ -481,7 +481,6 @@ typedef struct {
     i32         viewport_h;
     char        password[24];    /* deprecated single-user; kept for compat */
     char        owner[24];       /* deprecated; mirrors users[default].name */
-    u32         wallpaper_style; /* 0=aurora, 1=midnight, 2=violet, 3=sunset */
     bool        widgets_shown;   /* hide widget grid if false               */
     bool        center_circle;   /* legacy v4 hero (default false in v5)    */
 
@@ -518,6 +517,7 @@ typedef struct {
      * 128 entries gives ~1.5× headroom over today's 85-entry catalogue and
      * fits comfortably inside the 2 048-byte FalconFS superblock budget. */
     u8          prg_installed[128];
+    u32         wallpaper_style; /* appended for safe legacy disk migration */
 } settings_t;
 
 extern settings_t SET;
