@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Falco Native Layout Gateway v1: NO Chromium, WebKit, browser automation or JS.
+"""Falco Native Layout Gateway v2: NO Chromium, WebKit, browser automation or JS.
 
-Only this public HTTPS origin is fetched. Python stdlib's HTMLParser extracts
+TLS-validated public HTTPS documents are fetched. Python HTMLParser extracts
 the real document's semantic heading/paragraph data (not a screenshot) into a
 bounded text-only FALCO/1 packet. FalconOS's OWN C layout/painting engine draws
 native-resolution interface elements, text and cards in its framebuffer.
 
-This is NOT a general modern browser: CSS cascade, image decoding, dynamic
+This is NOT a fully standards-compliant browser: CSS cascade, image decoding, dynamic
 JS-generated DOM, cross-origin navigation and cookies are not implemented.
 TLS is verified by the HOST and must be labeled accordingly in the guest.
 """
@@ -18,6 +18,7 @@ import re
 import socket
 import ssl
 import urllib.request
+import urllib.parse
 from html.parser import HTMLParser
 
 SITE = "https://falconos.tech/"
@@ -29,11 +30,23 @@ HEADERS = {
     "Accept-Encoding": "identity",
 }
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
+def public_host(url):
+    parsed=urllib.parse.urlsplit(url)
+    host=parsed.hostname or ""
+    if (parsed.scheme!="https" or parsed.port not in (None,443) or
+        parsed.username or parsed.password or
+        not re.fullmatch(r"[a-zA-Z0-9.-]{1,180}",host) or
+        host.startswith(("-", ".")) or host.endswith(("-", ".")) or
+        ".." in host or "." not in host):
+        raise ValueError("Invalid public HTTPS hostname")
+    answers=socket.getaddrinfo(host,443,type=socket.SOCK_STREAM)
+    if not answers or any(not ipaddress.ip_address(x[4][0]).is_global for x in answers):
+        raise ValueError("Refusing nonpublic DNS address")
+    return host.lower()
+class SafeRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, msg, headers, newurl):
-        # Never redirect to arbitrary hosts. No implicit HTML fallback.
-        if newurl not in (SITE, "https://falconos.tech"):
-            raise ValueError("Unexpected redirect destination")
+        # Reject TLS downgrade and local-network SSRF on each redirect.
+        public_host(newurl)
         return super().redirect_request(request, fp, code, msg, headers, newurl)
 
 class Extract(HTMLParser):
@@ -76,7 +89,7 @@ class Extract(HTMLParser):
             return
         for _,buffer in self.active:buffer.append(data)
 
-def build_document(raw):
+def build_document(raw,host="falconos.tech"):
     decoded = raw.decode("utf-8", errors="replace")
     parser = Extract()
     parser.feed(decoded)
@@ -85,9 +98,13 @@ def build_document(raw):
     # An upstream challenge/error page or fake "FalconOS" mention is not
     # accepted as the requested actual site.
     visible = " ".join(t for _,t in parser.output)
-    if "FalconOS" not in real_title+visible or "Contour" not in real_title+visible:
+    if host=="falconos.tech" and (
+         "FalconOS" not in real_title+visible or
+         "Contour" not in real_title+visible):
         raise ValueError("FalconOS Contour identity markers absent in real HTML")
-    elements = [("T",real_title or "FalconOS Contour")]
+    if not real_title and not visible:
+        raise ValueError("No static HTML to draw; page may require JavaScript")
+    elements = [("T",real_title or "Untitled public webpage")]
     # Keep ordering with no fabricated headings. Distinct first occurrence.
     seen=set()
     for role,txt in parser.output:
@@ -95,52 +112,61 @@ def build_document(raw):
         seen.add(txt)
         if len(elements)>=22:break
         elements.append((role,txt))
-    lines=["FALCO/1","SOURCE|falconos.tech"]
+    lines=["FALCO/1","SOURCE|"+host]
     for role,txt in elements:
         candidate=f"{role}|{txt}"
         if len(("\n".join(lines+[candidate])+"\n").encode())>OUTPUT_LIMIT:break
         lines.append(candidate)
     return ("\n".join(lines)+"\n").encode("utf-8")
 
-def fetch():
-    req=urllib.request.Request(SITE,headers=HEADERS)
+def fetch(url=SITE, original_host="falconos.tech"):
+    # Normal host-validated TLS; no browser spoofing, JS, challenge solving.
+    public_host(url)
+    req=urllib.request.Request(url,headers=HEADERS)
     opener=urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=ssl.create_default_context()),
-        NoRedirect())
-    # Strict public-only DNS check; do not accidentally access private IP.
-    addresses=socket.getaddrinfo("falconos.tech",443,type=socket.SOCK_STREAM)
-    if not addresses or any(not ipaddress.ip_address(x[4][0]).is_global for x in addresses):
-        raise ValueError("Unsafe upstream network address")
-    with opener.open(req,timeout=15) as response:
+        SafeRedirect())
+    with opener.open(req,timeout=17) as response:
         if response.status!=200:raise ValueError(f"Upstream HTTP {response.status}")
         if "text/html" not in response.headers.get("Content-Type",""):
             raise ValueError("Upstream was not HTML")
         raw=response.read(FETCH_LIMIT+1)
         if len(raw)>FETCH_LIMIT:raise ValueError("Page HTML too large")
-    return build_document(raw)
+    return build_document(raw,original_host)
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self,fmt,*args):print(fmt%args,flush=True)
     def do_GET(self):
         remote=ipaddress.ip_address(self.client_address[0])
         if not (remote.is_private or remote.is_loopback):
-            return self.reply(403,b"Private VM only",False)
+            return self.reply(403,b"Private VM only",False,"")
+        host="falconos.tech";url=SITE
         if self.path!="/falcon/native/":
-            return self.reply(404,b"Only falconos.tech native layout allowed",False)
+            prefix="/falcon/native/"
+            if not self.path.startswith(prefix) or len(self.path)>320:
+                return self.reply(404,b"Unknown native HTML reader route",False,host)
+            supplied=self.path[len(prefix):]
+            host,sep,tail=supplied.partition("/")
+            if not sep or not re.fullmatch(r"[a-zA-Z0-9.-]{1,180}",host):
+                return self.reply(400,b"Malformed requested HTTPS host",False,host)
+            # No unsafe URL userinfo, query control chars or fragments.
+            if not re.fullmatch(r"[a-zA-Z0-9_.~%/+?=&-]{0,180}",tail):
+                return self.reply(400,b"Invalid bounded web path",False,host)
+            url="https://"+host+"/"+tail
         try:
-            body=fetch()
+            body=fetch(url,host.lower())
         except Exception as ex:
             print("NATIVE_LAYOUT_FETCH_ERROR",repr(ex),flush=True)
-            return self.reply(502,repr(ex).encode()[:160],False)
+            return self.reply(502,repr(ex).encode()[:160],False,host)
         print("NATIVE_LAYOUT_FROM_REAL_HTML",len(body),flush=True)
-        self.reply(200,body,True)
-    def reply(self,status,data,verified):
+        self.reply(200,body,True,host)
+    def reply(self,status,data,verified,host=""):
         self.send_response(status)
         self.send_header("Content-Type","text/plain; charset=utf-8")
         self.send_header("Content-Length",str(len(data)))
         if verified:
             self.send_header("X-Falco-Native-Verified","yes")
-            self.send_header("X-Falco-Source","falconos.tech")
+            self.send_header("X-Falco-Source",host)
         self.send_header("Connection","close")
         self.end_headers()
         self.wfile.write(data)
