@@ -182,9 +182,15 @@ static bool connect_current(const u8 remote[4],u16 port,u16 local_port){
     C.phase=TCP_CLOSED;
     return false;
 }
+/* RFC 9293: do not immediately reuse an identical 4-tuple when the
+ * remote endpoint may still retain its TIME_WAIT state. This also permits
+ * consecutive visual-browser tile requests on the same remote port. */
+static u16 next_client_port=TCP_LOCAL_PORT;
 bool native_tcp_connect(const u8 remote[4],u16 port){
     ACTIVE=&CONNECTIONS[0];
-    return connect_current(remote,port,TCP_LOCAL_PORT);
+    u16 local=next_client_port++;
+    if(next_client_port>=60000u)next_client_port=TCP_LOCAL_PORT;
+    return connect_current(remote,port,local);
 }
 i32 native_tcp_socket_open(const u8 remote[4],u16 port){
     if(!remote||!port)return -1;
