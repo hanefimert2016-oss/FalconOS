@@ -443,8 +443,8 @@ void installer_render(u32 frame)
             char num[8]; k_itoa((u32)SET.user_count, num, 10); k_strcat(hbuf, num);
             k_strcat(hbuf, "/8");
             headline = hbuf;
-            helptext = T("First created user becomes the default (auto on boot).",
-                          "İlk oluşturulan varsayılan olur (boot'ta otomatik).");
+            helptext = T("No is recommended. Add users later from Settings.",
+                          "Varsayilan Hayir. Diger hesaplar sonra eklenebilir.");
             const char *items[2] = {
                 T("Yes, add another", "Evet, ekle"),
                 T("No, finish setup", "Hayır, bitir")
@@ -663,7 +663,7 @@ void installer_input(i32 key)
                 g_step = INST_DONE;
             } else {
                 g_step = INST_USER_MORE;
-                g_choice = (SET.user_count >= 2) ? 1 : 0;   /* nudge "no" after 2 */
+                g_choice = 1;  /* default: NO second user; can choose Yes */
             }
             return;
         }
