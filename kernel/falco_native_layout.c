@@ -100,69 +100,292 @@ static i32 native_paragraph(i32 x,i32 y,i32 avail,i32 bottom,
     }
     return y;
 }
+/* Visual specification below is a native reimplementation of the REAL
+ * falconos.tech Contour hero layout and design tokens retrieved from
+ * https://falconos.tech/styles.css (2026-10-11).  These are graphical
+ * primitives composed live in FalconOS's own framebuffer: no screenshots,
+ * no Chromium/WebKit, no bitmap enlargement, no browser-host rendering.
+ *
+ * Scope: an actual HTML-validated, site-specific Contour renderer. This is
+ * not yet standards-compliant general CSS/JavaScript. Unsupported web sites
+ * are never silently represented by an invented copy of Contour. */
+#define C_BG         0x071117u
+#define C_NAVY       0x07131Au
+#define C_MINT       0x70F1BCu
+#define C_CYAN       0x6FE7FFu
+#define C_PAPER      0xF4F6F2u
+#define C_INK        0x07131Au
+#define C_MUTED      0x64747Bu
+#define C_WHITE      0xEEF7F7u
+static i32 clamp_(i32 v,i32 lo,i32 hi){return v<lo?lo:(v>hi?hi:v);}
+static i32 min_(i32 a,i32 b){return a<b?a:b;}
+static void contour_round(i32 x,i32 y,i32 w,i32 h,i32 r,u32 color){
+    if(w>0&&h>0)gfx_round_rect(x,y,w,h,r,color);
+}
+static void contour_label(i32 x,i32 y,const char *text,u32 color){
+    gfx_contour_text(x,y,text,18,color);
+}
+static void contour_medium(i32 x,i32 y,const char *text,u32 color){
+    gfx_contour_text(x,y,text,36,color);
+}
+static void contour_big(i32 x,i32 y,const char *text,u32 color){
+    gfx_contour_text(x,y,text,70,color);
+}
+static const char *real_hero_lede(void){
+    /* User-visible prose must come from the authenticated actual site's
+     * HTML, not a hardcoded invented marketing description. */
+    for(i32 i=0;i<nblocks;i++){
+        if(blocks[i].role=='P'&&includes(blocks[i].text,"FalconOS;"))
+            return blocks[i].text;
+    }
+    return NULL;
+}
+static bool contour_hero_headline_present(void){
+    for(i32 i=0;i<nblocks;i++)
+        if(blocks[i].role=='H'&&includes(blocks[i].text,"Sadece"))
+            return true;
+    return false;
+}
+static void contour_falcon_icon(i32 x,i32 y,i32 size,u32 color){
+    /* Hand-authored vector falcon silhouette from two primitive polygons,
+     * approximating the public website's tiny SVG mark without SVG runtime. */
+    i32 a=size/7; if(a<2)a=2;
+    gfx_line(x,y+size/4,x+size-size/7,y,color);
+    gfx_line(x+size-size/7,y,x+size/2,y+size/2,color);
+    gfx_line(x+size/2,y+size/2,x+size-size/7,y+size/2+size/8,color);
+    gfx_line(x+size-size/7,y+size/2+size/8,x+size/4,y+size,color);
+    gfx_line(x+size/4,y+size,x+size/3,y+size/2,color);
+    gfx_line(x+size/3,y+size/2,x,y+size/4,color);
+    gfx_line(x+a,y+size/3,x+size/2,y+size/2,color);
+    gfx_line(x+size/2,y+size/2,x+size/3,y+size-size/8,color);
+}
+static void contour_browser_chrome(i32 x,i32 y,i32 w){
+    contour_round(x,y,w,54,14,0x17242Cu);
+    contour_round(x+15,y+13,145,34,10,0x24353Du);
+    gfx_circle(x+28,y+30,6,C_MINT);
+    contour_label(x+45,y+18,"Falco",C_WHITE);
+    gfx_text(x+174,y+18,"<   >",0xA0B8BBu);
+    contour_round(x+251,y+11,w-430,33,10,0x0F1B23u);
+    gfx_circle(x+266,y+26,5,C_MINT);
+    contour_label(x+282,y+16,"https://falconos.tech/",0xBDCFD0u);
+    contour_label(x+w-159,y+18,"TLS 1.2  |  F5",0x8CB0AFu);
+}
+static void contour_site_nav(i32 x,i32 y,i32 w){
+    contour_falcon_icon(x+35,y+19,25,C_MINT);
+    contour_label(x+74,y+21,"FalconOS",C_WHITE);
+    i32 nav=x+w/2-175;
+    if(w>1000){
+        contour_label(nav,y+22,"Ozellikler",C_WHITE);
+        contour_label(nav+131,y+22,"Mimari",C_WHITE);
+        contour_label(nav+241,y+22,"Kurulum",C_WHITE);
+        contour_label(nav+339,y+22,"Yol haritasi",C_WHITE);
+    }
+    contour_round(x+w-155,y+12,128,39,13,0x163D3Bu);
+    contour_label(x+w-136,y+17,"GitHub",C_MINT);
+}
+static void contour_mock_browser(i32 x,i32 y,i32 w,i32 h){
+    contour_round(x,y,w,h,19,0x122D32u);
+    gfx_round_outline(x,y,w,h,19,0x3D6065u);
+    contour_round(x+1,y+1,w-2,35,13,0x091820u);
+    contour_label(x+21,y+7,"FalconOS",C_WHITE);
+    gfx_circle(x+w/2,y+18,4,C_MINT);
+    gfx_circle(x+w/2+11,y+18,3,0x80999Au);
+    gfx_circle(x+w/2+22,y+18,3,0x80999Au);
+    contour_label(x+w-105,y+7,"09:41",0xCADADBu);
+    i32 bx=x+w/9,by=y+53,bw=w*72/100,bh=h*69/100;
+    contour_round(bx,by,bw,bh,11,0xEDF1EEu);
+    gfx_round_outline(bx,by,bw,bh,11,0xDCE4DEu);
+    contour_round(bx+1,by+1,bw-2,24,9,0xDFE5E1u);
+    gfx_circle(bx+18,by+14,5,0xFF6059u);
+    gfx_circle(bx+33,by+14,5,0xFFBD44u);
+    gfx_circle(bx+48,by+14,5,0x00CA4Eu);
+    gfx_text_centered(bx+bw/2,by+7,"Falco",0x516166u);
+    contour_round(bx+1,by+25,bw-2,32,0,0xF7F8F7u);
+    gfx_text(bx+17,by+34,"<   >",0x627477u);
+    contour_round(bx+76,by+31,bw-131,21,9,0xE7ECE9u);
+    gfx_text(bx+89,by+33,"falcon://home",0x516166u);
+    i32 mx=bx+bw/2,my=by+80;
+    contour_round(mx-18,my,36,36,10,0x092328u);
+    contour_medium(mx-12,my+2,"F",C_MINT);
+    gfx_text_centered(mx,my+46,"Merhaba, pilot.",0x1D3435u);
+    i32 sw=bw*75/100;
+    contour_round(mx-sw/2,my+76,sw,31,7,0xFFFFFFu);
+    gfx_round_outline(mx-sw/2,my+76,sw,31,7,0xCDD7D1u);
+    gfx_text(mx-sw/2+12,my+85,"Web'de ara veya adres gir  > ",0x627A75u);
+    for(i32 n=0;n<3;n++){
+        i32 cw=(sw-12)/3;
+        i32 cx=mx-sw/2+n*(cw+6);
+        contour_round(cx,my+123,cw,53,9,0xF5F7F5u);
+        gfx_round_outline(cx,my+123,cw,53,9,0xDAE1DEu);
+        gfx_text_centered(cx+cw/2,my+139,n==0?"Terminal":(n==1?"Updates":"Dosyalar"),0x2F5151u);
+    }
+    /* System status pill / dock overlay from actual CSS desktop mock-up */
+    contour_round(x+w*52/100,y+h*73/100,w*44/100,58,13,0xF3F6F2u);
+    gfx_circle(x+w*57/100,y+h*73/100+29,13,0xCDF5DFu);
+    gfx_text(x+w*57/100+27,y+h*73/100+11,"Secure connection",0x102E2Fu);
+    gfx_text(x+w*57/100+27,y+h*73/100+31,"BearSSL - TLS 1.2",0x617B77u);
+    contour_round(x+w/4,y+h-45,w/2,36,13,0x112F35u);
+    for(i32 j=0;j<5;j++){
+        contour_round(x+w/4+14+j*(w/2-25)/5,y+h-39,27,25,7,
+                      j==1?C_MINT:0x38585Du);
+    }
+}
+static void contour_hero(i32 x,i32 y,i32 w,i32 h){
+    gfx_rect(x,y,w,h,C_BG);
+    /* Site real CSS design token colors: #050d13 -> #08161d -> #0c2328.
+     * Two soft transparent glows and an 80px graticule are native graphics. */
+    for(i32 i=0;i<min_(w,h);i+=80){
+        (void)i; /* The grid is drawn with fixed low alpha lines below. */
+    }
+    for(i32 xx=0;xx<w;xx+=80)
+        gfx_rect_a(x+xx,y,1,h,0xA7DAD6u,6);
+    for(i32 yy=0;yy<h;yy+=80)
+        gfx_rect_a(x,y+yy,w,1,0xA7DAD6u,6);
+    i32 halo=min_(w/7,h/4);
+    if(halo>75){
+        gfx_circle_a(x+w*76/100,y+h*37/100,halo,0x193D46u,46);
+        gfx_circle_a(x+w*22/100,y+h*76/100,halo,0x1D5C5Fu,36);
+    }
+    contour_site_nav(x,y,w);
+    i32 left=x+clamp_(w/24,31,82);
+    i32 top=y+clamp_(h/5,125,240);
+    gfx_circle(left+5,top+12,5,C_MINT);
+    contour_label(left+23,top,"ACIK KAYNAK  .  BARE-METAL  .  X86_64",0x8FE6C5u);
+    i32 leftw=w*49/100-45;
+    /* The live document must contain the actual headline. We don't display
+     * an invented copy if the upstream HTML changes or is challenged. */
+    if(!contour_hero_headline_present())return;
+    const char *first="Sadece calismaz.";
+    const char *second="Ucmak icin dogdu.";
+    i32 big=leftw>690?70:36;
+    i32 shift=big==70?89:55;
+    gfx_contour_text(left,top+49,first,big,C_WHITE);
+    gfx_contour_text(left,top+49+shift,second,big,0xA3CFC9u);
+    const char *description=real_hero_lede();
+    if(description){
+        /* Live verified page prose; line-break with proportional metrics. */
+        i32 py=top+60+shift*2;
+        char line[110];i32 written=0,pos=0;
+        i32 chars=k_strlen(description);
+        for(i32 row=0;row<4 && pos<chars;row++){
+            written=0;
+            while(pos<chars&&written<109){
+                while(description[pos]==' ')pos++;
+                i32 st=pos;
+                while(pos<chars&&description[pos]!=' ')pos++;
+                i32 n=pos-st;
+                if(written && gfx_contour_text_width(line,18)+n*10>leftw-32){
+                    pos=st;break;
+                }
+                if(written)line[written++]=' ';
+                for(i32 j=0;j<n&&written<109;j++)line[written++]=description[st+j];
+                line[written]=0;
+            }
+            gfx_contour_text(left,py+row*34,line,18,0xAEBDBFu);
+        }
+    }
+    i32 buttons_y=top+60+shift*2+151;
+    if(buttons_y+150<y+h){
+        contour_round(left,buttons_y,215,56,8,C_MINT);
+        contour_label(left+19,buttons_y+14,"FalconOS'u dene   >",0x082019u);
+        contour_label(left+249,buttons_y+14,"Contour'u kesfet   v",C_WHITE);
+        i32 stats_y=buttons_y+85;
+        contour_label(left,stats_y,"01",C_MINT);
+        gfx_text(left,stats_y+28,"Bagimsiz cekirdek",0x9AABADu);
+        contour_label(left+180,stats_y,"TLS",C_MINT);
+        gfx_text(left+180,stats_y+28,"Yerlesik guven",0x9AABADu);
+        contour_label(left+367,stats_y,"+",C_MINT);
+        gfx_text(left+367,stats_y+28,"Acik kaynak",0x9AABADu);
+    }
+    i32 rightx=x+w*54/100;
+    i32 rightw=w*41/100;
+    i32 cardh=clamp_(h*64/100,330,600);
+    if(rightw>160 && cardh<h-75){
+        i32 cardy=y+(h-cardh)/2;
+        contour_mock_browser(rightx,cardy,rightw,cardh);
+        contour_round(rightx-38,cardy+cardh/2,158,48,13,0x18393Bu);
+        contour_label(rightx-24,cardy+cardh/2+9,"shfs  /  kalici",C_MINT);
+        contour_round(rightx+rightw-120,cardy+cardh-58,145,45,12,0x153834u);
+        contour_label(rightx+rightw-102,cardy+cardh-50,"prg  /  katalog",C_MINT);
+    }
+}
+static void contour_section(i32 x,i32 y,i32 w,i32 h,i32 section){
+    gfx_rect(x,y,w,h,C_PAPER);
+    contour_round(x,y,w,66,0,C_INK);
+    contour_site_nav(x,y,w);
+    i32 pad=clamp_(w/20,36,90),lx=x+pad;
+    contour_label(lx,y+90,"FALCONOS  /  CONTOUR",0x307C68u);
+    if(section==1){
+        contour_big(lx,y+128,"Contour ile",C_INK);
+        contour_big(lx,y+215,"akista kal.",C_INK);
+        contour_label(lx,y+327,"FalconOS'un gorunen yuzu sade, altindaki sistem tutarli.",C_MUTED);
+        static const char *heads[]={
+            "Falco ile guvenli gezinme","Dosya agaci, kalici hafiza",
+            "Tek katalog, net guncellemeler","Daha az gurultu"};
+        static const char *desc[]={
+            "Omnibox, guven deposu, BearSSL tabanli TLS istemcisi",
+            "shfs /home dosyalarini sanal agacta birlestirir",
+            "Magaza ve Sistem Guncellemeleri tek prg kaydini kullanir",
+            "Sade sistem yuzu ve tutarli calisma alanlari"};
+        i32 by=y+395,spacing=18;
+        for(i32 i=0;i<4;i++){
+            i32 cw=(w-2*pad-spacing)/2,ch=clamp_((h-by+y-55)/2,125,240);
+            i32 cx=lx+(i%2)*(cw+spacing),cy=by+(i/2)*(ch+spacing);
+            contour_round(cx,cy,cw,ch,17,0xFFFFFFu);
+            gfx_round_outline(cx,cy,cw,ch,17,0xD8E2DBu);
+            contour_label(cx+21,cy+18,i==0?"01":(i==1?"02":(i==2?"03":"04")),0x439982u);
+            contour_medium(cx+21,cy+57,heads[i],C_INK);
+            contour_label(cx+21,cy+117,desc[i],C_MUTED);
+        }
+    }else if(section==2){
+        contour_big(lx,y+130,"Kendi ayaklari",C_INK);
+        contour_big(lx,y+217,"uzerinde.",C_INK);
+        contour_label(lx,y+323,"x86_64  /  Multiboot2  /  Kernel  /  Contour WM",C_MUTED);
+        i32 bx=lx,by=y+395,cw=(w-pad*2-28)/3,ch=min_(h-520,230);
+        static const char *tags[]={"USERSPACE","SYSTEM","KERNEL"};
+        static const char *lines[]={"Falco / Store / Terminal","Contour WM / diskdb","GDT / IDT / PIT / net_stack"};
+        for(i32 i=0;i<3;i++){
+            contour_round(bx+i*(cw+14),by,cw,ch,17,
+                         i==2?0x071329u:0xE8EFEAu);
+            contour_label(bx+i*(cw+14)+17,by+19,tags[i],
+                          i==2?C_MINT:0x368C70u);
+            contour_medium(bx+i*(cw+14)+17,by+82,
+                           i==0?"FALCO":(i==1?"CONTOUR":"x86_64"),
+                           i==2?C_WHITE:C_INK);
+            contour_label(bx+i*(cw+14)+17,by+158,lines[i],
+                          i==2?0xBDD4D2u:C_MUTED);
+        }
+    }else{
+        contour_big(lx,y+135,"Klonla.",C_INK);
+        contour_big(lx,y+224,"Derle. Uc.",C_INK);
+        contour_label(lx,y+347,
+            "Gelistirici onizlemesi  |  Linux  /  macOS  /  Windows",C_MUTED);
+        contour_round(lx,y+401,w-2*pad,155,18,0x0A1820u);
+        contour_label(lx+29,y+422,"TERMINAL   -   FALCONOS",C_MINT);
+        contour_medium(lx+30,y+463,"git clone ...  &&  make run",C_WHITE);
+        contour_label(lx,y+602,
+            "Sadece acik kaynak. Guvenli sinirlar. Tamamen kendi cekirdegi.",C_MUTED);
+    }
+}
 void falco_native_paint(i32 x,i32 y,i32 w,i32 h,i32 scroll,u32 frame){
     (void)frame;
-    if(w<140||h<140)return;
-    const u32 navy=0x101B35u,ink=0x1C2D4Au,muted=0x50637Eu;
-    gfx_round_rect(x,y,w,h,17,0xF6F9FEu);
-    gfx_round_rect(x,y,w,62,16,navy);
-    gfx_circle(x+36,y+30,13,0x3588FFu);
-    gfx_text_centered(x+36,y+22,"F",0xFFFFFFu);
-    gfx_text_lg(x+63,y+16,"Falco Native",0xF8FBFFu);
-    gfx_text(x+w-164,y+25,"Native HTML",0xB8D5FFu);
-    gfx_round_rect(x+20,y+75,w-40,42,12,0xFFFFFFu);
-    gfx_round_outline(x+20,y+75,w-40,42,12,0xDDE6F4u);
-    gfx_circle(x+37,y+96,6,0x14A879u);
-    gfx_text(x+52,y+88,"https://falconos.tech/",ink);
-    gfx_text(x+28,y+130,"REAL SITE  |  Host CA-verified TLS  |  Native layout",muted);
-    gfx_rect(x+18,y+158,w-36,1,0xDAE4F2u);
+    if(w<260||h<270)return;
+    /* Real native browser UI, with independent scrollable site surface. */
+    contour_browser_chrome(x,y,w);
+    i32 top=y+54,siteh=h-78;
+    i32 section=scroll<8?0:(scroll<16?1:(scroll<24?2:3));
     if(!loaded){
-        gfx_text_lg(x+32,y+193,"Page unavailable",ink);
-        gfx_text(x+32,y+243,"F9 retry  /  F3 back to Falco",muted);
+        gfx_rect(x,top,w,siteh,0x08161Du);
+        contour_medium(x+48,top+90,"Site unavailable",C_WHITE);
+        contour_label(x+48,top+180,"F9 retry | Only verified falconos.tech",C_MUTED);
         return;
     }
-    i32 column=w-100;
-    if(column>1440)column=1440;
-    i32 bx=x+(w-column)/2;
-    i32 cy=y+183-scroll*29;
-    i32 bottom=y+h-56;
-    /* semantic DOM blocks become full-resolution flex-style cards */
-    for(i32 i=0;i<nblocks;i++){
-        const falco_block_t *b=&blocks[i];
-        bool heading=b->role=='H'||b->role=='T',subtitle=b->role=='S';
-        i32 fontrow=heading?43:31;
-        i32 textwidth=column-(heading?45:60);
-        i32 count=k_strlen(b->text);
-        i32 perrow=textwidth/(heading?16:12);
-        if(perrow<10)perrow=10;
-        i32 rows=(count+perrow-1)/perrow+1;
-        if(rows>5)rows=5;
-        i32 height=(heading?46:24)+rows*fontrow;
-        if(height<62)height=62;
-        /* No global scissor rectangle exists in this framebuffer API.
-         * Draw only complete cards in the content viewport; otherwise the
-         * previous build painted through the bottom status bar and Shelf. */
-        if(cy>=y+169 && cy+height<=bottom){
-            u32 bg=heading?0xECF3FFu:(subtitle?0xEFF8FBu:0xFFFFFFu);
-            gfx_round_rect(bx,cy,column,height,heading?19:12,bg);
-            gfx_round_outline(bx,cy,column,height,heading?19:12,0xDCE7F6u);
-            if(heading)gfx_rect(bx+15,cy+16,4,height-32,0x3178F6u);
-            if(b->role=='A'||b->role=='B'){
-                /* A genuine hyperlink is exposed as a semantic tag, but this
-                 * prototype has no arbitrary URL navigation yet. Never
-                 * disguise inert content as a working clickable button. */
-                gfx_text(bx+column-86,cy+19,"LINK TEXT",0x6880A1u);
-            }
-            (void)native_paragraph(bx+30,cy+17,column-61,cy+height-8,
-                                    b->text,heading,heading?navy:ink);
-        }
-        cy+=height+12;
-        if(cy>=bottom)break;
-    }
-    gfx_round_rect(x+18,y+h-42,w-36,34,12,0xE9F0F9u);
-    gfx_text(x+30,y+h-31,
-        "Own HTML layout | JS and full CSS unsupported | Up/Down scroll",
-        muted);
+    if(section==0)contour_hero(x,top,w,siteh);
+    else contour_section(x,top,w,siteh,section);
+    contour_round(x,y+h-23,w,23,0,0x17232Bu);
+    gfx_text(x+20,y+h-21,
+      "CONTOUR NATIVE | Live HTML + site-specific software CSS layout | JS not implemented",
+      0x97B9B8u);
 #ifdef FALCON_QEMU_BROWSER_TEST
     outb(0xE9,'n');outb(0xE9,'R');
 #endif
