@@ -22,7 +22,7 @@ class ProtocolTest(unittest.TestCase):
         release = {
             "hello-world": {
                 "checksum_asset": {"browser_download_url": "https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/a/a.app.pkg.sha256"},
-                "asset": {"browser_download_url":
+                "asset": {"name": "a.app.pkg", "browser_download_url":
                     "https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/a/a.app.pkg"},
                 "version": "1.0.0",
                 "release": {"name": "Hello World"},
