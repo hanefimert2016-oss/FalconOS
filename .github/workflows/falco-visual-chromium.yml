@@ -1,0 +1,47 @@
+name: FalconOS Falco TRUE Chromium visual browser
+on:
+  push:
+    branches: [feature/falco-visual-chromium-20261011]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  visual-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU build and real Chromium
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv ca-certificates
+          python3 -m venv /tmp/falco-visual
+          /tmp/falco-visual/bin/pip -q install 'playwright>=1.55,<2' pillow vncdotool
+          /tmp/falco-visual/bin/python -m playwright install --with-deps chromium
+      - name: Build actual FalconOS with native HTTPS and visual bridge UI
+        run: |
+          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Chromium executes real page and Falco guest paints actual pixels
+        id: test
+        continue-on-error: true
+        run: timeout 520s /tmp/falco-visual/bin/python tools/vnc_falco_visual_e2e.py
+      - name: Upload separate source/guest visual PNGs and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Falco-Visual-Chromium-REAL-PNG
+          path: |
+            build/Falco-*.png
+            build/visual-*.log
+            build/visual-*.json
+          if-no-files-found: warn
+      - name: Upload new prototype ISO only if visual browsing proven
+        if: steps.test.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Falco-Visual-Verified-ISO
+          path: build/FalconOS.iso
+      - name: Report failed real-browser validation
+        if: steps.test.outcome != 'success'
+        run: exit 1
