@@ -1,0 +1,13 @@
+FAPP/2
+id=contour-studio
+name=Contour Studio
+version=1.0.0
+summary=Real native graphical FalconOS application
+
+ACCENT|20A979
+TITLE|Contour Studio
+TEXT|Your first independently drawn FalconOS app.
+CARD|Native window. Native font. No browser or screenshot streaming.
+CARD|Designed for secure apps from the FalconOS Marketplace.
+BUTTON|Say hello|Hello from your own FalconOS application!
+BUTTON|Show status|GUI button click was handled by FalconOS.
