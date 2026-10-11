@@ -4667,6 +4667,9 @@ static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_text(wx+25,wy+wh-26,
         "Close this window with the X. This is FalconOS FAPP/1, not x86 ELF.",
         PAL_TEXT_DIM);
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'f');outb(0xE9,'W'); /* FAPP Runner was actually painted */
+#endif
 }
 static void icon_fapp_runner(i32 cx,i32 cy){
     gfx_round_rect(cx-16,cy-16,32,32,9,0x208D66u);
