@@ -32,6 +32,7 @@ jobs:
           path: |
             build/FalconOS-Falco-Real-HTTPS-AppPkg-Downloaded.png
             build/FalconOS-Downloads-Real-Internet-AppPkg.png
+            build/FalconOS-Downloaded-AppPkg-DoubleClick-Running.png
             build/falco-app-download-results.json
             build/falco-app-download-debug.log
             build/falco-app-https-host.log
