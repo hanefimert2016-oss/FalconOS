@@ -62,6 +62,11 @@ def main():
             open_app(c,"Codedium","zS")
             off=len(data());k(c,"f6");wait(b"FC",off,40)
             wait(b"FS",off,40)
+            wait(b"zV",off,40)
+            wait(b"FR",off,50)
+            # QEMU TCG may paint the native app before the asynchronous RFB
+            # display sends the updated framebuffer. Capture only afterwards.
+            pause(2.0)
             shot(c,"FalconOS-FScript-Running")
             STATE["checks"].append("CodeDium compiles FSC/1 sample to actual native FScript window")
             open_app(c,"Codedium","zS")
