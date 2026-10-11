@@ -79,9 +79,10 @@ def main():
                 t(c,"falcon")
                 for x in (b"P",b"Q",b"O"):
                     off=len(fresh_data());k(c,"enter");wait(x,off,30)
-                k(c,"right")
-                off=len(fresh_data());k(c,"enter");wait(b"W",off,40)
-                off=len(fresh_data());k(c,"enter");wait(b"H",off,40)
+                # Installer now defaults to NO second account; Right would
+                # select YES. Passwordless default cold-boot auto-login.
+                off=len(fresh_data());k(c,"enter")
+                wait(b"aU",off,50);wait(b"H",off,55)
                 k(c,"esc");pause(.8)
                 k(c,"f2")
                 t(c,"Store")  # bilingual launcher title alias
