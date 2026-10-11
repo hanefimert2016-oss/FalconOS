@@ -31,6 +31,8 @@ jobs:
           name: FalconOS-Falco-HTTPS-APP-PKG-Downloads-PNG
           path: |
             build/FalconOS-Falco-Real-HTTPS-AppPkg-Downloaded.png
+            build/FalconOS-Falco-Entered-AppPkg-URL.png
+            build/FalconOS-Falco-AppPkg-Download-Status.png
             build/FalconOS-Downloads-Real-Internet-AppPkg.png
             build/FalconOS-Downloaded-AppPkg-DoubleClick-Running.png
             build/falco-app-download-results.json
