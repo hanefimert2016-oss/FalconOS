@@ -38,6 +38,10 @@ jobs:
         id: guest_url
         continue-on-error: true
         run: timeout 360s /tmp/falcon-pkg/bin/python tools/vnc_falco_direct_pkg_e2e.py
+      - name: Native interactive .app.pkg GUI from GitHub plus real button press
+        id: gui
+        continue-on-error: true
+        run: timeout 370s /tmp/falcon-pkg/bin/python tools/vnc_fapp_gui_e2e.py
       - name: Save separate real FalconOS PNG files and logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -55,15 +59,19 @@ jobs:
             build/pkg-falco-url-*.json
             build/FalconOS-Falco-Direct-HTTPS-*.png
             build/FalconOS-HTTPS-URL-*.png
+            build/FalconOS-Falco-GUI-APP-*.png
+            build/FalconOS-FAPP-GUI-*.png
+            build/pkg-gui-*.log
+            build/pkg-gui-*.json
           if-no-files-found: warn
       - name: Publish bootable .app.pkg enabled ISO only when native clicks pass
-        if: steps.pkg.outcome == 'success' && steps.guest_url.outcome == 'success'
+        if: steps.pkg.outcome == 'success' && steps.guest_url.outcome == 'success' && steps.gui.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: FalconOS-APP-PKG-DoubleClick-Verified-ISO
           path: build/FalconOS.iso
       - name: Enforce exact user-specified double-click behavior
-        if: steps.pkg.outcome != 'success' || steps.guest_url.outcome != 'success'
+        if: steps.pkg.outcome != 'success' || steps.guest_url.outcome != 'success' || steps.gui.outcome != 'success'
         run: exit 1
 
   github-release:
