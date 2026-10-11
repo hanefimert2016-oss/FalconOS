@@ -1,0 +1,48 @@
+name: FalconOS Falco real falconos.tech visual QEMU
+on:
+  push:
+    branches: [feature/falco-codedium-engine-20261011]
+    paths:
+      - tools/vnc_falco_falconos_tech_visual_e2e.py
+      - tools/falco_native_gateway.py
+      - kernel/falco_native_layout.c
+      - kernel/apps.c
+      - .github/workflows/falco-tech-live-qemu.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  falco-real-site:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup compiler and actual QEMU screen capture
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv
+          python3 -m venv /tmp/falcon-falco
+          /tmp/falcon-falco/bin/pip --quiet install pillow vncdotool
+      - name: Build FalconOS real native 2560x1440 ISO
+        run: |
+          PATH="/tmp/falcon-falco/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY -DFALCON_QEMU_BROWSER_TEST'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Open real https://falconos.tech/ INSIDE Falco in QEMU
+        run: timeout 470s /tmp/falcon-falco/bin/python tools/vnc_falco_falconos_tech_visual_e2e.py
+      - name: Upload real QEMU Falco screenshots and diagnostics even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Falco-Real-falconos-tech-QEMU
+          path: |
+            build/FalconOS-Falco-Tech-*.png
+            build/falco-tech-*.json
+            build/falco-tech-*.log
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Bootable verified ISO only if live website loaded
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Falco-RealSite-Verified-ISO
+          path: build/FalconOS.iso
