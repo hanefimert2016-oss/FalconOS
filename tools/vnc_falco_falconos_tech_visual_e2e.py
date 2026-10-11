@@ -90,8 +90,10 @@ def main():
                 # QEMU's VNC keysyms are US physical key positions. The
                 # FalconOS installer chose Turkish-Q, where US '.' = ç,
                 # while US '/' (scancode 0x35) is the Turkish-Q '.'.
-                k(client,"slash")
+                k(client,"/")
                 t(client,"tech")
+                pause(.7)
+                snap(client,"FalconOS-Falco-Tech-Typed-URL")
                 offset=len(events());k(client,"enter")
                 STATE["checks"].append("Typed falconos.tech into native Falco omnibox and pressed Enter")
                 try:
