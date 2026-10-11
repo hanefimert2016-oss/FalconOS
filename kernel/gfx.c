@@ -767,6 +767,52 @@ void gfx_text_hero_centered(i32 cx,i32 y,const char *s,u32 color){
     gfx_text_antialiased(cx-(gfx_text_width_lg(s)),y,s,color,32,64);
 }
 
+/* Original FalconOS software typographer. This alpha blits proportional
+ * 18/36/70px rasterized glyphs generated at compile time, never screenshot
+ * upscaling and never a third-party browser engine. UTF8 Turkish supported.
+ * Size is 18/36/70, not an arbitrary raster scaling parameter. */
+extern const u8 FC_FONT_18[107][29*30],FC_FONT_36[107][53*55],
+                FC_FONT_70[107][99*105];
+extern const u8 FC_ADV_18[107],FC_ADV_36[107],FC_ADV_70[107];
+static i32 contour_size(i32 size){return size>=55?70:(size>=27?36:18);}
+i32 gfx_contour_text_width(const char *text,i32 size){
+    if(!text)return 0;
+    i32 actual=contour_size(size),width=0;
+    const u8 *adv=actual==70?FC_ADV_70:(actual==36?FC_ADV_36:FC_ADV_18);
+    while(*text){
+        u32 cp=utf8_next(&text);
+        i32 idx=glyph_index(cp);
+        if(idx<0)idx='?'-0x20;
+        width+=adv[idx];
+    }
+    return width;
+}
+void gfx_contour_text(i32 x,i32 y,const char *text,i32 size,u32 color){
+    if(!text)return;
+    i32 actual=contour_size(size);
+    i32 w=actual==70?99:(actual==36?53:29);
+    i32 h=actual==70?105:(actual==36?55:30);
+    const u8 *adv=actual==70?FC_ADV_70:(actual==36?FC_ADV_36:FC_ADV_18);
+    while(*text){
+        u32 cp=utf8_next(&text);
+        i32 idx=glyph_index(cp);
+        if(idx<0)idx='?'-0x20;
+        const u8 *alpha=actual==70?FC_FONT_70[idx]:
+                        (actual==36?FC_FONT_36[idx]:FC_FONT_18[idx]);
+        for(i32 gy=0;gy<h;gy++){
+            i32 py=y+gy;
+            if(py<0||py>=(i32)BACK_H)continue;
+            for(i32 gx=0;gx<w;gx++){
+                i32 px=x+gx;
+                if(px<0||px>=(i32)BACK_W)continue;
+                u8 cov=alpha[gy*w+gx];
+                if(cov)gfx_pixel_a(px,py,color,cov);
+            }
+        }
+        x+=adv[idx];
+    }
+}
+
 void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c)
 {
     gfx_text(cx - gfx_text_width(s) / 2, y, s, c);
