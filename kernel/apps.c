@@ -4655,6 +4655,13 @@ static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         "Close this window with the X. This is FalconOS FAPP/1, not x86 ELF.",
         PAL_TEXT_DIM);
 }
+static void icon_theme_creator(i32 cx,i32 cy){
+    gfx_round_rect(cx-17,cy-17,34,34,11,0x102E47u);
+    gfx_circle(cx-6,cy-5,9,0x78F0BFu);
+    gfx_circle(cx+6,cy+4,9,0x8B83FFu);
+    gfx_circle(cx-4,cy+9,6,0xFFBD81u);
+    gfx_circle_outline(cx,cy,15,0xFFFFFFu);
+}
 static void icon_fapp_runner(i32 cx,i32 cy){
     gfx_round_rect(cx-16,cy-16,32,32,9,0x208D66u);
     gfx_round_outline(cx-16,cy-16,32,32,9,0x95F0CCu);
@@ -4696,6 +4703,7 @@ static app_def_t APPS[] = {
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
     { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
     { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,NULL,icon_fapp_runner },
+    { "Theme Creator","design palettes & gradients",0x369B84,theme_creator_render,theme_creator_input,icon_theme_creator },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
@@ -4705,9 +4713,9 @@ static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
  * connected AI) are deliberately absent rather than mislabeled as working.
  * USB UVC camera is not yet implemented and is never faked.
  */
-static const i32 LAUNCH_FAVORITES[] = {1,14,13,6,7,3,5,2,8};
+static const i32 LAUNCH_FAVORITES[] = {1,14,13,20,6,7,3,5,2,8};
 static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,18,5};
-static const i32 LAUNCH_ALL[] = {1,14,13,6,7,3,5,2,8,9,4,17,18};
+static const i32 LAUNCH_ALL[] = {1,14,13,20,6,7,3,5,2,8,9,4,17,18};
 i32 apps_launcher_count(i32 group) {
     if(group==0) return (i32)(sizeof LAUNCH_FAVORITES/sizeof *LAUNCH_FAVORITES);
     if(group==1) return (i32)(sizeof LAUNCH_SYSTEM/sizeof *LAUNCH_SYSTEM);
@@ -4800,6 +4808,7 @@ const char *apps_display_subtitle(i32 i)
         case 15: return "Oyun başlatıcı (uyum)";
         case 16: return "Yapay asistan";
         case 17: return "FalconOS bilgisi";
+        case 20: return "Tema Oluşturucu";
         default: return APPS[i].subtitle;
     }
 }
