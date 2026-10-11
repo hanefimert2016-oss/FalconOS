@@ -366,6 +366,8 @@ bool market_publish_package(const char *payload,u32 bytes);
 bool market_publish_installed(i32 index);
 const char *market_publish_status(void);
 bool market_line_allowed(const char *line, i32 size);
+/* .app.pkg runs only FAPP/1 scripts using existing allowlisted commands. */
+bool market_validate_app_pkg(const char *bytes,u32 length);
 
 /* ---- application framework (Personal kernel) ------------------------------ */
 i32          apps_count(void);
