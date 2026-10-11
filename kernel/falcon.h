@@ -392,7 +392,8 @@ i32          apps_active(void);
 i32          apps_window_count(void);  /* visible and minimized windows */
 void         apps_close_all(void);
 i32          apps_minimized(void);
-bool         apps_is_open(i32 app); /* any visible native window */
+bool         apps_is_open(i32 app);
+void         apps_launch_package_path(const char *path); /* any visible native window */
 void         apps_render_active(u32 frame);
 void         apps_input_active(i32 key);
 void         hw_probe_summary(char *dst, i32 cap);
