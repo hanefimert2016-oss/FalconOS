@@ -65,13 +65,13 @@ def main():
                     off=len(data());k(c,"enter");wait(mark,off,45)
                 off=len(data());k(c,"enter");wait(b"aU",off,55);wait(b"H",off,55)
                 k(c,"esc")
-                # Launcher favourites have stable IDs: Files, Browser, Falco.
-                # Select the second icon by REAL arrow-key navigation instead
-                # of relying on a text search across changing keyboard layouts.
+                # Launcher favorites are Files, Browser, Falco. Enter
+                # FALCO itself (third icon), NOT the separate Browser app.
+                # Two REAL Right keys navigate from Files -> Browser -> Falco.
                 k(c,"f2");pause(.7)
-                k(c,"right")
-                off=len(data());k(c,"enter");wait(b"zOn1",off,65)
-                STATE["checks"].append("Browser launched via keyboard-controlled native Launchpad")
+                k(c,"right");k(c,"right")
+                off=len(data());k(c,"enter");wait(b"zNn1",off,65)
+                STATE["checks"].append("Actual Falco app launched with real guest keyboard")
                 k(c,"f4")
                 # Browser address typed via guest's real PS/2 keyboard.
                 # A real browser accepts a hostname without scheme and
@@ -79,12 +79,12 @@ def main():
                 # across keyboard layouts, so this also verifies the
                 # ergonomic scheme-less address bar path.
                 t(c,URL[len("https://"):])
-                shot(c,"FalconOS-HTTPS-URL-Before-Enter")
+                shot(c,"FalconOS-Falco-HTTPS-URL-Before-Enter")
                 off=len(data());k(c,"enter")
                 pause(2.0)
-                shot(c,"FalconOS-HTTPS-URL-After-Enter")
+                shot(c,"FalconOS-Falco-HTTPS-URL-After-Enter")
                 wait(b"fD",off,95)
-                STATE["checks"].append("Real HTTPS URL typed in guest Browser and saved in guest Downloads")
+                STATE["checks"].append("Real HTTPS URL typed inside guest Falco, saved as inert Downloads .app.pkg")
                 pause(1.5)
                 shot(c,"FalconOS-Falco-Direct-HTTPS-PKG-Downloaded")
                 # Open Downloads in actual Files window. Does not execute on download.
