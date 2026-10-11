@@ -3668,13 +3668,24 @@ static void browser_load(void){
         browser_dhcp_attempted=true;
         (void)net_dhcp(); /* QEMU user NAT and libvirt virbr0 both offer DHCP */
     }
-    const char *p=browser_address;
-    const char *https="https://";
-    for(i32 i=0;i<8;i++)if(p[i]!=https[i]){
-        k_strcpy(browser_status,"HTTPS only. Prefix address with https://");
-        return;
+    /* Browser-style HTTPS default when the user enters only a hostname.
+     * Never downgrade or reinterpret explicit http:// or other schemes. */
+    if(k_strncmp(browser_address,"https://",8)!=0){
+        if(k_strncmp(browser_address,"http://",7)==0 ||
+           sh_contains_ci(browser_address,"://")){
+            k_strcpy(browser_status,"HTTPS only; insecure schemes blocked");
+            return;
+        }
+        u32 n=(u32)k_strlen(browser_address);
+        if(n<3||n+8>=sizeof browser_address){
+            k_strcpy(browser_status,"Enter a valid HTTPS hostname");return;
+        }
+        for(i32 j=(i32)n;j>=0;j--)browser_address[j+8]=browser_address[j];
+        const char *prefix="https://";
+        for(i32 j=0;j<8;j++)browser_address[j]=prefix[j];
+        browser_address_len+=(i32)8;
     }
-    p+=8;
+    const char *p=browser_address+8;
     char hostname[201],path[304];
     i32 k=0;
     while(p[k]&&p[k]!='/'&&p[k]!='?'&&p[k]!='#'){
