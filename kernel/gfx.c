@@ -119,6 +119,11 @@ void gfx_wallpaper(void)
         case 3: ctop=0x4D2945u;cbot=0xF0A170u;chnt=0xFFC48Bu;break;
         default: break;
     }
+    if(SET.user_theme_active){
+        ctop=SET.user_wallpaper_top&0xFFFFFFu;
+        cbot=SET.user_wallpaper_bottom&0xFFFFFFu;
+        chnt=SET.user_accent_color&0xFFFFFFu;
+    }
     u32 tr = (ctop >> 16) & 0xFF, tg = (ctop >> 8) & 0xFF, tb = ctop & 0xFF;
     u32 br = (cbot >> 16) & 0xFF, bg = (cbot >> 8) & 0xFF, bb = cbot & 0xFF;
     u32 hr = (chnt >> 16) & 0xFF, hg = (chnt >> 8) & 0xFF, hb = chnt & 0xFF;
