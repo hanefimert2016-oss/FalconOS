@@ -101,5 +101,5 @@ jobs:
         run: |
           test -s dist/FalconOS-Native-Desktop-x86_64.AppImage
           test -s dist/FalconOS.iso
-          TAG="v0.2.0-native-20261011"
+          TAG="v0.2.1-native-20261011"
           gh release create "$TAG" dist/FalconOS-Native-Desktop-x86_64.AppImage             dist/FalconOS.iso dist/FalconOS-AppImage-SHA256.txt             dist/screens/FalconOS-*.png             --target "$GITHUB_SHA" --prerelease             --title "FalconOS Native OneClick Preview — no Chromium"             --notes-file docs/NATIVE-ONECLICK-README.md
