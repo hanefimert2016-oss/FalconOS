@@ -403,6 +403,12 @@ static const char *files_action_status="Double click .app.pkg to run in FalconOS
 static char fapp_running_title[48]="FalconOS application";
 static char fapp_running_source[SHFS_PATH];
 static bool fapp_running_valid;
+static bool fscript_running;
+#define FSCRIPT_APP_ID 21
+#define APP_SETUP_ID 22
+static char install_source_path[SHFS_PATH];
+static i32 install_choice=0; /* 0 = user Apps, 1 = Desktop */
+static const char *install_message="Enter installs; Left/Right selects destination";
 static void files_launch_pkg(const char *path);
 
 static bool files_search_mode;
@@ -4168,13 +4174,40 @@ static void files_launch_pkg(const char *path){
         files_action_status="No runnable .app.pkg selected";return;
     }
     shfs_ent_t *file=shfs_lookup(path);
-    if(!file||file->is_dir||!market_validate_app_pkg(file->data,file->len)){
+    if(!file||file->is_dir||
+       (!market_validate_app_pkg(file->data,file->len) &&
+        !fscript_is_source(file->data,file->len))){
         files_action_status="Invalid or unsafe FAPP/1 file: execution blocked";
 #ifdef FALCON_QEMU_UI_GALLERY
         outb(0xE9,'f');outb(0xE9,'X');
 #endif
         return;
     }
+    /* .setup.app.pkg and kurulum.app.pkg explicitly invoke INSTALLER.
+     * Browsing/downloading alone never installs or executes. */
+    const char *filename=path;
+    for(u32 j=0;j<n;j++)if(path[j]=='/')filename=path+j+1;
+    if(k_strcmp(filename,"kurulum.app.pkg")==0 ||
+       (n>=14&&k_strcmp(path+n-14,".setup.app.pkg")==0)){
+        k_strcpy(install_source_path,path);
+        install_choice=0;
+        install_message="Review package: Enter installs, Left/Right changes destination";
+        apps_open(APP_SETUP_ID);
+        return;
+    }
+    if(fscript_is_source(file->data,file->len)){
+        if(!fscript_load(file->data,file->len)){
+            files_action_status="FScript parser rejected this package";return;
+        }
+        fscript_running=true;
+        files_action_status="Native FScript application running";
+        apps_open(FSCRIPT_APP_ID);
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'F');outb(0xE9,'X');
+#endif
+        return;
+    }
+    fscript_running=false;
     const char *script=NULL;
     for(u32 k=0;k+1<file->len;k++){
         if(file->data[k]=='\n'&&file->data[k+1]=='\n'){
@@ -4631,7 +4664,77 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 /* Dedicated application window for downloaded executable .app.pkg files.
  * Independently composited by Contour WM, with user app name, icon,
  * actual interpreter output, app source and Close button. */
+/* First-class installer document: a download is never installed until
+ * the user opens its .setup.app.pkg and confirms a destination. No writes
+ * to host ATA devices or arbitrary paths; only virtual SHFS apps/Desktop. */
+static void app_setup_input_key(i32 key){
+    if(key==KEY_LEFT||key==KEY_RIGHT){install_choice=1-install_choice;return;}
+    if(key==KEY_ESC){install_source_path[0]=0;return;}
+    if(key!=KEY_ENTER)return;
+    shfs_ent_t *source=shfs_lookup(install_source_path);
+    if(!source||source->is_dir||!source->len ||
+       (!market_validate_app_pkg(source->data,source->len) &&
+        !fscript_is_source(source->data,source->len))){
+        install_message="Package failed validation. No file installed.";
+        return;
+    }
+    const char *name=install_source_path;
+    for(i32 j=0;install_source_path[j];j++)
+        if(install_source_path[j]=='/')name=install_source_path+j+1;
+    if(k_strcmp(name,"kurulum.app.pkg")==0)name="installed.app.pkg";
+    if(k_strcmp(name,"code.app.pkg")==0)name="codedium-project.app.pkg";
+    if(k_strcmp(name,"my-app.setup.app.pkg")==0)name="my-app.app.pkg";
+    const char *dir=install_choice?"/home/falcon/Desktop/":"/home/falcon/apps/";
+    char path[SHFS_PATH];
+    if(k_strlen(dir)+k_strlen(name)>=SHFS_PATH){
+        install_message="Package name too long for destination";return;
+    }
+    k_strcpy(path,dir);k_strcat(path,name);
+    shfs_ent_t *to=shfs_open_w_abs(path,false);
+    if(!to){install_message="Installation target full";return;}
+    k_memcpy(to->data,source->data,source->len+1);to->len=source->len;
+    /* Native Desktop shortcuts point to the installed .app.pkg file,
+     * not an executable on Linux or the host. */
+    if(!install_choice){
+        char shortcut[SHFS_PATH];
+        const char *base=name;u32 n=(u32)k_strlen(base);
+        if(n>8 && n<23){
+            k_strcpy(shortcut,"/home/falcon/Desktop/");
+            k_strcat(shortcut,base);
+            k_strcat(shortcut,".link");
+            shfs_ent_t *link=shfs_open_w_abs(shortcut,false);
+            if(link&&k_strlen(path)<SHFS_FBYTES-1){
+                k_strcpy(link->data,path);link->len=k_strlen(path);
+            }
+        }
+    }
+    install_message="Installed in guest SHFS. Open app or shortcut in Files.";
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'i');outb(0xE9,'Y');
+#endif
+}
+static void render_app_setup(i32 x,i32 y,i32 w,i32 h,u32 frame){
+    (void)frame;
+    gfx_round_rect(x+21,y+14,w-42,h-49,20,PAL_PANEL_DEEP);
+    gfx_round_rect(x+38,y+31,w-76,105,16,0x102A40u);
+    gfx_text_lg(x+65,y+49,"FalconOS Setup",0xF5FBFFu);
+    gfx_text(x+66,y+106,"Install .setup.app.pkg in a native sandbox.",0xB9D2E0u);
+    gfx_text(x+61,y+180,"Application installer: verified FAPP/1 or FSC/1",PAL_TEXT);
+    gfx_text(x+61,y+218,"Location (Left/Right):",PAL_TEXT_DIM);
+    const char *choices[]={"User apps (/home/falcon/apps)","Desktop (/home/falcon/Desktop)"};
+    for(i32 i=0;i<2;i++){
+        i32 yy=y+257+i*75;
+        gfx_round_rect(x+61,yy,w-122,60,14,
+                       install_choice==i?PAL_ACCENT_DIM:PAL_PANEL);
+        gfx_round_outline(x+61,yy,w-122,60,14,
+                          install_choice==i?PAL_ACCENT:PAL_HAIRLINE);
+        gfx_text(x+85,yy+22,choices[i],PAL_TEXT);
+    }
+    gfx_text(x+62,y+h-140,"Enter = Install    Esc = Cancel",PAL_ACCENT);
+    gfx_text(x+62,y+h-107,install_message,PAL_TEXT_DIM);
+}
 static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    if(fscript_running){fscript_render(wx,wy,ww,wh,frame);return;}
     (void)frame;
     gfx_round_rect(wx+17,wy+13,ww-34,77,17,0x12372Cu);
     gfx_round_rect(wx+31,wy+25,45,45,13,0x64E4ADu);
@@ -4704,6 +4807,8 @@ static app_def_t APPS[] = {
     { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
     { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,NULL,icon_fapp_runner },
     { "Theme Creator","design palettes & gradients",0x369B84,theme_creator_render,theme_creator_input,icon_theme_creator },
+    { "FScript Window","custom FScript app",0x5AA2DB,fscript_render,fscript_key,icon_fapp_runner },
+    { "App Setup","package installer wizard",0x249A71,render_app_setup,app_setup_input_key,icon_fapp_runner },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
