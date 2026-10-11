@@ -86,7 +86,12 @@ def main():
                 # Test the USER FLOW, not an F9-only showcase:
                 # type the public URL in the actual Falco omnibox and Enter.
                 k(client,"f4")
-                t(client,"falconos.tech")
+                t(client,"falconos")
+                # QEMU's VNC keysyms are US physical key positions. The
+                # FalconOS installer chose Turkish-Q, where US '.' = ç,
+                # while US '/' (scancode 0x35) is the Turkish-Q '.'.
+                k(client,"slash")
+                t(client,"tech")
                 offset=len(events());k(client,"enter")
                 STATE["checks"].append("Typed falconos.tech into native Falco omnibox and pressed Enter")
                 try:
