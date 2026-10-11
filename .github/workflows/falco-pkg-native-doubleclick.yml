@@ -48,6 +48,7 @@ jobs:
             build/pkg-falco-url-*.log
             build/pkg-falco-url-*.json
             build/FalconOS-Falco-Direct-HTTPS-*.png
+            build/FalconOS-HTTPS-URL-*.png
           if-no-files-found: warn
       - name: Publish bootable .app.pkg enabled ISO only when native clicks pass
         if: steps.pkg.outcome == 'success' && steps.guest_url.outcome == 'success'
