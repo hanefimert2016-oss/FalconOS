@@ -403,6 +403,8 @@ static const char *files_action_status="Double click .app.pkg to run in FalconOS
 static char fapp_running_title[48]="FalconOS application";
 static char fapp_running_source[SHFS_PATH];
 static bool fapp_running_valid;
+static char fapp_running_output[12][80];
+static bool fapp_running_output_frozen;
 static void files_launch_pkg(const char *path);
 
 static bool files_search_mode;
@@ -4214,6 +4216,11 @@ static void files_launch_pkg(const char *path){
         script+=used;
         if(*script=='\n')script++;
     }
+    /* Keep the visible app's own output stable when a second Terminal
+     * command executes. The package window is an independent GUI surface. */
+    for(i32 row=0;row<TERM_LINES;row++)
+        k_strcpy(fapp_running_output[row],term_buf[row]);
+    fapp_running_output_frozen=true;
     files_action_status="FAPP/1 launched in its own FalconOS window";
 #ifdef FALCON_QEMU_UI_GALLERY
     outb(0xE9,'f');outb(0xE9,'R');
@@ -4645,8 +4652,10 @@ static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
              0x7DE9B8u);
     i32 y=wy+157;
     for(i32 i=0;i<TERM_LINES&&y+22<wy+wh-77;i++){
-        if(term_buf[i][0]){
-            gfx_text(wx+36,y,term_buf[i],0xE8F4F0u);
+        const char *line=fapp_running_output_frozen?
+                         fapp_running_output[i]:term_buf[i];
+        if(line[0]){
+            gfx_text(wx+36,y,line,0xE8F4F0u);
             y+=25;
         }
     }
@@ -4745,6 +4754,8 @@ const char *apps_subtitle(i32 i) {
 const char *apps_display_name(i32 i)
 {
     if (i < 0 || i >= apps_count()) return "?";
+    if(i==FAPP_RUNNER_APP_ID&&fapp_running_valid)
+        return fapp_running_title;
     if (i >= builtin_app_count()) return market_name(i - builtin_app_count());
     /* User-facing brand: Keşfet / Discover; stable internal ID remains Store. */
     if (i == 2) return T("Discover","Keşfet");
@@ -4776,6 +4787,8 @@ const char *apps_display_name(i32 i)
 const char *apps_display_subtitle(i32 i)
 {
     if (i < 0 || i >= apps_count()) return "";
+    if(i==FAPP_RUNNER_APP_ID&&fapp_running_valid)
+        return "FalconOS .app.pkg";
     if (i >= builtin_app_count())
         return market_installed(i - builtin_app_count())
             ? T("Installed FAPP/1", "Yüklü FAPP/1") : T("Get app from Store", "Mağazadan indir");
