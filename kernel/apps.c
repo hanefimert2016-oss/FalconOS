@@ -413,8 +413,12 @@ static i32 files_edit_len;
 static u32 files_delete_confirm_until;
 static const char *files_current_dir(void){
     if(files_folder[0])return files_folder;
-    if(files_scope==0)return "/home/falcon";
-    return FILES_ROOTS[files_scope];
+    switch(files_scope){
+        case 2: return "/home/falcon/Desktop";
+        case 3: return "/home/falcon/Downloads";
+        case 4: return "/home/falcon/apps";
+        default:return "/home/falcon";
+    }
 }
 static bool files_basename_ok(const char *n){
     if(!n||!n[0]||n[0]=='.')return false;
