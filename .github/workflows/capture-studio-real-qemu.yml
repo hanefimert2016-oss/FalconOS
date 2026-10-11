@@ -27,7 +27,7 @@ jobs:
           /tmp/capture-venv/bin/pip install --quiet pillow vncdotool
       - name: Build native FalconOS with own screen capture Studio
         run: |
-          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY -DFALCON_QEMU_BROWSER_TEST -DFALCON_CAPTURE_BRIDGE'
+          PATH="/tmp/capture-venv/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY -DFALCON_QEMU_BROWSER_TEST -DFALCON_CAPTURE_BRIDGE'
           grub-file --is-x86-multiboot2 build/falcon.elf
       - name: Open Capture Studio and record Falco site to real 720p MP4
         run: timeout 590s /tmp/capture-venv/bin/python tools/falcon_capture_studio_e2e.py
