@@ -1,0 +1,42 @@
+name: FalconOS .app.pkg true double-click integration
+on:
+  push:
+    branches: [feature/native-falco-wallpaper-setup-20261011]
+    paths:
+      - kernel/app_pkg.c
+      - kernel/apps.c
+      - kernel/marketplace.c
+      - kernel/falcon.h
+      - tools/vnc_app_pkg_doubleclick_e2e.py
+      - .github/workflows/fapp-doubleclick.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  doubleclick:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv
+          python3 -m venv /tmp/fapp-env
+          /tmp/fapp-env/bin/pip -q install pillow vncdotool
+      - name: Compile real native FalconOS with .app.pkg format
+        run: |
+          PATH="/tmp/fapp-env/bin:$PATH" make iso ENABLE_BEARSSL=1 ENABLE_BOOT_GLB=0 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY -DFALCON_QEMU_BROWSER_TEST'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Real VNC doubleclick on Codedium-exported FAPP package
+        run: timeout 560s /tmp/fapp-env/bin/python tools/vnc_app_pkg_doubleclick_e2e.py
+      - name: Actual guest PNG proof and event logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-APP-PKG-Real-DoubleClick-PNG
+          path: |
+            build/FalconOS-APP-PKG-*.png
+            build/app-pkg-results.json
+            build/app-pkg-qemu-debug.log
+            build/app-pkg-qemu-stderr.log
+          if-no-files-found: warn
