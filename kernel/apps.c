@@ -626,9 +626,11 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
         u32 size=(u32)k_strlen(path);
         app_pkg=size>=8u&&k_strcmp(path+size-8u,".app.pkg")==0;
     }
+    u32 extlen=(u32)k_strlen(path);
+    bool is_iso=!is_dir&&extlen>=4u&&k_strcmp(path+extlen-4u,".iso")==0;
     gfx_round_rect(c->x+9,y+7,24,20,6,
-        is_dir?0xF3BC5Du:(app_pkg?0x26A78Cu:0x548FEBu));
-    gfx_text_centered(c->x+21,y+10,is_dir?"D":(app_pkg?"A":"F"),0xFFFFFFu);
+        is_dir?0xF3BC5Du:(app_pkg?0x26A78Cu:(is_iso?0x1B93AAu:0x548FEBu)));
+    gfx_text_centered(c->x+21,y+10,is_dir?"D":(app_pkg?"A":(is_iso?"I":"F")),0xFFFFFFu);
     if(c->clicked&&!c->consumed&&c->mx>=c->x&&c->mx<c->x+c->w &&
        c->my>=y&&c->my<y+34){
         u32 now=pit_ms();
@@ -666,15 +668,30 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     i32 margin=18,sidebar=122,top=91,bottom=45;
     i32 sx=wx+margin,main_x=sx+sidebar+14;
     i32 main_w=ww-2*margin-sidebar-14;
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    bool clicked=wm_click_enabled();
     gfx_round_rect_a(sx,wy+10,ww-2*margin,65,16,PAL_PANEL_DEEP,255);
     gfx_round_rect(sx+14,wy+23,36,36,11,0xF3BC5Du);
     gfx_text_centered(sx+32,wy+33,"F",0xFFFFFFu);
     gfx_text_lg(sx+62,wy+16,T("Files","Dosyalar"),PAL_TEXT);
     gfx_text(sx+62,wy+51,
         files_folder[0]?files_folder:T("Your actual FalconOS files","FalconOS dosyaların"),PAL_TEXT_DIM);
+    const char *actions[]={"Folder","Document","Rename","Delete"};
+    for(i32 i=0;i<4;i++){
+        i32 bx=wx+ww-434+i*100,by=wy+22;
+        bool hover=mx>=bx&&mx<bx+93&&my>=by&&my<by+40;
+        gfx_round_rect_a(bx,by,93,40,12,hover?PAL_ACCENT:PAL_PANEL_HI,255);
+        gfx_round_outline(bx,by,93,40,12,PAL_HAIRLINE);
+        gfx_text_centered(bx+46,by+13,actions[i],hover?0xFFFFFFu:PAL_TEXT);
+        if(clicked&&hover){
+            (void)mouse_consume_click();clicked=false;
+            if(i==0)files_begin_edit(1);
+            if(i==1)files_begin_edit(2);
+            if(i==2)files_begin_edit(3);
+            if(i==3)files_request_delete();
+        }
+    }
     gfx_round_rect_a(sx,wy+top,sidebar,wh-top-bottom,13,PAL_PANEL_DEEP,255);
-    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
-    bool clicked=wm_click_enabled();
     for(i32 i=0;i<6;i++){
         i32 sy=wy+top+13+i*43;
         bool chosen=i==files_scope;
@@ -686,8 +703,9 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             (void)mouse_consume_click();clicked=false;
         }
     }
-    gfx_text(sx+13,wy+wh-76,"SHFS / RAM",PAL_TEXT_DIM);
-    gfx_text(sx+13,wy+wh-56,"Real storage",PAL_TEXT_FAINT);
+    gfx_text(sx+13,wy+wh-87,"FalconFS",PAL_TEXT_DIM);
+    gfx_text(sx+13,wy+wh-68,pfs_mounted()?"PFS saved":"RAM-only",pfs_mounted()?COL_OK:COL_WARN);
+    gfx_text(sx+13,wy+wh-49,jfs_ready()?"JFS2 active":"No JFS2 disk",PAL_TEXT_FAINT);
     gfx_round_rect_a(main_x,wy+top,main_w,38,11,PAL_PANEL_DEEP,255);
     gfx_circle_outline(main_x+19,wy+top+18,7,PAL_ACCENT);
     gfx_line(main_x+24,wy+top+23,main_x+30,wy+top+29,PAL_ACCENT);
@@ -726,7 +744,7 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     char count[16];k_itoa(ctx.files,count,10);
     gfx_text(sx+4,wy+wh-26,count,PAL_ACCENT);
     gfx_text(sx+35,wy+wh-26,
-        "F6 folder  F7 file  F8 rename  Del (confirm)  Backspace back  Doubleclick open",
+        "F6 folder  F7 file  F8 rename  DEL confirm   BACKSPACE parent   ENTER app",
         PAL_TEXT_DIM);
 }
 
