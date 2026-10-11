@@ -763,6 +763,9 @@ void gfx_text_medium(i32 x,i32 y,const char *s,u32 color){
 void gfx_text_smooth_lg(i32 x,i32 y,const char *s,u32 color){
     gfx_text_antialiased(x,y,s,color,16,32);
 }
+void gfx_text_hero_centered(i32 cx,i32 y,const char *s,u32 color){
+    gfx_text_antialiased(cx-(gfx_text_width_lg(s)),y,s,color,32,64);
+}
 
 void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c)
 {
