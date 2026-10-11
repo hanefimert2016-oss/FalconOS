@@ -55,8 +55,22 @@ def main():
             print("CHROMIUM_PIXELS",len(pixels),"colors",len(set(pixels)),flush=True)
             assert len(pixels)==57600 and len(set(pixels))>7, (
                 "Chromium returned an invalid or flat image")
-            RESULT["steps"].append("Real Chromium fetched, executed and rendered Contour HTTPS page")
-            im=Image.frombytes("P",(320,180),pixels)
+            tiles=[pixels]
+            for i in (1,2,3):
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:18445/visual/chunk/{i}",timeout=35) as response:
+                    payload=response.read()
+                    assert response.status==200 and len(payload)==57600
+                    assert response.headers.get("X-Falcon-Content-Verified")=="FalconOS-Contour"
+                    tiles.append(payload)
+            full=bytearray(640*360)
+            for tile,blob in enumerate(tiles):
+                start_x=(tile%2)*320;start_y=(tile//2)*180
+                for row in range(180):
+                    dst=(start_y+row)*640+start_x
+                    full[dst:dst+320]=blob[row*320:(row+1)*320]
+            RESULT["steps"].append("Real Chromium fetched, executed and rendered 640x360 Contour HTTPS page")
+            im=Image.frombytes("P",(640,360),bytes(full))
             # RGB332 palette from the exact guest pixel format.
             pal=[]
             for n in range(256):
@@ -93,10 +107,13 @@ def main():
                 off=len(trace());k(c,"enter");wait(b"zNn1",off)
                 pause(.8);shot(c,"Falco-Before-Visual")
                 off=len(trace());k(c,"f9")
-                wait(b"vY",off,seconds=110)
+                wait(b"vY",off,seconds=165)
+                for tag in (b"v0",b"v1",b"v2",b"v3"):
+                    wait(tag,off,seconds=12)
+                RESULT["guest_tiles_received"]=4
                 pause(1.7)
                 shot(c,"Falco-Real-Chromium-Visual-Site")
-                RESULT["steps"].append("Falco guest received 57,600 authenticated raster bytes and displayed them")
+                RESULT["steps"].append("Falco guest received four verified pixel tiles (230,400 bytes) and displayed complete 640x360 raster")
                 # Objective framebuffer check: region containing guest raster
                 # should have >45 colors and not be a flat text-only screen.
                 with Image.open(ROOT/"Falco-Real-Chromium-Visual-Site.png") as picture:
