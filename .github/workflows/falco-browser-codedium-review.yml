@@ -1,0 +1,43 @@
+name: FalconOS first-party Falco Codedium real QEMU
+on:
+  push:
+    branches: [feature/falco-codedium-engine-20261011]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qemu-native-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ISO and QEMU tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv
+          python3 -m venv /tmp/falco-review
+          /tmp/falco-review/bin/pip install --quiet pillow vncdotool
+      - name: Run all Python regression tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Build real native FalconOS ISO and verify Multiboot2
+        run: |
+          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: QEMU real desktop Falco and Codedium screenshot capture
+        run: timeout 300s /tmp/falco-review/bin/python tools/vnc_falco_codedium_e2e.py
+      - name: Upload original PNG evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Falco-Codedium-Real-QEMU
+          path: |
+            build/FalconOS-Review-*.png
+            build/falco-codedium-review-*.json
+            build/falco-codedium-review-*.log
+          if-no-files-found: warn
+      - name: Upload verified ISO
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Falco-Codedium-Review-ISO
+          path: build/FalconOS.iso
