@@ -1,64 +1,82 @@
-# FalconOS Native One-Click Edition (Linux)
+# FalconOS native app.pkg support (no Chromium, no AppImage)
 
-**No Chromium, Playwright, WebKit, Selenium, or browser screenshot streaming.**
+FalconOS ships its own `.app.pkg` application file type. This file lives
+INSIDE the FalconOS guest OS (NOT Linux/Windows/macOS) and is associated with
+its real built-in Files app.
 
-## What is actually implemented
+## Opening a downloaded app, without installing extra software
 
-- **Falco NativeLayout/1**: own C renderer draws DOM-like semantic elements in the 2560×1440 framebuffer using FalconOS's pixel/font primitives. No 320×180/640×360 upscaling. F9 opens it; arrow keys scroll; F5 reloads; F3 goes back.
-- The optional host Python-stdlib gateway validates the public site's HTTPS certificate and hostname, then sends a **strict, bounded FALCO/1 semantic document** to the guest. No images or untrusted scripts execute. Actual CSS parsing/cascade, JavaScript DOM changes, forms and pixel-perfect third-party website rendering **are not implemented**. The layout is FalconOS's own visual interpretation of real HTML, not a screenshot or fabricated mock-up.
-- **Wallpaper Settings**: choose among Aurora, Midnight Blue, Violet and Sunset. Procedural wallpapers are drawn at full native resolution. Your choice is saved on a valid FalconFS 0xFA virtual partition and older account/password storage can be imported.
-- **Lock screen**: new wallpaper-backed interface. A default account intentionally created *without* a password auto-signs in on first boot. Password-protected accounts still require a password; pressing "Lock screen now" still locks even a passwordless account and asks for Enter.
-- **Installer**: Yes/No secondary account prompt defaults to **No**; Enter accepts.
-- **One-click Linux launcher**: a downloadable AppImage bundles the FalconOS ISO, native renderer bridge, Marketplace bridge and boot script. It launches QEMU and writes its **virtual-only** data to `~/.local/share/FalconOS/`. It never formats a physical disk.
+1. Open **Falco** from FalconOS Launchpad.
+2. Paste a real HTTPS URL ending in `.app.pkg` into its search/address box.
+   FalconOS requests the exact package bytes using its CA-verified host HTTPS
+   companion if available. The file downloads into **Files → Downloads**.
+   Downloading NEVER executes the program.
+3. Open **Files → Downloads**. **Double-click** the downloaded file. The
+   first click selects it, the second click runs the verified FAPP/1 program
+   in a dedicated FalconOS application window. Enter also launches the
+   currently selected valid package.
 
-## Running the downloaded AppImage
+Example published file:
+https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/app-hello-world-v1.0.0/hello-world-v1.0.0.app.pkg
 
-Download `FalconOS-Native-Desktop-x86_64.AppImage` from the verified GitHub Actions artifact or release. On a regular Linux x86_64 desktop, download the single .AppImage from this GitHub Release. If your file manager requires the standard Linux executable/trust permission for newly downloaded files, enable it once in File Properties. Then double-click the AppImage to start FalconOS; QEMU, the required Python runtime and QEMU BIOS are included inside the AppImage. The application opens the FalconOS desktop in QEMU; no manual terminal commands to boot the VM.
+Alternatively **Discover/Store** downloads a SHA-256-checked Marketplace
+release and places the app in Downloads. **Codedium → F7 Export** creates
+`/home/falcon/Desktop/code.app.pkg`, which opens with the same double-click
+association.
 
-**System requirements:** Linux x86_64, a working desktop display and compatible glibc. The downloadable AppImage includes its own QEMU, GTK GUI plugin, QEMU BIOS, Python 3.12 and required non-glibc shared libraries. Linux may still require approving execution of any downloaded AppImage; the package does not bypass this OS security setting. This is not a Windows .exe.
+## Security and scope
 
-Open **Falco**, press **F9** for the own native semantic visual engine. Go to **Settings → Wallpaper** to cycle through the four backgrounds.
+The current `.app.pkg` format is **FAPP/1**, a bounded, ASCII, metadata +
+allowlisted shell instruction package. Before any instruction runs, the guest
+checks the complete file (format, ID, version, name, size, commands and
+forbidden operators). Unsupported/binary/unsafe files do **not** run. The
+native app window displays program output; FAPP/1 has no arbitrary native
+machine code or complete custom widgets yet. It is FalconOS's executable
+document format, **not** a renamed Windows PE .exe, a Linux ELF, or
+a native binary equivalent. A future native executable ABI would require
+Ring3 isolation, executable loader, permissions and signature handling.
 
-You can launch the source build with `make run-falco-native ENABLE_BEARSSL=1 ENABLE_BOOT_GLB=0` after installing build dependencies. Chromium is not used anywhere in this branch.
+HTTPS is verified by a trusted companion when FalconOS is running in a
+supported VM. The guest transport is local plain TCP, not end-to-end TLS.
+For packages downloaded through Discover the existing SHA-256 workflow
+validates the published release, but untrusted internet FAPP files can only
+use the limited allowlisted commands. This is not a proof of human identity
+to Cloudflare; no anti-bot evasion is implemented.
 
-## Security and constraints
+## Falco native website rendering
 
-Cloudflare bot verification belongs to the site owner: FalconOS does not impersonate a human, solve CAPTCHAs or bypass challenges. The native view refuses a host HTTPS error page and requires actual title/body markers for FalconOS Contour. The gateway listens only on loopback or a private VM network and is hardwired to the single public site. Marketplace GitHub downloads remain checked; no guest scripts run on the Linux host.
+This branch has no Chromium, WebKit or Playwright runtime. The Falco site
+preview uses independently written native framebuffer painting, manually
+faithful to the real public Contour CSS color/layout design tokens and
+original Manrope typeface glyphs baked at compile time. F9 opens the native
+Contour visual; keys 1–4 navigate its sections. The real site content
+must be verified before the preview is shown. It remains a **site-specific
+CSS subset**, not a standards-compliant general browser: arbitrary CSS,
+images, JS DOM, forms, Cloudflare challenges and full page behavior
+are not yet faithfully rendered. We never claim pixel-identical HTML5.
+In particular it is not a Chromium screenshot stream.
 
-This release is a **prototype**, not a general-purpose replacement for Firefox/Chromium or a complete HTML5/CSS3/ECMAScript browser. You can use the old BearSSL text view (F6) to diagnose native TLS. For modern complex sites a complete self-written engine is a larger project.
+## Setup, lockscreen, personalization
 
+- No password created on the default account → automatic first-boot login
+  into the desktop. A protected account must still supply its password.
+- Creating a second user defaults to **No**.
+- Four selectable native wallpaper themes (Aurora, Midnight, Violet, Sunset)
+  are persisted on an explicitly selected safe disk. The launcher-stamped
+  test virtual disk is auto-selected, but a physical disk is never
+  auto-formatted.
 
-## Contour visual engine and license note
+## Test evidence
 
-The real `https://falconos.tech/styles.css` style sheet is the design reference:
-near-black gradient hero (`#050d13`, `#08161d`, `#0c2328`), mint
-(`#70f1bc`), desktop preview and two-column split. FalconOS implements
-this as original native C software-drawing primitives. The displayed
-text is gated on a certificate-verified real HTML response and a Contour
-identity check; this is neither a screenshot relay nor Chromium/WebKit.
+The GitHub workflow `.github/workflows/fapp-doubleclick.yml` launches
+actual QEMU and sends RFB keyboard and PS/2 mouse events. It exports a real
+Codedium package, navigates Files, precisely double-clicks the file,
+and asserts that its own FalconOS application window opens.
 
-The optional exact Manrope typeface for build-time rasterization is pinned to
-Google Fonts commit `8f9a401dbb3793e0d1264b15d96aa253f05280f5`
-and SHA-256 `d0639be45d0af36e798172419d7bd173c4bd4f29e2b76cbb69db1d11bf8b0a40`.
-Manrope is licensed under the SIL Open Font License 1.1. Its license and
-copyright notice can be found at
-https://github.com/google/fonts/blob/main/ofl/manrope/OFL.txt .
-Raw font files are not bundled: FalconOS's own kernel paints baked alpha glyphs.
+The dedicated `falco-app-download.yml` workflow verifies the entire
+internet download → Files → double-click → application window path with
+the actual public GitHub release.
 
-## Release qualification and limitations
-
-Falco reproduces the verified `falconos.tech` Contour landing page using the
-site's real CSS design tokens and our original native vector/software layout
-engine. F9 opens the page, keys 1–4 or the built-in navigation move between
-the hero, features, architecture and install sections. This **is not
-pixel-for-pixel full browser compatibility**: arbitrary CSS cascade, third-
-party sites, dynamic JS, authentication forms and Cloudflare human verification
-are not implemented. The source of the *text* is public live HTML, host CA TLS
-verified. No source HTML, user agent string or CSS substitute proves the
-user to be human.
-
-Release CI validates (1) passwordless auto-login; (2) password-protected lock;
-(3) no second user by default; (4) real Falco live site; (5) page section
-painting; (6) background settings and persistence over two boots;
-(7) the directly executed, self-contained AppImage's actual QEMU ISO boot;
-(8) QEMU GTK display under virtual X11, rather than only a headless service.
+The native OS workflow verifies wallpaper persistence and password rules
+over real QEMU boots. The GitHub artifact is a bootable FalconOS ISO plus
+individual PNG evidence; **no AppImage is built or published**.
