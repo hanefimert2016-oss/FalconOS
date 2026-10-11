@@ -813,6 +813,50 @@ void gfx_contour_text(i32 x,i32 y,const char *text,i32 size,u32 color){
     }
 }
 
+
+/* FalconOS framebuffer compositor's own glyph stroke algorithm. The 70px
+ * Manrope alpha atlas is resampled at 2x; interior pixels are removed for
+ * outlined display text. No screenshots or host font runtime involved. */
+void gfx_contour_text_styled(i32 x,i32 y,const char *text,i32 size,i32 scale,bool outline,u32 color){
+    if(!text)return;
+    if(scale<1)scale=1;
+    if(scale>2)scale=2;
+    i32 actual=contour_size(size);
+    i32 w=actual==70?99:(actual==36?53:29);
+    i32 h=actual==70?105:(actual==36?55:30);
+    const u8 *adv=actual==70?FC_ADV_70:(actual==36?FC_ADV_36:FC_ADV_18);
+    while(*text){
+        u32 cp=utf8_next(&text);
+        i32 idx=glyph_index(cp);
+        if(idx<0)idx='?'-0x20;
+        const u8 *alpha=actual==70?FC_FONT_70[idx]:
+                         (actual==36?FC_FONT_36[idx]:FC_FONT_18[idx]);
+        for(i32 gy=0;gy<h;gy++){
+            i32 py=y+gy*scale;
+            if(py+scale<0||py>=(i32)BACK_H)continue;
+            for(i32 gx=0;gx<w;gx++){
+                i32 px=x+gx*scale;
+                if(px+scale<0||px>=(i32)BACK_W)continue;
+                u8 cov=alpha[gy*w+gx];
+                if(!cov)continue;
+                if(outline){
+                    /* A solid interior has strongly covered neighbours.
+                     * Edge pixels retain source antialias coverage. */
+                    u8 l=gx>0?alpha[gy*w+gx-1]:0;
+                    u8 r=gx+1<w?alpha[gy*w+gx+1]:0;
+                    u8 t=gy>0?alpha[(gy-1)*w+gx]:0;
+                    u8 b=gy+1<h?alpha[(gy+1)*w+gx]:0;
+                    if(l>205&&r>205&&t>205&&b>205)continue;
+                    if(cov>165)cov=165;
+                }
+                for(i32 sy=0;sy<scale;sy++)for(i32 sx=0;sx<scale;sx++)
+                    gfx_pixel_a(px+sx,py+sy,color,cov);
+            }
+        }
+        x+=adv[idx]*scale;
+    }
+}
+
 void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c)
 {
     gfx_text(cx - gfx_text_width(s) / 2, y, s, c);
