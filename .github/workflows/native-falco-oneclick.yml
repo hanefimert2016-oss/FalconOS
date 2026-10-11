@@ -21,7 +21,7 @@ jobs:
             tools/vnc_wallpaper_persistence_e2e.py
       - name: Compile full-resolution FalconOS-owned GUI and BearSSL
         run: |
-          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1             EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          PATH="/tmp/falcon-native/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1             EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
           grub-file --is-x86-multiboot2 build/falcon.elf
       - name: Real QEMU VNC test of native browser wallpaper installer and both login cases
         id: native
