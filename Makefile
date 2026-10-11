@@ -243,6 +243,19 @@ run-market: $(ISO) $(BUILD)/falcon-safe.raw
 	  trap 'kill $bridge_pid $web_pid 2>/dev/null || true' EXIT; \
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
+# Run the completely native-rendered Falco (no Chromium, no browser-pixel bridge).
+# Guest uses own layout engine; Python stdlib host is only for verified HTTPS.
+.PHONY: run-falco-native
+run-falco-native: $(ISO) $(BUILD)/falcon-safe.raw
+	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock & \
+	  market_pid=$!; \
+	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
+	  https_pid=$!; \
+	  python3 tools/falco_native_gateway.py --bind 127.0.0.1 & \
+	  native_pid=$!; \
+	  trap 'kill $market_pid $https_pid $native_pid 2>/dev/null || true' EXIT; \
+	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
+
 run: run-disk
 
 run-cdrom: $(ISO)
