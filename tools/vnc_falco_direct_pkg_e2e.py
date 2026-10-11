@@ -50,6 +50,11 @@ def main():
             else:raise RuntimeError("Guest VNC unavailable")
             with api.connect("127.0.0.1::5908",timeout=35) as c:
                 wait(b"L",timeout=95)
+                # Real VNC/X11 sends US physical scancodes for punctuation.
+                # Select English during installer, which sets KBD_US.
+                # Without this, a US slash becomes Turkish '/' mapping's '.',
+                # so URL is corrupted even before any HTTPS request.
+                k(c,"right")
                 for mark in (b"T",b"A",b"K",b"D",b"U"):
                     off=len(data());k(c,"enter");wait(mark,off,40)
                 t(c,"falcon")
