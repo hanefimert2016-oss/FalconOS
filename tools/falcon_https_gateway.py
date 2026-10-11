@@ -155,7 +155,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # All redirects validated, including nonpublic IPs and HTTPS only.
             content=self.validated_https_request(upstream,4097,
                     accept="application/octet-stream,application/x-fapp")
-            if not (70<=len(content)<=4095) or b"\x00" in content or not content.startswith(b"FAPP/1\n"):
+            if not (70<=len(content)<=4095) or b"\x00" in content or not content.startswith((b"FAPP/1\n",b"FSC/1\n")):
                 return self.send_text(422,"Unsupported or oversized FAPP/1 payload")
             self.send_response(200)
             self.send_header("Content-Type","application/x-fapp")
