@@ -3571,6 +3571,79 @@ static void browser_page_from_http(void){
     browser_scroll=0;
     k_strcpy(browser_status,"TLS+hostname verified - bounded HTML text preview (may be partial)");
 }
+/* Direct HTTPS .app.pkg download. CA and redirect policy are checked by
+ * the opt-in 18444 host HTTPS companion; the package is transferred through
+ * guest VM NAT, then validated as an inert FAPP/1 script BEFORE saving.
+ * Download NEVER runs the package; user must double-click it in Files. */
+static char app_download_http[8192];
+static bool falco_pkg_download(const char *host,const char *path){
+    u32 plen=(u32)k_strlen(path);
+    if(plen<8||k_strcmp(path+plen-8,".app.pkg")!=0 ||
+       plen>150 || k_strlen(host)>130){
+        k_strcpy(browser_status,"Download requires direct .app.pkg HTTPS link");
+        return false;
+    }
+    const char *last=path;
+    for(u32 j=0;j<plen;j++)if(path[j]=='/')last=path+j+1;
+    u32 filename_len=(u32)k_strlen(last);
+    if(filename_len<9||filename_len>30u){
+        k_strcpy(browser_status,"Package filename too long for FalconFS");
+        return false;
+    }
+    for(u32 j=0;j<filename_len;j++){
+        char c=last[j];
+        if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+             (c>='0'&&c<='9')||c=='.'||c=='-'||c=='_')){
+            k_strcpy(browser_status,"Unsafe filename rejected");return false;
+        }
+    }
+    char request[345];
+    k_strcpy(request,"/download/");
+    k_strcat(request,host);
+    k_strcat(request,path);
+    if(!native_http_get_port(net_gateway(),18444u,request,
+                             app_download_http,sizeof app_download_http)){
+        k_strcpy(browser_status,"HTTPS app.pkg download failed or truncated");
+        return false;
+    }
+    if(!sh_contains_ci(app_download_http,"X-Falcon-Pkg-TLS: host-ca-verified")){
+        k_strcpy(browser_status,"No TLS verification header: download rejected");
+        return false;
+    }
+    char *start=app_download_http;
+    if(k_strncmp(start,"HTTP/1.0 200",12)!=0 &&
+       k_strncmp(start,"HTTP/1.1 200",12)!=0)return false;
+    while(*start&&!(start[0]=='\r'&&start[1]=='\n'&&
+                    start[2]=='\r'&&start[3]=='\n'))start++;
+    if(!*start)return false;
+    char *body=start+4;
+    u32 length=(u32)k_strlen(body);
+    char length_field[40],digits[16];
+    k_itoa(length,digits,10);
+    k_strcpy(length_field,"Content-Length: ");
+    k_strcat(length_field,digits);
+    if(!sh_contains_ci(app_download_http,length_field) ||
+       !market_validate_app_pkg(body,length)){
+        k_strcpy(browser_status,"Downloaded package unsafe or incomplete");
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'f');outb(0xE9,'X');
+#endif
+        return false;
+    }
+    (void)shfs_mkdir_abs("/home/falcon/Downloads");
+    char destination[SHFS_PATH];
+    k_strcpy(destination,"/home/falcon/Downloads/");
+    k_strcat(destination,last);
+    shfs_ent_t *file=shfs_open_w_abs(destination,false);
+    if(!file){k_strcpy(browser_status,"Downloads storage unavailable");return false;}
+    k_memcpy(file->data,body,length+1);
+    file->len=length;
+    k_strcpy(browser_status,"Downloaded FAPP/1 to Downloads. Open Files and double-click.");
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'f');outb(0xE9,'D');
+#endif
+    return true;
+}
 static void browser_load(void){
 #ifdef FALCON_QEMU_BROWSER_TEST
     outb(0xE9,'b'); /* user pressed Enter inside the real GUI */
@@ -3609,6 +3682,12 @@ static void browser_load(void){
         while(p[k]&&p[k]!='#'&&n<300)path[n++]=p[k++];
     }else path[n++]='/';
     path[n]=0;
+    u32 urllen=(u32)k_strlen(path);
+    if(urllen>=8&&k_strcmp(path+urllen-8,".app.pkg")==0){
+        /* Explicit FAPP file download, never interpret it as HTML. */
+        (void)falco_pkg_download(hostname,path);
+        return;
+    }
     k_strcpy(browser_status,"Connecting: DNS / TCP / TLS / CA certificate...");
     /* User-triggered and synchronous; slow networks can delay this UI.
      * Never execute a network operation while rendering each frame. */
