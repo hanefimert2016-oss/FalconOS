@@ -26,3 +26,21 @@ You can launch the source build with `make run-falco-native ENABLE_BEARSSL=1 ENA
 Cloudflare bot verification belongs to the site owner: FalconOS does not impersonate a human, solve CAPTCHAs or bypass challenges. The native view refuses a host HTTPS error page and requires actual title/body markers for FalconOS Contour. The gateway listens only on loopback or a private VM network and is hardwired to the single public site. Marketplace GitHub downloads remain checked; no guest scripts run on the Linux host.
 
 This release is a **prototype**, not a general-purpose replacement for Firefox/Chromium or a complete HTML5/CSS3/ECMAScript browser. You can use the old BearSSL text view (F6) to diagnose native TLS. For modern complex sites a complete self-written engine is a larger project.
+
+
+## Contour visual engine and license note
+
+The real `https://falconos.tech/styles.css` style sheet is the design reference:
+near-black gradient hero (`#050d13`, `#08161d`, `#0c2328`), mint
+(`#70f1bc`), desktop preview and two-column split. FalconOS implements
+this as original native C software-drawing primitives. The displayed
+text is gated on a certificate-verified real HTML response and a Contour
+identity check; this is neither a screenshot relay nor Chromium/WebKit.
+
+The optional exact Manrope typeface for build-time rasterization is pinned to
+Google Fonts commit `8f9a401dbb3793e0d1264b15d96aa253f05280f5`
+and SHA-256 `d0639be45d0af36e798172419d7bd173c4bd4f29e2b76cbb69db1d11bf8b0a40`.
+Manrope is licensed under the SIL Open Font License 1.1. Its license and
+copyright notice can be found at
+https://github.com/google/fonts/blob/main/ofl/manrope/OFL.txt .
+Raw font files are not bundled: FalconOS's own kernel paints baked alpha glyphs.
