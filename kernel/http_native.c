@@ -82,9 +82,24 @@ static bool visual_header_has(const char *haystack,const char *needle){
  * mandatory before drawing any pixel. Binary data may include NUL bytes. */
 bool native_http_get_visual_port(const char *host,u16 port,const char *path,
                                  u8 *pixels,u32 len){
-    if(!host||!path||!pixels||len!=57600u||port!=18445u ||
-       (k_strcmp(path,"/visual/falconos.tech/")!=0 &&
-        k_strcmp(path,"/visual/reload/falconos.tech/")!=0))return false;
+    if(!host||!path||!pixels||len!=57600u||port!=18445u)return false;
+    bool tile=(k_strncmp(path,"/visual/chunk/",14)==0 &&
+               path[14]>='1' && path[14]<='3' && path[15]==0);
+    bool click=k_strncmp(path,"/visual/click/",14)==0;
+    if(click){
+        /* Read-only navigation and user click coordinates to the already
+         * configured public site, never arbitrary host URLs. */
+        u32 count=0,slash=0;
+        for(const char *p=path+14;*p;p++){
+            if(++count>8){click=false;break;}
+            if(*p=='/'){slash++;continue;}
+            if(*p<'0'||*p>'9'){click=false;break;}
+        }
+        click=click && slash==1;
+    }
+    if(k_strcmp(path,"/visual/falconos.tech/")!=0 &&
+       k_strcmp(path,"/visual/reload/falconos.tech/")!=0 &&
+       !tile && !click)return false;
     u8 addr[4];
     if(!native_net_parse_ipv4(host,addr))return false;
     /* A public, DNS-overridden host must never impersonate the private visual
