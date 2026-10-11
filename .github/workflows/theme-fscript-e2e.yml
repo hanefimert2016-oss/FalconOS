@@ -23,6 +23,10 @@ jobs:
           grub-file --is-x86-multiboot2 build/falcon.elf
       - name: Verify direct FalconOS boot and native UI, no menu keystroke
         run: timeout 240s /tmp/falcon-fscript/bin/python tools/vnc_theme_fscript_e2e.py
+      - name: Real HTTPS and HTML compatibility audit of 50 seeded random sites
+        if: always()
+        run: |
+          timeout 195s /tmp/falcon-fscript/bin/python tools/falco_50_site_audit.py --seed 20261011 --count 50
       - name: Save screenshots and results
         if: always()
         uses: actions/upload-artifact@v4
@@ -33,5 +37,6 @@ jobs:
             build/FalconOS-FScript-*.png
             build/theme-fscript*.json
             build/theme-fscript*.log
+            build/falco-50-site-results.json
             build/FalconOS.iso
           if-no-files-found: warn
