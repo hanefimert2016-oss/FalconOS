@@ -92,6 +92,15 @@ def exercise(c):
     META["checks"].append("Native Falco painted real HTTPS document with own C layout")
     pause(1)
     shot(c,"FalconOS-Falco-Native-Real-Site")
+    # Native section navigation uses live guest keyboard, not a mock click.
+    off=len(data());k(c,"2");wait(b"s1",off,25)
+    pause(.35);shot(c,"FalconOS-Falco-Contour-Features")
+    off=len(data());k(c,"3");wait(b"s2",off,25)
+    pause(.35);shot(c,"FalconOS-Falco-Contour-Architecture")
+    off=len(data());k(c,"4");wait(b"s3",off,25)
+    pause(.35);shot(c,"FalconOS-Falco-Contour-Install")
+    off=len(data());k(c,"1");wait(b"s0",off,25)
+    META["checks"].append("Native Contour hero/features/architecture/install navigation passed")
     k(c,"f2");t(c,"Settings")
     off=len(data());k(c,"enter");wait(b"zDn2",off,70)
     # SR_THEME=0 ... SR_WIDGETS=8, SR_WALLPAPER=9
