@@ -64,7 +64,11 @@ def main():
             # is modeled by ordinary VNC keyboard presses, not guest memory.
             c.keyDown("ctrl");k(c,"l");c.keyUp("ctrl")
             t(c,URL)
+            pause(.7)
+            shot(c,"FalconOS-Falco-Entered-AppPkg-URL")
             at=len(data());k(c,"enter")
+            pause(2.5)
+            shot(c,"FalconOS-Falco-AppPkg-Download-Status")
             wait(b"dW",at,95)
             RESULT["checks"].append("Falco fetched real GitHub release over CA-verified HTTPS and saved FAPP/1 to Downloads")
             pause(.7)
