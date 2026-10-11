@@ -547,6 +547,8 @@ extern settings_t SET;
 void settings_init(void);
 void theme_creator_load_defaults(void);
 void theme_creator_export(void);
+void theme_creator_render(i32 x,i32 y,i32 w,i32 h,u32 frame);
+void theme_creator_input(i32 key);
 /* Falco layout semantics, drawn entirely by FalconOS at native resolution. */
 bool falco_native_parse(const char *http);
 bool falco_native_ready(void);
