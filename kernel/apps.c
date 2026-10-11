@@ -496,6 +496,9 @@ static void files_commit_edit(void){
         if(!files_join(path,parent,files_edit_name))return;
         bool ok=shfs_rename_abs(files_selected,path);
         files_action_status=ok?"Renamed (persisted by FalconFS)":"Rename refused: name exists or too long";
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'d');outb(0xE9,ok?'R':'X');
+#endif
         if(ok)k_strcpy(files_selected,path);
     }else{
         if(!files_join(path,files_current_dir(),files_edit_name)){
@@ -504,6 +507,9 @@ static void files_commit_edit(void){
         bool ok=files_edit_action==1?shfs_mkdir_abs(path):shfs_touch_abs(path);
         files_action_status=ok?(files_edit_action==1?"Folder created":"Document created"):
                               "No free file slots";
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'d');outb(0xE9,ok?(files_edit_action==1?'F':'N'):'X');
+#endif
     }
     files_edit_mode=false;files_scroll=0;
 }
@@ -520,6 +526,9 @@ static void files_request_delete(void){
     bool ok=jfs_stat(files_selected)>=0?
         jfs_remove(files_selected):shfs_rm_abs(files_selected);
     files_action_status=ok?"File removed safely":"Remove denied (folder not empty)";
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'d');outb(0xE9,ok?'D':'X');
+#endif
     files_delete_confirm_until=0;files_selected[0]=0;
 }
 
