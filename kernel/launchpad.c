@@ -38,15 +38,26 @@ static bool has_ci(const char *s,const char *term){
 static i32 visible[MAX_VISIBLE],visible_count;
 static void refresh(void){
     visible_count=0;
-    i32 n=apps_launcher_count(section_id);
-    for(i32 i=0;i<n&&visible_count<MAX_VISIBLE;i++){
-        i32 id=apps_launcher_id(section_id,i);
-        if(id>=0 && (has_ci(apps_display_name(id),search_term) ||
-                     has_ci(apps_name(id),search_term) ||
-                     (id==2 && (has_ci("Discover",search_term) ||
-                                 has_ci("Marketplace",search_term) ||
-                                 has_ci("Store",search_term)))))
-            visible[visible_count++]=id;
+    /* A typed app search is global. Restricting it to the current tab made
+     * installed apps, Codedium and System utilities appear to be missing. */
+    i32 passes=search_length?3:1;
+    for(i32 pass=0;pass<passes && visible_count<MAX_VISIBLE;pass++){
+        i32 group=search_length?pass:section_id;
+        i32 n=apps_launcher_count(group);
+        for(i32 i=0;i<n && visible_count<MAX_VISIBLE;i++){
+            i32 id=apps_launcher_id(group,i);
+            if(id<0)continue;
+            bool found=has_ci(apps_display_name(id),search_term) ||
+                       has_ci(apps_name(id),search_term) ||
+                       (id==2 && (has_ci("Discover",search_term) ||
+                                  has_ci("Marketplace",search_term) ||
+                                  has_ci("Store",search_term)));
+            if(!found)continue;
+            bool duplicate=false;
+            for(i32 j=0;j<visible_count;j++)
+                if(visible[j]==id){duplicate=true;break;}
+            if(!duplicate)visible[visible_count++]=id;
+        }
     }
     if(selected<0)selected=0;
     if(selected>=visible_count)selected=visible_count?visible_count-1:0;
