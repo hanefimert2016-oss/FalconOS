@@ -414,7 +414,10 @@ static const char *FILES_LABELS[5] = {
 static bool files_matches(const char *path) {
     const char *root=FILES_ROOTS[files_scope];
     i32 root_len=k_strlen(root);
-    if(root_len && k_strncmp(path,root,root_len)!=0)return false;
+    /* Scope to child entries, not the folder itself; Downloads should
+     * show downloaded app.pkg files immediately, not its own root row. */
+    if(root_len && (k_strncmp(path,root,root_len)!=0 ||
+        path[root_len]!='/'))return false;
     if(!files_filter_len)return true;
     for(i32 i=0;path[i];i++) {
         i32 j=0;
@@ -476,7 +479,7 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
        c->my>=y&&c->my<y+34){
         u32 now=pit_ms();
         bool double_click=k_strcmp(files_last_click_path,path)==0 &&
-            now-files_last_click_ms>=45u && now-files_last_click_ms<=650u;
+            now-files_last_click_ms>=45u && now-files_last_click_ms<=3200u;
         k_strcpy(files_selected,path);
         k_strcpy(files_last_click_path,path);
         files_last_click_ms=now;
