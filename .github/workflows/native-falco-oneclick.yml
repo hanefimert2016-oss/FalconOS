@@ -55,6 +55,8 @@ jobs:
           PATH="/tmp/falcon-native/bin:$PATH" bash tools/build_appimage.sh
           test -s build/FalconOS-Native-Desktop-x86_64.AppImage
           test -s build/FalconOS.iso
+          APPIMAGE_EXTRACT_AND_RUN=1 build/FalconOS-Native-Desktop-x86_64.AppImage --check
+          timeout 35s env APPIMAGE_EXTRACT_AND_RUN=1             build/FalconOS-Native-Desktop-x86_64.AppImage --smoke-boot
       - name: Smoke-test the executable AppImage itself, not only its source
         if: steps.native.outcome == 'success' && steps.persistence.outcome == 'success'
         run: |
