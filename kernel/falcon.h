@@ -368,6 +368,12 @@ const char *market_publish_status(void);
 bool market_line_allowed(const char *line, i32 size);
 /* .app.pkg runs only FAPP/1 scripts using existing allowlisted commands. */
 bool market_validate_app_pkg(const char *bytes,u32 length);
+/* FSC/1: custom interpreted FScript source, never C/ELF/native execution. */
+bool fscript_load(const char *source,u32 length);
+void fscript_render(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame);
+void fscript_key(i32 key);
+bool fscript_is_source(const char *source,u32 length);
+const char *fscript_title(void);
 
 /* ---- application framework (Personal kernel) ------------------------------ */
 i32          apps_count(void);
@@ -527,11 +533,20 @@ typedef struct {
      * fits comfortably inside the 2 048-byte FalconFS superblock budget. */
     u8          prg_installed[128];
     u32         wallpaper_style; /* appended for safe legacy disk migration */
+    /* Theme Creator v1: appended so saved passwords/installed apps are never
+     * moved. User palette is 24-bit, fully painted by our own framebuffer. */
+    u32         user_theme_active;
+    u32         user_wallpaper_top;
+    u32         user_wallpaper_bottom;
+    u32         user_accent_color;
+
 } settings_t;
 
 extern settings_t SET;
 
 void settings_init(void);
+void theme_creator_load_defaults(void);
+void theme_creator_export(void);
 /* Falco layout semantics, drawn entirely by FalconOS at native resolution. */
 bool falco_native_parse(const char *http);
 bool falco_native_ready(void);
