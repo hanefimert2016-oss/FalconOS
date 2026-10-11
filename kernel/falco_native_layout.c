@@ -6,6 +6,7 @@
  *    must not be presented as implemented.
  */
 #include "falcon.h"
+#include "falco_theme.h"
 #define NATIVE_MAX_BLOCKS 22
 #define NATIVE_TEXT 168
 typedef struct {char role;char text[NATIVE_TEXT];} falco_block_t;
@@ -160,18 +161,8 @@ static void contour_falcon_icon(i32 x,i32 y,i32 size,u32 color){
     gfx_line(x+size/2,y+size/2,x+size/3,y+size-size/8,color);
 }
 static void contour_browser_chrome(i32 x,i32 y,i32 w){
-    contour_round(x,y,w,53,13,0x14213Au);
-    contour_round(x+15,y+9,171,42,11,0x243651u);
-    gfx_circle(x+34,y+29,6,0x75A7FFu);
-    contour_label(x+52,y+17,"Falco",C_WHITE);
-    gfx_text(x+202,y+19,"<   >",0x91A8C6u);
-    i32 addrw=w-650;
-    if(addrw<140)addrw=140;
-    contour_round(x+280,y+10,addrw,36,11,0x091529u);
-    gfx_circle(x+299,y+28,5,0x68DAB1u);
-    contour_label(x+317,y+17,"https://falconos.tech/",0xC8D8F5u);
-    contour_round(x+w-352,y+11,335,33,12,0x1C2F4Au);
-    contour_label(x+w-335,y+17,"HTTPS  /  Host CA verified",0x95BADFu);
+    /* Browser chrome follows OS theme; the site's CSS area must not. */
+    falco_theme_header(x,y,w,true);
 }
 static void contour_site_nav(i32 x,i32 y,i32 w){
     /* Independent reference viewport: centred 1150px site composition, not
@@ -413,10 +404,14 @@ void falco_native_paint(i32 x,i32 y,i32 w,i32 h,i32 scroll,u32 frame){
     }
     if(section==0)contour_hero(x,top,w,siteh);
     else contour_section(x,top,w,siteh,section);
-    contour_round(x,y+h-23,w,23,0,0x17232Bu);
-    gfx_text(x+20,y+h-21,
-      "CONTOUR NATIVE | Live HTML + site-specific software CSS layout | JS not implemented",
-      0x97B9B8u);
+    /* Status chrome, like toolbar, obeys Light/Dark/Liquid and the accent. */
+    falco_theme_t style=falco_theme_current();
+    gfx_rect(x,y+h-23,w,23,style.chrome);
+    gfx_rect(x,y+h-24,w,1,style.hairline);
+    gfx_circle(x+22,y+h-12,4,style.secure);
+    gfx_text(x+36,y+h-21,
+      "Host CA-verified | Live HTML | Native Contour subset | JS unavailable",
+      style.muted);
 #ifdef FALCON_QEMU_BROWSER_TEST
     /* This marker is emitted from the ACTUAL page painter. Tests must not
      * accept only a keypress marker: a slow TCG frame can still show the
