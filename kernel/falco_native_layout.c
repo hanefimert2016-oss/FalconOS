@@ -175,10 +175,10 @@ static void contour_site_nav(i32 x,i32 y,i32 w){
     contour_label(x+74,y+21,"FalconOS",C_WHITE);
     i32 nav=x+w/2-175;
     if(w>1000){
-        contour_label(nav,y+22,"Ozellikler",C_WHITE);
+        contour_label(nav,y+22,"Özellikler",C_WHITE);
         contour_label(nav+131,y+22,"Mimari",C_WHITE);
         contour_label(nav+241,y+22,"Kurulum",C_WHITE);
-        contour_label(nav+339,y+22,"Yol haritasi",C_WHITE);
+        contour_label(nav+339,y+22,"Yol haritası",C_WHITE);
     }
     contour_round(x+w-155,y+12,128,39,13,0x163D3Bu);
     contour_label(x+w-136,y+17,"GitHub",C_MINT);
@@ -250,13 +250,13 @@ static void contour_hero(i32 x,i32 y,i32 w,i32 h){
     i32 left=x+clamp_(w/24,31,82);
     i32 top=y+clamp_(h/5,125,240);
     gfx_circle(left+5,top+12,5,C_MINT);
-    contour_label(left+23,top,"ACIK KAYNAK  .  BARE-METAL  .  X86_64",0x8FE6C5u);
+    contour_label(left+23,top,"AÇIK KAYNAK  ·  BARE-METAL  ·  X86_64",0x8FE6C5u);
     i32 leftw=w*49/100-45;
     /* The live document must contain the actual headline. We don't display
      * an invented copy if the upstream HTML changes or is challenged. */
     if(!contour_hero_headline_present())return;
-    const char *first="Sadece calismaz.";
-    const char *second="Ucmak icin dogdu.";
+    const char *first="Sadece çalışmaz.";
+    const char *second="Uçmak için doğdu.";
     i32 big=leftw>690?70:36;
     i32 shift=big==70?89:55;
     gfx_contour_text(left,top+49,first,big,C_WHITE);
@@ -288,14 +288,14 @@ static void contour_hero(i32 x,i32 y,i32 w,i32 h){
     if(buttons_y+150<y+h){
         contour_round(left,buttons_y,215,56,8,C_MINT);
         contour_label(left+19,buttons_y+14,"FalconOS'u dene   >",0x082019u);
-        contour_label(left+249,buttons_y+14,"Contour'u kesfet   v",C_WHITE);
+        contour_label(left+249,buttons_y+14,"Contour'u keşfet   v",C_WHITE);
         i32 stats_y=buttons_y+85;
         contour_label(left,stats_y,"01",C_MINT);
-        gfx_text(left,stats_y+28,"Bagimsiz cekirdek",0x9AABADu);
+        gfx_text(left,stats_y+28,"Bağımsız çekirdek",0x9AABADu);
         contour_label(left+180,stats_y,"TLS",C_MINT);
-        gfx_text(left+180,stats_y+28,"Yerlesik guven",0x9AABADu);
+        gfx_text(left+180,stats_y+28,"Yerleşik güven",0x9AABADu);
         contour_label(left+367,stats_y,"+",C_MINT);
-        gfx_text(left+367,stats_y+28,"Acik kaynak",0x9AABADu);
+        gfx_text(left+367,stats_y+28,"Açık kaynak",0x9AABADu);
     }
     i32 rightx=x+w*54/100;
     i32 rightw=w*41/100;
@@ -317,16 +317,16 @@ static void contour_section(i32 x,i32 y,i32 w,i32 h,i32 section){
     contour_label(lx,y+90,"FALCONOS  /  CONTOUR",0x307C68u);
     if(section==1){
         contour_big(lx,y+128,"Contour ile",C_INK);
-        contour_big(lx,y+215,"akista kal.",C_INK);
-        contour_label(lx,y+327,"FalconOS'un gorunen yuzu sade, altindaki sistem tutarli.",C_MUTED);
+        contour_big(lx,y+215,"akışta kal.",C_INK);
+        contour_label(lx,y+327,"FalconOS'un görünen yüzü sade; altındaki sistem tutarlı.",C_MUTED);
         static const char *heads[]={
-            "Falco ile guvenli gezinme","Dosya agaci, kalici hafiza",
-            "Tek katalog, net guncellemeler","Daha az gurultu"};
+            "Falco ile güvenli gezinme","Dosya ağacı, kalıcı hafıza",
+            "Tek katalog. Net güncellemeler.","Daha az gürültü"};
         static const char *desc[]={
-            "Omnibox, guven deposu, BearSSL tabanli TLS istemcisi",
-            "shfs /home dosyalarini sanal agacta birlestirir",
-            "Magaza ve Sistem Guncellemeleri tek prg kaydini kullanir",
-            "Sade sistem yuzu ve tutarli calisma alanlari"};
+            "Omnibox, güven deposu, BearSSL tabanlı TLS istemcisi",
+            "shfs /home dosyalarını sanal ağaçta birleştirir",
+            "Mağaza ve Sistem Güncellemeleri tek prg kaydını kullanır",
+            "Sade sistem yüzü ve tutarlı çalışma alanları"};
         i32 by=y+395,spacing=18;
         for(i32 i=0;i<4;i++){
             i32 cw=(w-2*pad-spacing)/2,ch=clamp_((h-by+y-55)/2,125,240);
@@ -338,8 +338,8 @@ static void contour_section(i32 x,i32 y,i32 w,i32 h,i32 section){
             contour_label(cx+21,cy+117,desc[i],C_MUTED);
         }
     }else if(section==2){
-        contour_big(lx,y+130,"Kendi ayaklari",C_INK);
-        contour_big(lx,y+217,"uzerinde.",C_INK);
+        contour_big(lx,y+130,"Kendi ayakları",C_INK);
+        contour_big(lx,y+217,"üzerinde.",C_INK);
         contour_label(lx,y+323,"x86_64  /  Multiboot2  /  Kernel  /  Contour WM",C_MUTED);
         i32 bx=lx,by=y+395,cw=(w-pad*2-28)/3,ch=min_(h-520,230);
         static const char *tags[]={"USERSPACE","SYSTEM","KERNEL"};
@@ -357,14 +357,14 @@ static void contour_section(i32 x,i32 y,i32 w,i32 h,i32 section){
         }
     }else{
         contour_big(lx,y+135,"Klonla.",C_INK);
-        contour_big(lx,y+224,"Derle. Uc.",C_INK);
+        contour_big(lx,y+224,"Derle. Uç.",C_INK);
         contour_label(lx,y+347,
-            "Gelistirici onizlemesi  |  Linux  /  macOS  /  Windows",C_MUTED);
+            "Geliştirici önizlemesi  |  Linux  /  macOS  /  Windows",C_MUTED);
         contour_round(lx,y+401,w-2*pad,155,18,0x0A1820u);
         contour_label(lx+29,y+422,"TERMINAL   -   FALCONOS",C_MINT);
         contour_medium(lx+30,y+463,"git clone ...  &&  make run",C_WHITE);
         contour_label(lx,y+602,
-            "Sadece acik kaynak. Guvenli sinirlar. Tamamen kendi cekirdegi.",C_MUTED);
+            "Sadece açık kaynak. Güvenli sınırlar. Tamamen kendi çekirdeği.",C_MUTED);
     }
 }
 void falco_native_paint(i32 x,i32 y,i32 w,i32 h,i32 scroll,u32 frame){
