@@ -25,3 +25,5 @@ for token in ["font-family","--bg","--accent","--ink","--surface","background:",
     i=css.find(token)
     if i>=0:print("CSS SNIPPET",token,repr(css[max(0,i-110):i+340]))
 print("HTML HEAD",html[:6000].replace("\n"," ")[:6000])
+
+# visual reference recorded for independent FalconOS native renderer
