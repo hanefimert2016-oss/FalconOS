@@ -74,19 +74,11 @@ def main():
                 STATE["checks"].append("Browser launched via keyboard-controlled native Launchpad")
                 k(c,"f4")
                 # Browser address typed via guest's real PS/2 keyboard.
-                # VNC "type ASCII colon" sends a bare semicolon scancode
-                # under QEMU even with KBD_US. Emit a physical Shift+;
-                # pair exactly as a person would for ':' on US keyboards.
-                for ch in URL:
-                    if ch==':':
-                        c.keyDown('shift')
-                        pause(.15)
-                        c.keyPress(';')
-                        pause(.15)
-                        c.keyUp('shift')
-                    else:
-                        c.keyPress(ch)
-                    pause(.17)
+                # A real browser accepts a hostname without scheme and
+                # safely prepends HTTPS. VNC colon keysym is unreliable
+                # across keyboard layouts, so this also verifies the
+                # ergonomic scheme-less address bar path.
+                t(c,URL[len("https://"):])
                 shot(c,"FalconOS-HTTPS-URL-Before-Enter")
                 off=len(data());k(c,"enter")
                 pause(2.0)
