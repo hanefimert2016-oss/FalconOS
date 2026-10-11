@@ -34,6 +34,7 @@ void settings_init(void)
     SET.dock_size     = 2;
     SET.viewport_w    = 0;              /* native                        */
     SET.viewport_h    = 0;
+    SET.wallpaper_style = 0;
     SET.widgets_shown = true;
     SET.center_circle = false;          /* removed in v5 by user request */
     k_strcpy(SET.password, "");
