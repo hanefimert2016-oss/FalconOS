@@ -133,6 +133,19 @@ bool jfs_mount(void){
     return true;
 }
 bool jfs_ready(void){return mounted&&!read_only;}
+/* Read-only JFS2 directory enumeration for unified Files UI.
+ * No raw partition access and no arbitrary paths accepted by callers. */
+void jfs_foreach(void (*cb)(const char *,u32,void *),void *ctx){
+    if(!mounted||!cb)return;
+    for(u32 i=0;i<JFS_MAX_FILES;i++){
+        if(entries[i].present)cb(entries[i].path,entries[i].length,ctx);
+    }
+}
+i32 jfs_stat(const char *path){
+    if(!mounted||!name_valid(path))return -1;
+    i32 i=find(path);
+    return i<0?-1:(i32)entries[i].length;
+}
 u32 jfs_file_count(void){
     u32 n=0;for(u32 i=0;i<JFS_MAX_FILES;i++)if(entries[i].present)n++;
     return n;
