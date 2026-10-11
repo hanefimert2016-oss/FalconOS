@@ -1,105 +1,47 @@
-name: FalconOS native web + wallpaper + passwordless login + desktop AppImage
+name: FalconOS native OS Falco login wallpapers and FAPP packages
 on:
   push:
     branches: [feature/native-falco-wallpaper-setup-20261011]
+    paths:
+      - kernel/**
+      - tools/vnc_native_upgrade_e2e.py
+      - tools/vnc_wallpaper_persistence_e2e.py
+      - .github/workflows/native-falco-oneclick.yml
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  native-visual-install:
+  native-os-e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 19
+    timeout-minutes: 17
     steps:
       - uses: actions/checkout@v4
-      - name: Install compiler, QEMU and Python VNC
+      - name: Build real FalconOS (no Chromium or AppImage)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 qemu-system-gui xvfb xauth             python3-venv ca-certificates curl file
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv
           python3 -m venv /tmp/falcon-native
           /tmp/falcon-native/bin/pip -q install pillow vncdotool
-          /tmp/falcon-native/bin/python -m py_compile tools/falco_native_gateway.py             tools/falcon_oneclick_launcher.py tools/vnc_native_upgrade_e2e.py \
-            tools/vnc_wallpaper_persistence_e2e.py
-      - name: Compile full-resolution FalconOS-owned GUI and BearSSL
-        run: |
-          PATH="/tmp/falcon-native/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1             EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          PATH="/tmp/falcon-native/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
           grub-file --is-x86-multiboot2 build/falcon.elf
-      - name: Real QEMU VNC test of native browser wallpaper installer and both login cases
-        id: native
-        continue-on-error: true
-        run: timeout 610s /tmp/falcon-native/bin/python tools/vnc_native_upgrade_e2e.py
-      - name: Verify persistent safe virtual disk across shutdown and reboot
-        id: persistence
-        continue-on-error: true
-        run: timeout 440s /tmp/falcon-native/bin/python tools/vnc_wallpaper_persistence_e2e.py
-      - name: Store individual real FalconOS PNG files and diagnostic logs
+      - name: Verify actual native browser, installers, wallpaper, locked vs passwordless accounts
+        run: timeout 590s /tmp/falcon-native/bin/python tools/vnc_native_upgrade_e2e.py
+      - name: Verify actual persistent wallpaper and account across two boots
+        run: timeout 430s /tmp/falcon-native/bin/python tools/vnc_wallpaper_persistence_e2e.py
+      - name: Real PNG evidence, bootable ISO, guest test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: FalconOS-Native-Falco-Setup-Wallpaper-REAL-PNG
+          name: FalconOS-Native-OS-ISO-Real-QEMU-PNG
           path: |
-            build/FalconOS-Native-*.png
+            build/FalconOS.iso
             build/FalconOS-Falco-*.png
+            build/FalconOS-Native-*.png
             build/FalconOS-Wallpaper-*.png
-            build/FalconOS-New-Lockscreen-*.png
-            build/native-*.log
-            build/native-*.json
             build/FalconOS-Persistent-*.png
+            build/FalconOS-New-Lockscreen-*.png
+            build/native-*.json
             build/persist-*.json
+            build/native-*.log
             build/persist-*.log
           if-no-files-found: warn
-      - name: Build single downloadable executable AppImage ONLY after QEMU tests pass
-        if: steps.native.outcome == 'success' && steps.persistence.outcome == 'success'
-        env:
-          FALCON_OUT: build/FalconOS-Native-Desktop-x86_64.AppImage
-        run: |
-          PATH="/tmp/falcon-native/bin:$PATH" bash tools/build_appimage.sh
-          test -s build/FalconOS-Native-Desktop-x86_64.AppImage
-          test -s build/FalconOS.iso
-          APPIMAGE_EXTRACT_AND_RUN=1 build/FalconOS-Native-Desktop-x86_64.AppImage --check
-          timeout 35s env APPIMAGE_EXTRACT_AND_RUN=1             build/FalconOS-Native-Desktop-x86_64.AppImage --smoke-boot
-          xvfb-run -a timeout 35s env APPIMAGE_EXTRACT_AND_RUN=1 \
-            build/FalconOS-Native-Desktop-x86_64.AppImage --smoke-gui
-      - name: Smoke-test the executable AppImage itself, not only its source
-        if: steps.native.outcome == 'success' && steps.persistence.outcome == 'success'
-        run: |
-          APPIMAGE_EXTRACT_AND_RUN=1 build/FalconOS-Native-Desktop-x86_64.AppImage --check
-      - name: Deliver bootable ISO and user-openable AppImage
-        if: steps.native.outcome == 'success' && steps.persistence.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: FalconOS-Native-OneClick-Verified-ISO-AppImage
-          path: |
-            build/FalconOS-Native-Desktop-x86_64.AppImage
-            build/FalconOS-AppImage-SHA256.txt
-            build/FalconOS.iso
-          retention-days: 14
-      - name: Prevent publishing if native browser or password safety failed
-        if: steps.native.outcome != 'success' || steps.persistence.outcome != 'success'
-        run: exit 1
-
-  publish-native-release:
-    # Only the explicitly marked final green push makes a public release;
-    # ordinary iterative commits never spam GitHub Releases.
-    needs: native-visual-install
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-native]')
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: FalconOS-Native-OneClick-Verified-ISO-AppImage
-          path: dist
-      - uses: actions/download-artifact@v4
-        with:
-          name: FalconOS-Native-Falco-Setup-Wallpaper-REAL-PNG
-          path: dist/screens
-      - name: Create public downloadable prerelease with actual AppImage and PNGs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          test -s dist/FalconOS-Native-Desktop-x86_64.AppImage
-          test -s dist/FalconOS.iso
-          TAG="v0.2.1-native-20261011"
-          gh release create "$TAG" dist/FalconOS-Native-Desktop-x86_64.AppImage             dist/FalconOS.iso dist/FalconOS-AppImage-SHA256.txt             dist/screens/FalconOS-*.png             --target "$GITHUB_SHA" --prerelease             --title "FalconOS Native OneClick Preview — no Chromium"             --notes-file docs/NATIVE-ONECLICK-README.md
