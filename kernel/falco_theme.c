@@ -41,6 +41,11 @@ falco_theme_t falco_theme_current(void){
 void falco_theme_header(i32 x,i32 y,i32 w,bool secure){
     falco_theme_t s=falco_theme_current();
     if(w<700)return;
+    i32 mx,my;bool held;
+    mouse_get(&mx,&my,&held);
+    (void)held;
+    bool back_hover=mx>=x+195&&mx<x+274&&my>=y+8&&my<y+51;
+    bool address_hover=mx>=x+280&&mx<x+w-370&&my>=y+9&&my<y+46;
     /* Geometries intentionally match browser click targets in apps.c.
      * The native site renderer and fallback HTML text reader now share
      * a common, consistent browser accent / tab / omnibox vocabulary. */
@@ -51,11 +56,11 @@ void falco_theme_header(i32 x,i32 y,i32 w,bool secure){
     gfx_rect(x+30,y+50,139,2,s.accent);
     gfx_circle(x+33,y+28,7,s.accent);
     gfx_text(x+48,y+20,"Falco",s.text);
-    gfx_text(x+202,y+19,"<    >",s.muted);
+    gfx_text(x+202,y+19,"<    >",back_hover?s.accent:s.muted);
     i32 aw=w-650;
     if(aw<140)aw=140;
     gfx_round_rect(x+280,y+9,aw,37,11,s.omnibox);
-    gfx_round_outline(x+280,y+9,aw,37,11,s.hairline);
+    gfx_round_outline(x+280,y+9,aw,37,11,address_hover?s.omnibox_focus:s.hairline);
     gfx_circle(x+299,y+27,5,s.secure);
     gfx_text(x+316,y+19,"https://falconos.tech/",s.text);
     gfx_round_rect(x+w-351,y+10,335,35,11,s.tab_inactive);
