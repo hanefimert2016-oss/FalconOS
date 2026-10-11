@@ -1,0 +1,48 @@
+name: FalconOS native graphical FAPP-2 application verified
+on:
+  push:
+    branches: [feature/fapp2-native-gui-20261011]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fapp2-gui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler QEMU and VNC
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 python3-venv
+          python3 -m venv /tmp/fapp2
+          /tmp/fapp2/bin/pip -q install pillow vncdotool
+          /tmp/fapp2/bin/python -m py_compile tools/vnc_fapp2_gui_e2e.py
+      - name: Build no Chromium FalconOS kernel
+        run: |
+          PATH="/tmp/fapp2/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 \
+            EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Real external HTTPS GUI app in guest via 2 clicks and Enter button
+        id: gui
+        continue-on-error: true
+        run: timeout 495s /tmp/fapp2/bin/python tools/vnc_fapp2_gui_e2e.py
+      - name: Save actual native GUI PNG and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-FAPP2-Real-Graphical-APP-PNGs
+          path: |
+            build/FalconOS-FAPP2-*.png
+            build/fapp2-native-*.json
+            build/fapp2-native-*.log
+          if-no-files-found: warn
+      - name: Publish ISO only on real guest E2E success
+        if: steps.gui.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-FAPP2-Native-GUI-Verified-ISO
+          path: build/FalconOS.iso
+      - name: Fail on invalid real GUI launch
+        if: steps.gui.outcome != 'success'
+        run: exit 1
