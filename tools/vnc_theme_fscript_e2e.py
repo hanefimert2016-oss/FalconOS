@@ -79,12 +79,25 @@ def main():
             pause(1.0)
             shot(c,"FalconOS-Theme-FScript-Installer-File")
             off=len(data());k(c,"enter");wait(b"zW",off,50)
-            pause(.7)
+            wait(b"gW",off,50)
+            pause(1.3)
             shot(c,"FalconOS-Theme-FScript-Setup-Wizard")
             off=len(data());k(c,"enter");wait(b"iY",off,50)
             STATE["checks"].append("Real .setup.app.pkg selected in Files and installed by native wizard into apps folder")
-            pause(.7)
+            pause(2.0)
             shot(c,"FalconOS-Theme-FScript-Installed")
+            # Every installed app gets a Desktop .link. Open the actual
+            # SHFS shortcut from Files and require the real FSC/1 painter.
+            open_app(c,"Files","zB")
+            k(c,"f4")
+            for _ in range(8):k(c,"bsp")
+            t(c,".link")
+            k(c,"f4");pause(1.0)
+            off=len(data());k(c,"enter")
+            wait(b"FS",off,45);wait(b"gV",off,60)
+            pause(1.2)
+            STATE["checks"].append("Desktop .link actually launches the installed FScript app")
+            shot(c,"FalconOS-Theme-FScript-Shortcut-Running")
             STATE["status"]="PASS"
     finally:
         proc.terminate()
