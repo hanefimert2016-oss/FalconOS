@@ -184,15 +184,14 @@ void lockscreen_render(u32 frame)
     u32 title_ink=dark?0xF7FAFFu:0x163151u;
     u32 hint_ink=dark?0xD2E2F7u:0x385779u;
     gfx_round_rect_a(0,0,W,H,0,0x071631u,dark?80:26);
-    gfx_round_rect_a(cx-306,cy-148,612,378,30,0xFFFFFFu,232);
-    gfx_round_outline(cx-306,cy-148,612,378,30,0xBED7F1u);
-    gfx_round_rect_a(cx-64,cy-321,128,38,17,0x112D54u,216);
-    gfx_text_centered(cx,cy-310,"FALCON  /  OS",0xFFFFFFu);
-    gfx_circle_a(cx,cy-106,47,0x357BF0u,48);
-    gfx_circle(cx,cy-106,34,0x337EEDu);
-    gfx_text_lg_centered(cx,cy-122,"F",0xFFFFFFu);
-    gfx_text_centered(cx,cy-147,"PRIVATE WORKSPACE",title_ink);
-    gfx_text_centered(cx,cy+204,"Your session. Your desktop.",hint_ink);
+    /* Spacious 900x475 composited sign-in sheet; 2K/HD native pixels. */
+    gfx_round_rect_a(cx-454,cy-158,908,483,36,0x0A2248u,32);
+    gfx_round_rect_a(cx-450,cy-164,900,475,34,0xFFFFFFu,241);
+    gfx_round_outline(cx-450,cy-164,900,475,34,0xCBDCF1u);
+    gfx_round_rect_a(cx-83,cy-372,166,38,17,0x102B52u,225);
+    gfx_text_centered(cx,cy-360,"FALCON  /  OS",0xFFFFFFu);
+    gfx_text_centered(cx,cy-136,"PRIVATE WORKSPACE",0x2C4F7Fu);
+    gfx_text_centered(cx,cy+252,"Protected locally by FalconOS",0x617C9Cu);
 
     /* ---- live clock + "welcome back" line ------------------------------- */
     {
@@ -208,12 +207,12 @@ void lockscreen_render(u32 frame)
         k_strcat(clk, tmp);
         /* Big crisp clock + small helper text; gives the lockscreen a
          * proper macOS-style headline rather than a tiny terminal time. */
-        gfx_text_lg_centered(cx, cy - 272, clk, title_ink);
+        gfx_text_hero_centered(cx, cy - 323, clk, title_ink);
         /* date below the clock, locale-formatted */
         char date_buf[16];
         loc_format_date(date_buf, &now);
-        gfx_text_centered(cx, cy - 239, date_buf, hint_ink);
-        gfx_text_centered   (cx, cy - 214,
+        gfx_text_centered(cx, cy - 249, date_buf, hint_ink);
+        gfx_text_centered   (cx, cy - 224,
                             TX("Welcome back",
                                "Tekrar hoşgeldin",
                                "Willkommen zuruck",
@@ -222,7 +221,7 @@ void lockscreen_render(u32 frame)
     }
 
     /* ---- user picker ---------------------------------------------------- */
-    draw_user_strip(cx, cy - 110, g_user_cursor);
+    draw_user_strip(cx, cy - 31, g_user_cursor);
 
     /* ---- selected user name --------------------------------------------- */
     const char *uname = "(no users)";
@@ -233,16 +232,16 @@ void lockscreen_render(u32 frame)
         uname  = SET.users[g_user_cursor].name;
         no_pwd = SET.users[g_user_cursor].no_password;
     }
-    gfx_text_centered(cx, cy - 40, uname, PAL_TEXT);
+    gfx_text_medium(cx-(k_strlen(uname)*6), cy + 35, uname, 0x1F3554u);
     if (SET.user_count > 1) {
-        gfx_text_centered(cx, cy - 22,
+        gfx_text_centered(cx, cy + 63,
             T("<-  ->   switch user",
               "<-  ->   kullanıcı değiştir"), PAL_TEXT_FAINT);
     }
 
     /* ---- password pill -------------------------------------------------- */
-    i32 fw = 360, fh = 50;
-    i32 fx = cx - fw / 2, fy = cy + 4;
+    i32 fw = 452, fh = 56;
+    i32 fx = cx - fw / 2, fy = cy + 92;
     if (frame < g_shake_until) {
         i32 phase = (i32)(frame * 11) & 31;
         i32 dx = ((phase < 8) ? phase : (16 - phase)) - 4;
@@ -262,17 +261,30 @@ void lockscreen_render(u32 frame)
     for (i32 i = 0; i < g_input_len; i++) masked[i] = '*';
     masked[g_input_len] = 0;
     if (g_input_len == 0) {
-        gfx_text(fx + 18, fy + 18,
-                 T("Enter password",
-                   "Parola gir"), PAL_TEXT_FAINT);
+        gfx_text_medium(fx + 20, fy + 17,
+                 no_pwd?T("Continue", "Devam et"):
+                        T("Enter password","Parola gir"), 0x607B9Du);
     } else {
-        gfx_text(fx + 18, fy + 18, masked, PAL_TEXT);
+        gfx_text_medium(fx + 20, fy + 17, masked, 0x243955u);
     }
     if ((frame / 30) & 1) {
-        i32 caret_x = fx + 18 + (g_input_len ? gfx_text_width(masked) : 0);
-        gfx_rect(caret_x, fy + 14, 2, 22, PAL_ACCENT);
+        i32 caret_x = fx + 20 + (g_input_len ? g_input_len*12 : 0);
+        gfx_rect(caret_x, fy + 16, 2, 25, PAL_ACCENT);
     }
 
+    /* A real clickable confirm affordance; clicks are PS/2 events and
+     * password-protected accounts still use users_verify() on Enter. */
+    gfx_round_rect(fx+fw-52,fy+7,44,42,13,0x327CFAu);
+    gfx_text_centered(fx+fw-30,fy+18,">",0xFFFFFFu);
+    if(mouse_peek_click()){
+        i32 mx,my;bool held;
+        mouse_get(&mx,&my,&held);(void)held;
+        if(mx>=fx+fw-60 && mx<fx+fw &&
+           my>=fy && my<fy+fh){
+            (void)mouse_consume_click();
+            lockscreen_input(KEY_ENTER);
+        }
+    }
     /* ---- error / hint --------------------------------------------------- */
     extern volatile u32 g_tick;
     if (g_throttle_end > g_tick) {
