@@ -67,8 +67,13 @@ def main():
                     off=len(data());k(c,"enter");wait(mark,off,45)
                 off=len(data());k(c,"enter");wait(b"aU",off,55);wait(b"H",off,55)
                 k(c,"esc")
-                k(c,"f2");t(c,"Browser")
+                # Launcher favourites have stable IDs: Files, Browser, Falco.
+                # Select the second icon by REAL arrow-key navigation instead
+                # of relying on a text search across changing keyboard layouts.
+                k(c,"f2");pause(.7)
+                k(c,"right")
                 off=len(data());k(c,"enter");wait(b"zOn1",off,65)
+                STATE["checks"].append("Browser launched via keyboard-controlled native Launchpad")
                 k(c,"f4")
                 # Browser address typed via guest's real PS/2 keyboard.
                 t(c,URL)
