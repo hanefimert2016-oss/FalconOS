@@ -4,7 +4,8 @@ The host performs CA-verified HTTPS, sends actual semantic HTML over QEMU's
 private NAT link, and the guest paints the actual site into its framebuffer.
 Never substitute host Chrome screenshots, fake HTML, or GitHub README.
 """
-import json,socket,subprocess,sys,time,traceback,urllib.request
+import json,os,socket,subprocess,sys,time,traceback,urllib.request
+from PIL import Image,ImageChops
 from pathlib import Path
 from vncdotool import api
 from vnc_real_input_audit import k,t,pause,shot
@@ -114,6 +115,32 @@ def main():
                     pause(1.1)
                     snap(client,label)
                     STATE["checks"].append("Real native scroll/page navigation: "+label)
+                if os.environ.get("FALCO_THEME_AUDIT")=="1":
+                    # Real PS/2 keyboard changes the actual FalconOS theme.
+                    # Site CSS pixels remain site-controlled and unchanged.
+                    def capture_theme(tag):
+                        pause(1.4)
+                        snap(client,"FalconOS-Falco-Theme-"+tag)
+                        return Image.open(B/("FalconOS-Falco-Theme-"+tag+".png")).convert("RGB")
+                    off=len(events());k(client,"1");wait(b"s0",off,35)
+                    liquid=capture_theme("Liquid")
+                    off=len(events());k(client,"f10")
+                    wait(b"t1",off,35);wait(b"c0",off,35)
+                    dark=capture_theme("Dark")
+                    off=len(events());k(client,"f10")
+                    wait(b"t0",off,35);wait(b"c0",off,35)
+                    light=capture_theme("Light")
+                    chrome=(500,115,950,145)
+                    document=(450,350,950,610)
+                    def differs(a,b,rect):
+                        return ImageChops.difference(a.crop(rect),b.crop(rect)).getbbox() is not None
+                    if not (differs(liquid,dark,chrome) and
+                            differs(dark,light,chrome)):
+                        raise AssertionError("Falco browser chrome failed to change with OS themes")
+                    if differs(liquid,dark,document) or differs(dark,light,document):
+                        raise AssertionError("Falco recolored the external website document")
+                    STATE["checks"].append("Native Liquid/Dark/Light browser chrome follows the real user palette")
+                    STATE["checks"].append("Real external website content pixels are identical in all three themes")
                 gateway_log.flush()
                 actual=(B/"falco-tech-gateway.log").read_text(errors="replace")
                 if "/falcon/native/" not in actual or " 200 " not in actual:
