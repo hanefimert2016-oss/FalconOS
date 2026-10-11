@@ -62,6 +62,11 @@ class Extract(HTMLParser):
     @staticmethod
     def clean(s):
         s = html.unescape(re.sub(r"\s+"," ",s)).strip()
+        # Font atlas supports ASCII and Turkish glyphs. Normalize unsupported
+        # punctuation rather than painting a literal '?' for every em dash.
+        for a,b in (("—"," - "),("–"," - "),("…","..."),("“",'"'),
+                    ("”",'"'),("’","'"),("•"," * "),("→"," -> ")):
+            s=s.replace(a,b)
         s = "".join(c for c in s if c.isprintable() and c not in "|\r\n")
         return s[:162]
     def handle_data(self, data):
