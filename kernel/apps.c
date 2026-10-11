@@ -4518,7 +4518,30 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 static char code_text[CODE_CAP];
 static i32 code_len, code_cursor;
 static bool code_ready,code_dirty,code_publish_armed;
-static const char *code_status = "F5 Save  |  F6 Run  |  F7 Export .app.pkg";
+static char code_undo[CODE_CAP], code_redo[CODE_CAP];
+static i32 code_undo_len,code_redo_len,code_undo_cursor,code_redo_cursor;
+static bool code_undo_valid,code_redo_valid;
+static void code_checkpoint(void) {
+    k_memcpy(code_undo,code_text,code_len+1);
+    code_undo_len=code_len;code_undo_cursor=code_cursor;
+    code_undo_valid=true;code_redo_valid=false;
+}
+static void code_history_apply(bool undo) {
+    if(undo&&!code_undo_valid)return;
+    if(!undo&&!code_redo_valid)return;
+    char *src=undo?code_undo:code_redo;
+    char *dst=undo?code_redo:code_undo;
+    i32 *sl=undo?&code_undo_len:&code_redo_len;
+    i32 *sc=undo?&code_undo_cursor:&code_redo_cursor;
+    i32 *dl=undo?&code_redo_len:&code_undo_len;
+    i32 *dc=undo?&code_redo_cursor:&code_undo_cursor;
+    k_memcpy(dst,code_text,code_len+1);*dl=code_len;*dc=code_cursor;
+    k_memcpy(code_text,src,*sl+1);code_len=*sl;code_cursor=*sc;
+    if(undo){code_undo_valid=false;code_redo_valid=true;}
+    else{code_redo_valid=false;code_undo_valid=true;}
+    code_dirty=true;
+}
+static const char *code_status = "F5 Save | F6 Run | F7 Export | Ctrl+Z/Y undo/redo";
 static void code_init(void)
 {
     if (code_ready) return;
@@ -4548,24 +4571,27 @@ static void code_save(void)
 }
 static void code_run(void)
 {
-    term_init();
-    for (i32 at = 0; at < code_len;) {
-        char line[184]; i32 n = 0;
-        while (at + n < code_len && code_text[at + n] != '\n' && n < 182) n++;
-        if (at + n < code_len && code_text[at + n] != '\n') {
-            code_status = "Script line exceeds 182 chars"; return;
-        }
-        k_memcpy(line, code_text + at, n); line[n] = 0;
-        if (n && line[0] != '#') {
-            if (!market_line_allowed(line, n)) {
-                code_status = "Unsafe command denied (FAPP/1 allowlist)"; return;
+    /* A later unsafe line cannot leave earlier commands already executed. */
+    for(i32 pass=0;pass<2;pass++){
+        if(pass==1)term_init();
+        for(i32 at=0;at<code_len;){
+            char line[184];i32 n=0;
+            while(at+n<code_len && code_text[at+n]!='\n' && n<182)n++;
+            if(at+n<code_len && code_text[at+n]!='\n'){
+                code_status="Script line exceeds 182 chars";return;
             }
-            sh_run_line(line);
+            k_memcpy(line,code_text+at,n);line[n]=0;
+            if(n && line[0]!='#'){
+                if(pass==0 && !market_line_allowed(line,n)){
+                    code_status="Unsafe command denied before execution";return;
+                }
+                if(pass==1)sh_run_line(line);
+            }
+            at+=n;
+            if(at<code_len && code_text[at]=='\n')at++;
         }
-        at += n;
-        if (at < code_len && code_text[at] == '\n') at++;
     }
-    code_status = "Executed in built-in Terminal";
+    code_status="Validated and executed in built-in Terminal";
     apps_open(5);
 }
 static bool code_export(void)
@@ -4614,8 +4640,10 @@ static void code_input_key(i32 key)
         code_publish_armed=false;
         code_status="GitHub publish cancelled.";return;
     }
-    if ((kbd_mod_state() & KMOD_CTRL) && (key == 's' || key == 'S')) {
-        code_save(); return;
+    if(kbd_mod_state() & KMOD_CTRL) {
+        if(key=='z'||key=='Z'){code_history_apply(true);return;}
+        if(key=='y'||key=='Y'){code_history_apply(false);return;}
+        if(key=='s'||key=='S'){code_save();return;}
     }
     if (key == KEY_UP || key == KEY_DOWN) {
         i32 start = code_cursor;
@@ -4651,10 +4679,12 @@ static void code_input_key(i32 key)
         return;
     }
     if (key == KEY_BACKSPACE && code_cursor > 0) {
+        code_checkpoint();
         for (i32 i = code_cursor - 1; i < code_len; i++) code_text[i] = code_text[i+1];
         code_len--; code_cursor--; code_dirty=true; return;
     }
     if (key == KEY_DEL && code_cursor < code_len) {
+        code_checkpoint();
         for (i32 i = code_cursor; i < code_len; i++) code_text[i] = code_text[i+1];
         code_len--; code_dirty=true; return;
     }
@@ -4663,6 +4693,7 @@ static void code_input_key(i32 key)
     else if (key == KEY_TAB) c = ' ';
     else if (key >= 32 && key < 127) c = (char)key;
     if (c && code_len + 1 < CODE_CAP) {
+        code_checkpoint();
         for (i32 i = code_len; i >= code_cursor; i--) code_text[i+1] = code_text[i];
         code_text[code_cursor++] = c; code_len++; code_dirty=true;
     }
