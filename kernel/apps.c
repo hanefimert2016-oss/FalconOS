@@ -3227,10 +3227,11 @@ static void render_gallery(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
  * No fabricated result cards or static fake search engine.
  * Guest-to-host NAT hop is plain TCP; real TLS is validated on trusted host.
  */
-static char falco_query[80]="FalconOS";
+static char falco_query[256]="FalconOS";
 static i32 falco_query_len=8;
 static i32 falco_sel=0;
 static char falco_http[4096],falco_results[3100];
+static char falco_package_http[6500];
 static char falco_status[128]="Enter searches live Wikipedia, via HTTPS host gateway.";
 static bool falco_has_results;
 static bool falco_dhcp_done;
@@ -3268,7 +3269,7 @@ static void falco_native_open(void){
 
 static void falco_set_query(const char *q){
     falco_query_len=0;
-    while(q&&q[falco_query_len]&&falco_query_len<79){
+    while(q&&q[falco_query_len]&&falco_query_len<250){
         falco_query[falco_query_len]=q[falco_query_len];
         falco_query_len++;
     }
@@ -3277,6 +3278,100 @@ static void falco_set_query(const char *q){
     falco_has_results=false;
     falco_web_view=false;
     falco_native_view=false;
+}
+/* User-initiated HTTPS app.pkg download from any safe public domain.
+ * Trusted host validates HTTPS/redirects, exact bytes are transferred over
+ * private QEMU NAT, and the guest validates *all* FAPP/1 source before
+ * saving. Download NEVER executes the file. File association in Files then
+ * provides the explicit two-click execution, with a strict command allowlist.
+ */
+static bool falco_download_package(const char *url){
+    if(!url || k_strncmp(url,"https://",8)!=0)return false;
+    const char *p=url+8;
+    char hostname[192],path[310];
+    i32 k=0;
+    while(p[k]&&p[k]!='/'&&p[k]!='?'&&p[k]!='#'&&k<190){
+        char c=p[k];
+        if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+             (c>='0'&&c<='9')||c=='-'||c=='.'))return false;
+        hostname[k]=c;k++;
+    }
+    if(k<3||k>=190||p[k]!='/')return false;
+    hostname[k]=0;
+    p+=k;
+    i32 n=0;const char *name=p+1;
+    for(;p[n];n++){
+        char c=p[n];
+        if(c=='?'||c=='#'||n>=295)return false;
+        if(c=='/')name=p+n+1;
+        if((u8)c<33||(u8)c>126)return false;
+    }
+    if(n<9||n>=295)return false;
+    k_memcpy(path,p,(u32)n);path[n]=0;
+    i32 name_len=k_strlen(name);
+    if(name_len<9||name_len>39 ||
+       k_strcmp(name+name_len-8,".app.pkg")!=0)return false;
+    for(i32 i=0;i<name_len;i++){
+        char c=name[i];
+        if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+             (c>='0'&&c<='9')||c=='.'||c=='-'||c=='_'))return false;
+    }
+    char save[SHFS_PATH]="/downloads/";
+    if(k_strlen(save)+name_len>=SHFS_PATH)return false;
+    k_strcat(save,name);
+    if(shfs_lookup(save)){
+        k_strcpy(falco_status,"Download exists. Check Files / Downloads.");
+        return false;
+    }
+    if(!net_present()){
+        k_strcpy(falco_status,"Network unavailable for package download");return false;
+    }
+    if(!falco_dhcp_done){falco_dhcp_done=true;(void)net_dhcp();}
+    char endpoint[510]="/fetch/";
+    k_strcat(endpoint,hostname);k_strcat(endpoint,path);
+    if(k_strlen(endpoint)>=380u)return false;
+    if(!native_http_get_port(net_gateway(),18444u,endpoint,
+                              falco_package_http,sizeof falco_package_http)){
+        k_strcpy(falco_status,"Host CA-verified HTTPS download failed");return false;
+    }
+    const char *resp=falco_package_http;
+    if(k_strncmp(resp,"HTTP/1.0 200",12)!=0 &&
+       k_strncmp(resp,"HTTP/1.1 200",12)!=0)return false;
+    if(!sh_contains_ci(resp,"X-Falcon-Host-HTTPS-Verified: yes") ||
+       !sh_contains_ci(resp,"X-Falcon-Verified-Package-Bytes: yes"))return false;
+    const char *len_header=resp;
+    i32 expected=-1;
+    for(;*len_header && !(len_header[0]=='\r'&&len_header[1]=='\n'&&
+                          len_header[2]=='\r'&&len_header[3]=='\n');len_header++){
+        if((len_header==resp || len_header[-1]=='\n') &&
+           k_strncmp(len_header,"Content-Length: ",16)==0){
+            const char *q=len_header+16;i32 value=0;u32 count=0;
+            while(*q>='0'&&*q<='9'&&count++<5){
+                value=value*10+(*q++-'0');
+            }
+            if(q[0]=='\r'&&q[1]=='\n')expected=value;
+        }
+    }
+    if(!*len_header || expected<70 || expected>4096)return false;
+    const char *body=len_header+4;
+    if(k_strlen(body)!=(u32)expected)return false;
+    (void)shfs_mkdir_abs("/downloads");
+    shfs_ent_t *file=shfs_open_w_abs(save,false);
+    if(!file)return false;
+    k_memcpy(file->data,body,(u32)expected);
+    file->data[expected]=0;file->len=(u32)expected;
+    char title[76];const char *script=NULL;
+    if(!app_pkg_validate(save,title,&script)){
+        (void)shfs_rm_abs(save);
+        k_strcpy(falco_status,"Rejected unsafe or invalid .app.pkg");
+        return false;
+    }
+    k_strcpy(falco_status,
+        "APP DOWNLOADED: Files > Downloads > double-click .app.pkg");
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'d');outb(0xE9,'W'); /* real browser HTTPS package saved */
+#endif
+    return true;
 }
 static void falco_search(void){
     falco_has_results=false;
@@ -3289,6 +3384,14 @@ static void falco_search(void){
     }
     if(!has_space && (has_dot || k_strncmp(falco_query,"https://",8)==0 ||
                       k_strncmp(falco_query,"http://",7)==0)){
+        i32 length=k_strlen(falco_query);
+        if(length>=9 && k_strcmp(falco_query+length-8,".app.pkg")==0){
+            if(!falco_download_package(falco_query) &&
+               !sh_contains_ci(falco_status,"Download exists") &&
+               !sh_contains_ci(falco_status,"Rejected unsafe"))
+                k_strcpy(falco_status,"HTTPS .app.pkg download refused/unavailable");
+            return;
+        }
         falco_open_site(falco_query);return;
     }
     if(!net_present()){
@@ -3383,7 +3486,7 @@ static void falco_input_key(i32 key){
         sh_buf_pop_utf8(falco_query,&falco_query_len);
         return;
     }
-    (void)sh_buf_append_key(falco_query,&falco_query_len,80,key);
+    (void)sh_buf_append_key(falco_query,&falco_query_len,sizeof falco_query,key);
 }
 static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     if(falco_native_view){
@@ -3457,7 +3560,9 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_round_outline(x,wy+109,w,51,18,PAL_ACCENT);
     gfx_circle_outline(x+23,wy+134,8,0x487CCA);
     gfx_line(x+28,wy+139,x+35,wy+146,0x487CCA);
-    gfx_text(x+51,wy+127,falco_query_len?falco_query:"Search Wikipedia...",PAL_TEXT);
+    const char *query_preview=falco_query;
+    if(falco_query_len>94)query_preview=falco_query+falco_query_len-94;
+    gfx_text(x+51,wy+127,falco_query_len?query_preview:"Search or paste HTTPS .app.pkg URL...",PAL_TEXT);
     gfx_round_rect(x+w-110,wy+117,100,35,13,0x246DE8);
     gfx_text_centered(x+w-60,wy+128,"Enter",0xFFFFFF);
     /* Explicit clickable HTTPS navigation; no fake "button" labels. */
