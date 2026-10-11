@@ -706,6 +706,9 @@ bool native_tcp_socket_close(i32 handle);
 u32 native_tcp_socket_capacity(void);
 bool native_http_get(const char *hostname,const char *path,char *result,u32 cap);
 bool native_http_get_port(const char *hostname,u16 port,const char *path,char *result,u32 cap);
+/* Read-only visual Chromium pixel bridge, private QEMU gateway ONLY. */
+bool native_http_get_visual_port(const char *host,u16 port,const char *path,
+                                 u8 *pixels,u32 len);
 bool native_https_get(const char *hostname,const char *path,char *result,u32 cap);
 /* TLS verified, HTTP body may be incomplete. Only render as inert text. */
 bool native_https_get_preview(const char *hostname,const char *path,char *result,u32 cap);
