@@ -100,8 +100,9 @@ jobs:
           set -euo pipefail
           curl -fsSL --retry 3 "$FAPP_URL" -o release/hello-world-v1.0.0.app.pkg
           echo "$FAPP_SHA256  release/hello-world-v1.0.0.app.pkg" | sha256sum -c -
+          cp samples/falcon-gui-demo.app.pkg release/falcon-gui-demo.app.pkg
           sha256sum release/FalconOS.iso release/hello-world-v1.0.0.app.pkg \
-            > release/SHA256SUMS.txt
+            release/falcon-gui-demo.app.pkg > release/SHA256SUMS.txt
           ls -lh release/FalconOS.iso release/hello-world-v1.0.0.app.pkg
       - name: Publish FalconOS native executable package release WITHOUT AppImage
         id: publish
@@ -111,26 +112,32 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          TAG="v0.3.0-falcon-app-pkg-20261011"
+          TAG="v0.3.1-native-gui-app-pkg-20261011"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release/FalconOS.iso \
-              release/hello-world-v1.0.0.app.pkg release/SHA256SUMS.txt \
+              release/hello-world-v1.0.0.app.pkg release/falcon-gui-demo.app.pkg \
+              release/SHA256SUMS.txt \
               release/FalconOS-Downloads-APP-PKG.png \
               release/FalconOS-DoubleClick-PKG-App-Running.png \
               release/FalconOS-Falco-Direct-HTTPS-PKG-Downloaded.png \
               release/FalconOS-Falco-HTTPS-PKG-DoubleClick-Running.png \
+              release/FalconOS-FAPP-GUI-Button-Executed.png \
+              release/FalconOS-Falco-GUI-APP-DoubleClick-Running.png \
               --clobber
           else
             gh release create "$TAG" \
               release/FalconOS.iso \
-              release/hello-world-v1.0.0.app.pkg release/SHA256SUMS.txt \
+              release/hello-world-v1.0.0.app.pkg release/falcon-gui-demo.app.pkg \
+              release/SHA256SUMS.txt \
               release/FalconOS-Downloads-APP-PKG.png \
               release/FalconOS-DoubleClick-PKG-App-Running.png \
               release/FalconOS-Falco-Direct-HTTPS-PKG-Downloaded.png \
               release/FalconOS-Falco-HTTPS-PKG-DoubleClick-Running.png \
+              release/FalconOS-FAPP-GUI-Button-Executed.png \
+              release/FalconOS-Falco-GUI-APP-DoubleClick-Running.png \
               --target "$GITHUB_SHA" --prerelease \
-              --title "FalconOS native .app.pkg launch preview — no AppImage" \
-              --notes "Inside FalconOS, download a real .app.pkg through Falco or Discover, open Files → Downloads, and double-click the app to launch its own FAPP Runner window. Tested on real QEMU native mouse/keyboard using real GitHub Releases bytes and SHA-256. FalconOS itself runs from the bootable ISO; do not download a Linux AppImage. FAPP/1 is currently a bounded allowlisted script application format, not an x86 machine-code EXE. Falco Contour is site-specific software rendered; not a general HTML/CSS/JS browser. No Chromium."
+              --title "FalconOS native clickable GUI .app.pkg preview — no AppImage" \
+              --notes "Inside FalconOS, download a real .app.pkg through Falco or Discover, open Files → Downloads, and double-click the app to launch its own FAPP Runner window. Tested on real QEMU native mouse/keyboard using real GitHub Releases bytes and SHA-256. FalconOS itself runs from the bootable ISO; do not download a Linux AppImage. FAPP/1 supports optional #ui:title, #ui:text, #ui:button declarative native interactive windows; actions execute ONLY on real keyboard/mouse press and pass the restrictive policy. Still not x86 machine-code EXE. Falco Contour is site-specific software rendered; not a general HTML/CSS/JS browser. No Chromium."
           fi
       - name: Explain missing GitHub release permission without hiding tested artifacts
         if: steps.publish.outcome == 'failure'
