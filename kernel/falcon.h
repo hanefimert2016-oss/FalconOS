@@ -685,6 +685,8 @@ u32 pci_extended_info(u32 kind,u32 field);
 bool jfs_mount(void);
 bool jfs_ready(void);
 bool jfs_write(const char *path,const u8 *data,u32 length);
+void jfs_foreach(void (*cb)(const char *path,u32 length,void *ctx),void *ctx);
+i32 jfs_stat(const char *path);
 bool jfs_remove(const char *path);
 i32 jfs_read(const char *path,u8 *out,u32 cap);
 u32 jfs_file_count(void);
@@ -703,6 +705,11 @@ bool xfs_write(const char *name,const u8 *data,u32 len);
 bool xfs_remove(const char *name);
 u32 xfs_count(void);
 bool xfs_fsck(u32 *files,u32 *bad_copies);
+/* Safe FalconOS-owned ISO9660 builder: no USB block write support. */
+void iso_studio_key(i32 key);
+void iso_studio_render(i32 x,i32 y,i32 w,i32 h,u32 frame);
+void iso_studio_choose(const char *abs_path);
+bool iso_studio_open_file(const char *abs_path);
 
 /* Native IPv4/ICMP packet networking; not a TLS or full TCP stack. */
 void native_net_poll(void);
