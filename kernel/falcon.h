@@ -166,6 +166,8 @@ void gfx_circle_a(i32 cx, i32 cy, i32 r, u32 c, u8 alpha);
 void gfx_circle_outline(i32 cx, i32 cy, i32 r, u32 c);
 void gfx_line(i32 x0, i32 y0, i32 x1, i32 y1, u32 c);
 void gfx_text(i32 x, i32 y, const char *s, u32 c);
+void gfx_text_medium(i32 x, i32 y, const char *s, u32 c);
+void gfx_text_smooth_lg(i32 x, i32 y, const char *s, u32 c);
 void gfx_text_centered(i32 cx, i32 y, const char *s, u32 c);
 i32  gfx_text_width(const char *s);
 void gfx_dim(u8 amount);
