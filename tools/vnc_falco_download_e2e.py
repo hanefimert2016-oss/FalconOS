@@ -52,6 +52,10 @@ def main():
         with api.connect("127.0.0.1::5906",timeout=35) as c:
             wait(b"L",sec=110)
             for token in (b"T",b"A",b"K",b"D",b"U"):
+                # For faithful VNC release-URL typing select US-QWERTY at
+                # keyboard setup. Human FalconOS defaults are untouched.
+                if token==b"D":
+                    k(c,"right");k(c,"right")
                 at=len(data());k(c,"enter");wait(token,at,45)
             t(c,"falcon")
             for token in (b"P",b"Q",b"O"):
