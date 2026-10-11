@@ -62,7 +62,10 @@ def main():
                 k(c,"f4")
                 # Browser address typed via guest's real PS/2 keyboard.
                 t(c,URL)
+                shot(c,"FalconOS-HTTPS-URL-Before-Enter")
                 off=len(data());k(c,"enter")
+                pause(2.0)
+                shot(c,"FalconOS-HTTPS-URL-After-Enter")
                 wait(b"fD",off,95)
                 STATE["checks"].append("Real HTTPS URL typed in guest Browser and saved in guest Downloads")
                 pause(1.5)
