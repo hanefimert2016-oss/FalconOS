@@ -4287,6 +4287,17 @@ static void files_launch_pkg(const char *path){
         }
     }
     if(!script)return;
+    /* Validate and build GUI state before running any script command. */
+    if(!fapp_gui_parse(script)){
+        files_action_status="Rejected unsafe FAPP/1 GUI directive";
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'f');outb(0xE9,'X');
+#endif
+        return;
+    }
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'f');outb(0xE9,fapp_gui_custom?'g':'t');
+#endif
     /* Program metadata is shown in its OWN FalconOS application window.
      * The commands still run through the existing safe FAPP interpreter;
      * this is NOT an ELF process and never executes host machine code. */
