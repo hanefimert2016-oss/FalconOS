@@ -154,15 +154,14 @@ void installer_render(u32 frame)
         case INST_LANG: {
             headline = "Dilinizi seçin  —  Choose language";
             helptext   = "<-/-> değiştir / switch    Enter ile devam / continue";
-            const char *items[2] = { "Turkçe", "English" };
-            const u32 lang_dot[2] = {
-                0xE30A17,   /* TR  red                                  */
-                0x012169,   /* EN  navy                                 */
+            const char *items[LANG_COUNT] = { "Türkçe", "English", "Deutsch", "Français", "Español" };
+            const u32 lang_dot[LANG_COUNT] = {
+                0xE30A17, 0x012169, 0xFFCE00, 0x0055A4, 0xF1BF00,
             };
             gfx_text_centered(cx, cy - 100, headline, PAL_TEXT);
-            draw_choice_row(cy - 40, items, 2, g_choice);
+            draw_choice_row(cy - 40, items, LANG_COUNT, g_choice);
             /* paint a 6 px coloured pip on top of every tile          */
-            i32 W = (i32)FB.width, pad = 14, pw = 180, n = 2;
+            i32 W = (i32)FB.width, pad = 14, pw = 180, n = LANG_COUNT;
             i32 row_w = n * pw + (n - 1) * pad;
             i32 x0 = (W - row_w) / 2;
             for (i32 i = 0; i < n; i++) {
@@ -534,7 +533,7 @@ void installer_input(i32 key)
         g_step == INST_DISK  || g_step == INST_USER_MORE) {
         i32 max;
         switch (g_step) {
-            case INST_LANG:     max = 2; break;  /* TR + EN only */
+            case INST_LANG:     max = LANG_COUNT; break;
             case INST_THEME:    max = THEME_COUNT; break;
             case INST_ACCENT:   max = 5; break;
             case INST_KBD:      max = 3; break;
@@ -557,6 +556,12 @@ void installer_input(i32 key)
                      * a TR layout; everyone else gets US-QWERTY.       */
                     if (SET.lang == LANG_TR) SET.kbd_layout = KBD_TR_Q;
                     else                     SET.kbd_layout = KBD_US;
+                    /* Offline region heuristic (NOT GPS/IP geolocation).
+                     * User's chosen installer language configures a nearby
+                     * standard-time timezone; Settings can change it.
+                     * DST cannot be inferred without an IANA tz database. */
+                    SET.tz_minutes=(SET.lang==LANG_TR)?180:
+                        ((SET.lang==LANG_EN)?0:60);
                     g_step = INST_THEME;   g_choice = SET.theme;        return;
                 case INST_THEME:
                     SET.theme = (theme_t)g_choice;
