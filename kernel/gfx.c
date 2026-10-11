@@ -113,10 +113,14 @@ void gfx_wallpaper(void)
     u32 ctop = PAL_BG_TOP, cbot = PAL_BG_BOT, chnt = PAL_BG_HINT;
     /* Procedural user wallpaper: full FB resolution, no bitmap scaling.
      * Existing themes, windows, accents and glass stay independent. */
-    switch(SET.wallpaper_style % 4u){
+    switch(SET.wallpaper_style % 8u){
         case 1: ctop=0x091429u;cbot=0x172649u;chnt=0x25498Cu;break;
         case 2: ctop=0x291943u;cbot=0x644B93u;chnt=0xC893F2u;break;
         case 3: ctop=0x4D2945u;cbot=0xF0A170u;chnt=0xFFC48Bu;break;
+        case 4: ctop=0x041A1Du;cbot=0x0D5258u;chnt=0x63D9A6u;break;
+        case 5: ctop=0x1B2645u;cbot=0x9ABCCFu;chnt=0xE3F5FFu;break;
+        case 6: ctop=0x192C22u;cbot=0x466F59u;chnt=0xA9E0B0u;break;
+        case 7: ctop=0x23131Au;cbot=0x79395Au;chnt=0xE88A9Cu;break;
         default: break;
     }
     u32 tr = (ctop >> 16) & 0xFF, tg = (ctop >> 8) & 0xFF, tb = ctop & 0xFF;
