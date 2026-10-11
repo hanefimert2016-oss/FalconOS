@@ -403,6 +403,7 @@ static const char *files_action_status="Double click .app.pkg to run in FalconOS
 static char fapp_running_title[48]="FalconOS application";
 static char fapp_running_source[SHFS_PATH];
 static bool fapp_running_valid;
+static bool fapp2_running;
 static void files_launch_pkg(const char *path);
 
 static bool files_search_mode;
@@ -4168,13 +4169,32 @@ static void files_launch_pkg(const char *path){
         files_action_status="No runnable .app.pkg selected";return;
     }
     shfs_ent_t *file=shfs_lookup(path);
-    if(!file||file->is_dir||!market_validate_app_pkg(file->data,file->len)){
+    if(!file||file->is_dir||
+       (!market_validate_app_pkg(file->data,file->len) &&
+        !fapp2_validate(file->data,file->len))){
         files_action_status="Invalid or unsafe FAPP/1 file: execution blocked";
 #ifdef FALCON_QEMU_UI_GALLERY
         outb(0xE9,'f');outb(0xE9,'X');
 #endif
         return;
     }
+    if(k_strncmp(file->data,"FAPP/2\n",7)==0){
+        if(!fapp2_load(file->data,file->len)){
+            files_action_status="Invalid FAPP/2 native GUI layout";
+            return;
+        }
+        fapp2_running=true;
+        fapp_running_valid=true;
+        k_strcpy(fapp_running_title,fapp2_title());
+        k_strcpy(fapp_running_source,path);
+        files_action_status="Launched native FAPP/2 graphical app";
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'f');outb(0xE9,'G');
+#endif
+        apps_open(FAPP_RUNNER_APP_ID);
+        return;
+    }
+    fapp2_running=false;
     const char *script=NULL;
     for(u32 k=0;k+1<file->len;k++){
         if(file->data[k]=='\n'&&file->data[k+1]=='\n'){
@@ -4633,6 +4653,49 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
  * actual interpreter output, app source and Close button. */
 static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;
+    if(fapp2_running){
+        u32 color=fapp2_accent();
+        i32 x=wx+25,y=wy+19,w=ww-50;
+        gfx_round_rect(x,y,w,85,18,0x121D2Bu);
+        gfx_round_rect(x+20,y+18,47,47,13,color);
+        gfx_text_lg_centered(x+43,y+24,"A",0xFFFFFFu);
+        gfx_text_lg(x+86,y+13,fapp_running_title,0xF9FBFFu);
+        gfx_text(x+86,y+59,"FAPP/2 | Native FalconOS GUI - no browser",0xB6CCD0u);
+        y+=109;
+        i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+        bool clicked=!wm_passive_paint&&mouse_clicked();
+        for(u32 i=0;i<fapp2_count();i++){
+            i32 kind=fapp2_kind(i);
+            const char *text=fapp2_label(i);
+            if(kind==1){
+                gfx_text_lg(x+21,y+6,text,0x112E40u);y+=63;
+            }else if(kind==2){
+                gfx_text(x+23,y+10,text,0x40556Au);y+=42;
+            }else if(kind==3){
+                gfx_round_rect(x+10,y,w-20,74,14,0xE6F1F5u);
+                gfx_round_outline(x+10,y,w-20,74,14,0xCDDEE7u);
+                gfx_circle(x+30,y+36,9,color);
+                gfx_text(x+52,y+24,text,0x1F4054u);y+=91;
+            }else if(kind==4){
+                i32 bx=x+18,by=y,bw=w>340?320:w-30;
+                gfx_round_rect(bx,by,bw,49,12,color);
+                gfx_text(bx+18,by+15,text,0xFFFFFFu);
+                if(clicked&&mx>=bx&&mx<bx+bw&&my>=by&&my<by+49){
+                    (void)mouse_consume_click();
+                    fapp2_press(i);
+                    clicked=false;
+                }
+                y+=70;
+            }
+            if(y>wy+wh-140)break;
+        }
+        gfx_round_rect(x,wy+wh-115,w,48,12,0x142E3Bu);
+        gfx_text(x+17,wy+wh-100,fapp2_status(),0xA6F0D8u);
+        gfx_text(x,wy+wh-48,fapp_running_source,0x61798Au);
+        gfx_text(x,wy+wh-26,
+                 "FAPP/2 local UI | No host execution | Close with X",PAL_TEXT_DIM);
+        return;
+    }
     gfx_round_rect(wx+17,wy+13,ww-34,77,17,0x12372Cu);
     gfx_round_rect(wx+31,wy+25,45,45,13,0x64E4ADu);
     gfx_text_lg_centered(wx+54,wy+31,"A",0x103228u);
