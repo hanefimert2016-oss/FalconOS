@@ -32,6 +32,7 @@ static void chrome_input_key(i32 key);
 static void chrome_focus_url(void);
 static void render_browser(i32 x,i32 y,i32 w,i32 h,u32 frame);
 static void market_launch(i32 i);
+static void fapp_run_file(const char *path);
 static i32 builtin_app_count(void);
 
 /* ---- Contour native window stack (up to 4 simultaneous application windows).
@@ -396,13 +397,16 @@ static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
  * F4 search, Left/Right locations, Up/Down scroll. The same exact file state
  * is shared with Notes, Codedium and downloaded FAPP/1 packages. */
 static i32 files_scroll, files_scope;
+static char files_selected_path[SHFS_PATH];
+static u32 files_previous_click_ms;
+static const char *files_status="Double-click .app.pkg to run | Enter to open";
 static bool files_search_mode;
 static char files_filter[40];
 static i32 files_filter_len;
-static const char *FILES_ROOTS[4] = {
-    "", "/home/falcon", "/home/falcon/Desktop", "/home/falcon/apps"
+static const char *FILES_ROOTS[5] = {
+    "", "/home/falcon", "/home/falcon/Desktop", "/downloads", "/home/falcon/apps"
 };
-static const char *FILES_LABELS[4] = { "All files", "Home", "Desktop", "Apps" };
+static const char *FILES_LABELS[5] = { "All files", "Home", "Desktop", "Downloads", "Apps" };
 static bool files_matches(const char *path) {
     const char *root=FILES_ROOTS[files_scope];
     i32 root_len=k_strlen(root);
@@ -422,6 +426,9 @@ static bool files_matches(const char *path) {
     return false;
 }
 static void files_input_key(i32 key) {
+    if(key==KEY_ENTER && files_selected_path[0]){
+        fapp_run_file(files_selected_path);return;
+    }
     if(key==KEY_F4){files_search_mode=!files_search_mode;return;}
     if(files_search_mode){
         if(key==KEY_BACKSPACE){
@@ -436,20 +443,35 @@ static void files_input_key(i32 key) {
         }
         return;
     }
-    if(key==KEY_LEFT){files_scope=(files_scope+3)%4;files_scroll=0;}
-    if(key==KEY_RIGHT){files_scope=(files_scope+1)%4;files_scroll=0;}
+    if(key==KEY_LEFT){files_scope=(files_scope+4)%5;files_scroll=0;files_selected_path[0]=0;}
+    if(key==KEY_RIGHT){files_scope=(files_scope+1)%5;files_scroll=0;files_selected_path[0]=0;}
     if(key==KEY_UP&&files_scroll>0)files_scroll--;
     if(key==KEY_DOWN&&files_scroll<SHFS_MAX_ENTRIES-1)files_scroll++;
 }
-typedef struct {i32 x,y,w,limit,row,seen,files,dirs;} file_draw_ctx_t;
+typedef struct {
+    i32 x,y,w,limit,row,seen,files,dirs,mx,my;
+    bool clicked,activate;
+    char chosen_path[SHFS_PATH];
+} file_draw_ctx_t;
 static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
     file_draw_ctx_t *c=(file_draw_ctx_t *)ud;
     if(!files_matches(path))return;
     if(is_dir)c->dirs++;else c->files++;
     if(c->seen++<files_scroll||c->row>=c->limit)return;
     i32 y=c->y+c->row*37;
+    bool selected=k_strcmp(files_selected_path,path)==0;
     gfx_round_rect_a(c->x,y,c->w,34,10,
-        (c->row&1)?PAL_PANEL:PAL_PANEL_DEEP,255);
+        selected?PAL_ACCENT_DIM:((c->row&1)?PAL_PANEL:PAL_PANEL_DEEP),255);
+    if(c->clicked && c->mx>=c->x && c->mx<c->x+c->w &&
+       c->my>=y && c->my<y+34){
+        u32 now=pit_ms();
+        c->activate=selected && now>=files_previous_click_ms &&
+                    now-files_previous_click_ms<=700u;
+        k_strcpy(files_selected_path,path);
+        files_previous_click_ms=now;
+        k_strcpy(c->chosen_path,path);
+        c->clicked=false;
+    }
     gfx_round_rect(c->x+9,y+7,24,20,6,
         is_dir?0xF3BC5Du:0x548FEBu);
     gfx_text_centered(c->x+21,y+10,is_dir?"D":"F",0xFFFFFFu);
@@ -481,14 +503,14 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_round_rect_a(sx,wy+top,sidebar,wh-top-bottom,13,PAL_PANEL_DEEP,255);
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool clicked=wm_click_enabled();
-    for(i32 i=0;i<4;i++){
-        i32 sy=wy+top+13+i*43;
+    for(i32 i=0;i<5;i++){
+        i32 sy=wy+top+13+i*40;
         bool chosen=i==files_scope;
         gfx_round_rect(sx+7,sy,sidebar-14,36,11,
             chosen?PAL_ACCENT_DIM:PAL_PANEL);
         gfx_text(sx+19,sy+11,FILES_LABELS[i],chosen?PAL_ACCENT:PAL_TEXT_DIM);
         if(clicked&&mx>=sx+7&&mx<sx+sidebar-7&&my>=sy&&my<sy+36){
-            files_scope=i;files_scroll=0;
+            files_scope=i;files_scroll=0;files_selected_path[0]=0;
             (void)mouse_consume_click();clicked=false;
         }
     }
@@ -503,18 +525,29 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     if(clicked&&mx>=main_x&&mx<main_x+main_w&&my>=wy+top&&my<wy+top+38){
         files_search_mode=true;(void)mouse_consume_click();
     }
-    file_draw_ctx_t ctx={main_x,wy+top+49,main_w,
-        (wh-top-bottom-53)/37,0,0,0,0};
+    file_draw_ctx_t ctx={0};
+    ctx.x=main_x;ctx.y=wy+top+49;ctx.w=main_w;
+    ctx.limit=(wh-top-bottom-53)/37;
+    ctx.mx=mx;ctx.my=my;ctx.clicked=clicked;
     if(ctx.limit<1)ctx.limit=1;
     shfs_foreach_path(files_row,&ctx);
+    if(clicked && !ctx.clicked){
+        (void)mouse_consume_click();
+        if(ctx.activate){
+#ifdef FALCON_QEMU_UI_GALLERY
+            outb(0xE9,'d');outb(0xE9,'C');
+#endif
+            fapp_run_file(ctx.chosen_path);
+            return;
+        }
+    }
     if(ctx.seen==0)
         gfx_text(main_x+16,wy+top+89,
             files_filter_len?"No matching files":"No files in this location",PAL_TEXT_DIM);
     gfx_rect(sx,wy+wh-36,ww-2*margin,1,PAL_HAIRLINE);
     char count[16];k_itoa(ctx.files,count,10);
     gfx_text(sx+4,wy+wh-26,count,PAL_ACCENT);
-    gfx_text(sx+35,wy+wh-26,"files  |  F4 search  |  Left/Right folders  |  Up/Down scroll",
-        PAL_TEXT_DIM);
+    gfx_text(sx+35,wy+wh-26,files_status,PAL_TEXT_DIM);
 }
 
 static void render_clock(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
@@ -3976,6 +4009,43 @@ static i32 market_selected_row(void){
     return 0;
 }
 
+/* FalconOS .app.pkg file association: ALL bytes and ALL allowed commands
+ * are checked by app_pkg_validate BEFORE executing any untrusted input.
+ * FAPP/1 apps currently run in a distinct native Terminal window; ELF/PE
+ * binaries remain unsupported, rather than silently executed on the host. */
+static void fapp_run_file(const char *path){
+    char name[76];
+    const char *script=NULL;
+    if(!app_pkg_validate(path,name,&script)){
+        files_status="Invalid or unsupported .app.pkg - nothing executed";
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'d');outb(0xE9,'N');
+#endif
+        return;
+    }
+    term_init();
+    term_push("FalconOS .app.pkg | native FAPP/1 application");
+    term_push(name);
+    u32 steps=0;
+    for(;*script && steps<120u;steps++){
+        const char *end=script;
+        while(*end&&*end!='\n')end++;
+        if(*end!='\n')break;
+        u32 length=(u32)(end-script);
+        if(length && script[0]!='#'){
+            char command[184];
+            if(length>=sizeof command)break;
+            k_memcpy(command,script,length);command[length]=0;
+            sh_run_line(command);
+        }
+        script=end+1;
+    }
+    files_status="FAPP/1 launched in Terminal window";
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'d');outb(0xE9,'Y');
+#endif
+    apps_open(5);
+}
 static void market_launch(i32 i)
 {
     const char *script = market_script(i);
