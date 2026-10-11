@@ -3443,9 +3443,37 @@ static void falco_native_open(void){
     if(!falco_native_dhcp_started){
         falco_native_dhcp_started=true;(void)net_dhcp();
     }
-    k_strcpy(falco_status,"Native HTML/CSS subset: loading verified real site...");
+    k_strcpy(falco_status,"Falco own HTML reader: verifying public HTTPS...");
+    /* F9 on a typed HTTPS URL requests a bounded public static-HTML reader.
+     * Browser layout is entirely our own C framebuffer renderer. Dynamic
+     * JS, arbitrary CSS cascade, forms and third-party media are unsupported.
+     * Cloudflare challenges are never bypassed or called a human proof. */
+    char request[340];k_strcpy(request,"/falcon/native/");
+    const char *typed=falco_query;
+    if(k_strncmp(typed,"https://",8)==0)typed+=8;
+    else if(k_strncmp(typed,"http://",7)==0){
+        k_strcpy(falco_status,"HTTPS required. HTTP URL rejected.");
+        return;
+    }
+    bool has_host=false,valid=true;
+    u32 slen=(u32)k_strlen(typed);
+    if(slen>0u&&slen<165u){
+        for(u32 i=0;i<slen;i++){
+            char c=typed[i];
+            if(c=='.')has_host=true;
+            if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+                 (c>='0'&&c<='9')||c=='.'||c=='/'||c=='-'||
+                 c=='_'||c=='~'||c=='%'||c=='?'||c=='='||c=='&'||c=='+')){
+                valid=false;break;
+            }
+        }
+        if(has_host&&valid){
+            k_strcat(request,typed);
+            if(typed[slen-1]!='/')k_strcat(request,"/");
+        }
+    }
     if(!native_http_get_port(net_gateway(),18446,
-                            "/falcon/native/",falco_native_result,
+                            request,falco_native_result,
                             sizeof falco_native_result) ||
        !falco_native_parse(falco_native_result)){
         k_strcpy(falco_status,
@@ -3457,7 +3485,7 @@ static void falco_native_open(void){
         return;
     }
     falco_native_view=true;falco_web_view=false;falco_native_scroll=0;
-    k_strcpy(falco_status,"Falco own layout, native pixels; host-verified TLS");
+    k_strcpy(falco_status,"HTML reader native pixels; TLS host verified; CSS/JS subset");
 #ifdef FALCON_QEMU_BROWSER_TEST
     outb(0xE9,'v');outb(0xE9,'Y');
 #endif
