@@ -400,6 +400,7 @@ static char files_selected[SHFS_PATH],files_last_click_path[SHFS_PATH];
 static u32 files_last_click_ms;
 static const char *files_action_status="Double click .app.pkg to run in FalconOS";
 #define FAPP_RUNNER_APP_ID 19  /* appended after original 19 builtin apps */
+#define ISO_STUDIO_APP_ID 20  /* native application distributed via FAPP/1 */
 static char fapp_running_title[48]="FalconOS application";
 static char fapp_running_source[SHFS_PATH];
 static bool fapp_running_valid;
@@ -417,6 +418,7 @@ static const char *files_current_dir(void){
         case 2: return "/home/falcon/Desktop";
         case 3: return "/home/falcon/Downloads";
         case 4: return "/home/falcon/apps";
+        case 5: return "/home/falcon/Images";
         default:return "/home/falcon";
     }
 }
@@ -514,7 +516,8 @@ static void files_request_delete(void){
         files_action_status="DELETE AGAIN within 5 sec to confirm";
         return;
     }
-    bool ok=shfs_rm_abs(files_selected);
+    bool ok=jfs_stat(files_selected)>=0?
+        jfs_remove(files_selected):shfs_rm_abs(files_selected);
     files_action_status=ok?"File removed safely":"Remove denied (folder not empty)";
     files_delete_confirm_until=0;files_selected[0]=0;
 }
@@ -523,12 +526,12 @@ static void files_request_delete(void){
 static bool files_search_mode;
 static char files_filter[40];
 static i32 files_filter_len;
-static const char *FILES_ROOTS[5] = {
+static const char *FILES_ROOTS[6] = {
     "", "/home/falcon", "/home/falcon/Desktop", "/home/falcon/Downloads",
-    "/home/falcon/apps"
+    "/home/falcon/apps", "/home/falcon/Images"
 };
-static const char *FILES_LABELS[5] = {
-    "All files", "Home", "Desktop", "Downloads", "Apps"
+static const char *FILES_LABELS[6] = {
+    "All files", "Home", "Desktop", "Downloads", "Apps", "Images"
 };
 static bool files_matches(const char *path) {
     const char *root=files_folder[0]?files_folder:FILES_ROOTS[files_scope];
@@ -588,8 +591,8 @@ static void files_input_key(i32 key) {
         }
         return;
     }
-    if(key==KEY_LEFT){files_scope=(files_scope+4)%5;files_folder[0]=0;files_scroll=0;files_selected[0]=0;}
-    if(key==KEY_RIGHT){files_scope=(files_scope+1)%5;files_folder[0]=0;files_scroll=0;files_selected[0]=0;}
+    if(key==KEY_LEFT){files_scope=(files_scope+5)%6;files_folder[0]=0;files_scroll=0;files_selected[0]=0;}
+    if(key==KEY_RIGHT){files_scope=(files_scope+1)%6;files_folder[0]=0;files_scroll=0;files_selected[0]=0;}
     if(key==KEY_ENTER&&!files_search_mode){files_launch_pkg(files_selected);return;}
     if(key==KEY_UP&&files_scroll>0)files_scroll--;
     if(key==KEY_DOWN&&files_scroll<SHFS_MAX_ENTRIES-1)files_scroll++;
@@ -645,6 +648,9 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
     }
     c->row++;
 }
+static void jfs_files_row(const char *path,u32 bytes,void *arg){
+    files_row(path,false,bytes,arg);
+}
 static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;shfs_init();
     i32 margin=18,sidebar=122,top=91,bottom=45;
@@ -659,7 +665,7 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_round_rect_a(sx,wy+top,sidebar,wh-top-bottom,13,PAL_PANEL_DEEP,255);
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool clicked=wm_click_enabled();
-    for(i32 i=0;i<5;i++){
+    for(i32 i=0;i<6;i++){
         i32 sy=wy+top+13+i*43;
         bool chosen=i==files_scope;
         gfx_round_rect(sx+7,sy,sidebar-14,36,11,
@@ -688,11 +694,14 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     ctx.mx=mx;ctx.my=my;ctx.clicked=clicked;
     if(ctx.limit<1)ctx.limit=1;
     shfs_foreach_path(files_row,&ctx);
+    jfs_foreach(jfs_files_row,&ctx);
     /* Run OUTSIDE the SHFS enumeration callback. Never trust the file
      * extension alone: market_validate_app_pkg checks all manifest/body. */
     if(ctx.open_path[0]){
         shfs_ent_t *target=shfs_lookup(ctx.open_path);
         if(target&&target->is_dir)files_enter_dir(ctx.open_path);
+        else if(jfs_stat(ctx.open_path)>0 && iso_studio_open_file(ctx.open_path))
+            apps_open(ISO_STUDIO_APP_ID);
         else files_launch_pkg(ctx.open_path);
     }
     if(ctx.seen==0)
@@ -4297,7 +4306,8 @@ static void market_launch(i32 i)
                 term_push("Marketplace: unsafe command rejected");
                 break;
             }
-            sh_run_line(line);
+            if(k_strcmp(line,"isostudio")==0)apps_open(ISO_STUDIO_APP_ID);
+            else sh_run_line(line);
         }
         script += n;
         if (*script == '\n') script++;
@@ -4357,7 +4367,10 @@ static void files_launch_pkg(const char *path){
             term_push("Package rejected: line too long");return;
         }
         k_memcpy(line,script,(u32)used);line[used]=0;
-        if(used&&line[0]!='#')sh_run_line(line);
+        if(used&&line[0]!='#'){
+            if(k_strcmp(line,"isostudio")==0)apps_open(ISO_STUDIO_APP_ID);
+            else sh_run_line(line);
+        }
         script+=used;
         if(*script=='\n')script++;
     }
@@ -4586,7 +4599,8 @@ static void code_run(void)
             if (!market_line_allowed(line, n)) {
                 code_status = "Unsafe command denied (FAPP/1 allowlist)"; return;
             }
-            sh_run_line(line);
+            if(k_strcmp(line,"isostudio")==0)apps_open(ISO_STUDIO_APP_ID);
+            else sh_run_line(line);
         }
         at += n;
         if (at < code_len && code_text[at] == '\n') at++;
@@ -4802,6 +4816,12 @@ static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         "Close this window with the X. This is FalconOS FAPP/1, not x86 ELF.",
         PAL_TEXT_DIM);
 }
+static void icon_iso_studio(i32 cx,i32 cy){
+    gfx_round_rect(cx-16,cy-16,32,32,9,0x157D7Fu);
+    gfx_circle_outline(cx,cy,10,0xDFFEF9u);
+    gfx_circle(cx,cy,3,0xFFFFFFu);
+    gfx_text_centered(cx,cy+12,"ISO",0xFFFFFFu);
+}
 static void icon_fapp_runner(i32 cx,i32 cy){
     gfx_round_rect(cx-16,cy-16,32,32,9,0x208D66u);
     gfx_round_outline(cx-16,cy-16,32,32,9,0x95F0CCu);
@@ -4843,6 +4863,8 @@ static app_def_t APPS[] = {
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
     { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
     { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,NULL,icon_fapp_runner },
+    { "ISO Studio", "Build ISO9660 on JFS2 (USB flashing unsupported)",
+      0x157D7F, iso_studio_render, iso_studio_key, icon_iso_studio },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
