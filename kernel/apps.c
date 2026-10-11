@@ -401,6 +401,7 @@ static u32 files_last_click_ms;
 static const char *files_action_status="Double click .app.pkg to run in FalconOS";
 #define FAPP_RUNNER_APP_ID 19  /* appended after original 19 builtin apps */
 #define ISO_STUDIO_APP_ID 20  /* native application distributed via FAPP/1 */
+#define STORAGE_CENTER_APP_ID 21
 static char fapp_running_title[48]="FalconOS application";
 static char fapp_running_source[SHFS_PATH];
 static bool fapp_running_valid;
@@ -4310,6 +4311,8 @@ static void market_launch(i32 i)
             }
             if(k_strcmp(line,"isostudio")==0){
                 apps_open(ISO_STUDIO_APP_ID);used_native=true;
+            }else if(k_strcmp(line,"storagecenter")==0){
+                apps_open(STORAGE_CENTER_APP_ID);used_native=true;
             }
             else sh_run_line(line);
         }
@@ -4375,6 +4378,8 @@ static void files_launch_pkg(const char *path){
         if(used&&line[0]!='#'){
             if(k_strcmp(line,"isostudio")==0){
                 apps_open(ISO_STUDIO_APP_ID);used_native=true;
+            }else if(k_strcmp(line,"storagecenter")==0){
+                apps_open(STORAGE_CENTER_APP_ID);used_native=true;
             }
             else sh_run_line(line);
         }
@@ -4608,6 +4613,7 @@ static void code_run(void)
                 code_status = "Unsafe command denied (FAPP/1 allowlist)"; return;
             }
             if(k_strcmp(line,"isostudio")==0)apps_open(ISO_STUDIO_APP_ID);
+            else if(k_strcmp(line,"storagecenter")==0)apps_open(STORAGE_CENTER_APP_ID);
             else sh_run_line(line);
         }
         at += n;
@@ -4824,6 +4830,61 @@ static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         "Close this window with the X. This is FalconOS FAPP/1, not x86 ELF.",
         PAL_TEXT_DIM);
 }
+/* Native Storage Center: real FalconFS observations, not a fake
+ * disk manager, free-space widget or silent partitioner. No USB raw writes. */
+static const char *storage_status="Read-only filesystem overview. F5 safely flushes PFS records.";
+static void storage_input_key(i32 key){
+    if(key==KEY_F5){
+        bool ok=pfs_mounted() && pfs_flush_all();
+        storage_status=ok?"PFS flush completed to validated FalconFS storage":
+                          "PFS not mounted / flush failed; no disk changes";
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'u');outb(0xE9,ok?'S':'N');
+#endif
+    }
+}
+static void storage_counter(i32 x,i32 y,i32 w,const char *title,
+                            const char *desc,u32 count,u32 accent){
+    gfx_round_rect_a(x,y,w,108,15,PAL_PANEL_DEEP,255);
+    gfx_round_outline(x,y,w,108,15,PAL_HAIRLINE);
+    gfx_text(x+19,y+16,title,PAL_TEXT);
+    char n[20];k_itoa((i32)count,n,10);
+    gfx_text_lg(x+20,y+37,n,accent);
+    gfx_text(x+82,y+69,desc,PAL_TEXT_DIM);
+}
+static void render_storage_center(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    (void)frame;
+    gfx_round_rect(wx+20,wy+15,ww-40,100,20,0x123754u);
+    gfx_round_rect(wx+39,wy+37,57,56,14,0x49C8CDu);
+    gfx_text_lg_centered(wx+67,wy+47,"D",0xFFFFFFu);
+    gfx_text_lg(wx+113,wy+25,"Storage Center",0xFFFFFFu);
+    gfx_text(wx+115,wy+75,"FalconFS volumes  |  Safe media health",0xB8DFE0u);
+    i32 margin=28,space=16,cardw=(ww-margin*2-space)/2;
+    if(cardw<170)return;
+    storage_counter(wx+margin,wy+148,cardw,"Journaled JFS2",
+                    "committed files",jfs_file_count(),0x16AA88u);
+    storage_counter(wx+margin+cardw+space,wy+148,cardw,
+                    "Large-object XFS1","active records",xfs_count(),0x367DF8u);
+    storage_counter(wx+margin,wy+278,cardw,
+                    "JFS2 free sectors","512B blocks",jfs_free_sectors(),0x16AA88u);
+    storage_counter(wx+margin+cardw+space,wy+278,cardw,
+                    "XFS1 capacity","bounded object slots",xfs_capacity(),0x367DF8u);
+    gfx_round_rect_a(wx+margin,wy+420,ww-margin*2,115,16,PAL_PANEL_DEEP,255);
+    gfx_text(wx+margin+18,wy+439,
+             pfs_mounted()?"PFS user files: mounted":"PFS user files: RAM-only",PAL_TEXT);
+    gfx_text(wx+margin+18,wy+469,
+             jfs_ready()?"JFS2 writes enabled on validated 0xFA disk":
+                         "JFS2 not writable: no safe disk or read-only",PAL_TEXT_DIM);
+    gfx_text(wx+margin+18,wy+498,storage_status,PAL_ACCENT);
+    gfx_text(wx+margin+8,wy+wh-36,
+             "No physical USB media write, formatting or partitioning available.",COL_WARN);
+}
+static void icon_storage_center(i32 cx,i32 cy){
+    gfx_round_rect(cx-16,cy-16,32,32,8,0x155B79u);
+    gfx_rect(cx-9,cy-10,18,3,0xFFFFFFu);
+    gfx_rect(cx-9,cy-2,18,3,0xFFFFFFu);
+    gfx_rect(cx-9,cy+6,18,3,0xFFFFFFu);
+}
 static void icon_iso_studio(i32 cx,i32 cy){
     gfx_round_rect(cx-16,cy-16,32,32,9,0x157D7Fu);
     gfx_circle_outline(cx,cy,10,0xDFFEF9u);
@@ -4873,6 +4934,8 @@ static app_def_t APPS[] = {
     { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,NULL,icon_fapp_runner },
     { "ISO Studio", "Build ISO9660 on JFS2 (USB flashing unsupported)",
       0x157D7F, iso_studio_render, iso_studio_key, icon_iso_studio },
+    { "Storage Center", "Journaled FalconFS health and safe flush",
+      0x155B79, render_storage_center, storage_input_key, icon_storage_center },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
