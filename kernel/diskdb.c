@@ -98,12 +98,18 @@ bool diskdb_present(void) { return g_loaded_ok; }
 static bool validate_and_import(const u8 *buf)
 {
     const super_hdr_t *h = (const super_hdr_t *)buf;
-    if (h->magic != FALCONFS_MAGIC || h->version != FALCONFS_VERSION ||
-        h->length != sizeof(settings_t)) return false;
-
+    if (h->magic != FALCONFS_MAGIC || h->version != FALCONFS_VERSION)
+        return false;
+    /* Legacy saved accounts and packages MUST survive wallpaper upgrades.
+     * Field was appended at the end, so old records remain byte-compatible. */
+    u32 old_size=(u32)__builtin_offsetof(settings_t,wallpaper_style);
+    if(h->length != sizeof(settings_t) && h->length != old_size)return false;
     const u8 *payload = buf + sizeof(super_hdr_t);
-    if (fletcher16(payload, sizeof(settings_t)) != h->checksum) return false;
-    k_memcpy(&SET, payload, sizeof(settings_t));
+    if (fletcher16(payload,h->length) != h->checksum)return false;
+    k_memset(&SET,0,sizeof SET);
+    k_memcpy(&SET,payload,h->length);
+    if(h->length==old_size)SET.wallpaper_style=0;
+    if(SET.wallpaper_style>3u)SET.wallpaper_style=0;
     return true;
 }
 
