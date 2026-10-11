@@ -111,6 +111,14 @@ void gfx_gradient_v(u32 top, u32 bot)
 void gfx_wallpaper(void)
 {
     u32 ctop = PAL_BG_TOP, cbot = PAL_BG_BOT, chnt = PAL_BG_HINT;
+    /* Procedural user wallpaper: full FB resolution, no bitmap scaling.
+     * Existing themes, windows, accents and glass stay independent. */
+    switch(SET.wallpaper_style % 4u){
+        case 1: ctop=0x091429u;cbot=0x172649u;chnt=0x25498Cu;break;
+        case 2: ctop=0x291943u;cbot=0x644B93u;chnt=0xC893F2u;break;
+        case 3: ctop=0x4D2945u;cbot=0xF0A170u;chnt=0xFFC48Bu;break;
+        default: break;
+    }
     u32 tr = (ctop >> 16) & 0xFF, tg = (ctop >> 8) & 0xFF, tb = ctop & 0xFF;
     u32 br = (cbot >> 16) & 0xFF, bg = (cbot >> 8) & 0xFF, bb = cbot & 0xFF;
     u32 hr = (chnt >> 16) & 0xFF, hg = (chnt >> 8) & 0xFF, hb = chnt & 0xFF;
