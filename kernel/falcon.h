@@ -169,6 +169,8 @@ void gfx_text(i32 x, i32 y, const char *s, u32 c);
 void gfx_text_medium(i32 x, i32 y, const char *s, u32 c);
 /* Native contour type: real proportional AA alpha, 18/36/70 px. */
 void gfx_contour_text(i32 x,i32 y,const char *text,i32 size,u32 color);
+/* 100% native antialiasing, integer scaling and actual glyph-outline rendering. */
+void gfx_contour_text_styled(i32 x,i32 y,const char *text,i32 size,i32 scale,bool outline,u32 color);
 i32 gfx_contour_text_width(const char *text,i32 size);
 void gfx_text_smooth_lg(i32 x, i32 y, const char *s, u32 c);
 void gfx_text_hero_centered(i32 cx,i32 y,const char *s,u32 c);
