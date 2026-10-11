@@ -93,6 +93,26 @@ bool diskdb_target_available(i32 disk)
     return target_partition(disk, &lba);
 }
 
+/* The double-click launcher creates a dedicated sparse virtual disk carrying
+ * this marker in unused MBR boot-code bytes, and a validated 0xFA partition.
+ * Never infer auto-save permission merely from QEMU or an arbitrary ATA disk.
+ * No signature => the user must explicitly choose persistent storage. */
+i32 diskdb_companion_target(void){
+    static const u8 marker[]="FALCONOS-VM-DISK-01";
+    for(i32 disk=0;disk<ata_probe_count();disk++){
+        u32 start;
+        if(!target_partition(disk,&start))continue;
+        u8 mbr[512];
+        if(!ata_read_lba28(disk,0,mbr,1))continue;
+        bool found=true;
+        for(u32 i=0;i<sizeof(marker)-1u;i++){
+            if(mbr[400u+i]!=marker[i]){found=false;break;}
+        }
+        if(found)return disk;
+    }
+    return -1;
+}
+
 bool diskdb_present(void) { return g_loaded_ok; }
 
 static bool validate_and_import(const u8 *buf)
