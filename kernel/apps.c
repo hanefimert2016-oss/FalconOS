@@ -30,6 +30,9 @@ static void falco_open_site(const char *address);
 static void falco_open_site_host(const char *address);
 static void chrome_input_key(i32 key);
 static void chrome_focus_url(void);
+static void falco_visual_open(bool reload);
+static bool falco_visual_loaded;
+static u8 falco_visual_pixels[320u*180u];
 static void render_browser(i32 x,i32 y,i32 w,i32 h,u32 frame);
 static void market_launch(i32 i);
 static i32 builtin_app_count(void);
@@ -3260,8 +3263,13 @@ static void falco_input_key(i32 key){
             "https://raw.githubusercontent.com/hanefimert2016-oss/FalconOS/FalconOS-1-release/README.md");
         return;
     }
+    if(key==KEY_F9){falco_visual_open(false);return;}
     if(falco_web_view){
-        if(key==KEY_F3){falco_web_view=false;return;}
+        if(key==KEY_F3){falco_web_view=false;falco_visual_loaded=false;return;}
+        if(falco_visual_loaded){
+            if(key==KEY_F5)falco_visual_open(true);
+            return; /* never type passwords or challenges through screenshots */
+        }
         chrome_input_key(key);return;
     }
     if(key==KEY_F6){falco_open_site("https://falconos.tech/");return;}
@@ -3297,7 +3305,7 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             if(rel<160)falco_open_site("https://falconos.tech/");
             else if(rel<326)falco_open_site_host("https://falconos.tech/");
             else if(rel<492)falco_input_key(KEY_F8);
-            else falco_search();
+            else falco_visual_open(false);
             return;
         }
     }
@@ -3314,7 +3322,7 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_round_rect(x+w-110,wy+117,100,35,13,0x246DE8);
     gfx_text_centered(x+w-60,wy+128,"Enter",0xFFFFFF);
     /* Explicit clickable HTTPS navigation; no fake "button" labels. */
-    const char *actions[4]={"Live site","Host HTTPS","GitHub docs","Search"};
+    const char *actions[4]={"Live site","Host HTTPS","GitHub docs","Visual site"};
     for(i32 i=0;i<4;i++){
         i32 bx=x+i*166;
         if(bx+157>x+w)break;
@@ -3356,7 +3364,7 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
     }
     gfx_text(x+5,wy+wh-36,
-        "Ctrl+L search | Enter go | F5 refresh | Alt+Left back | F8 Docs",
+        "Ctrl+L search | F6 TLS text | F7 Host text | F8 Docs | F9 Visual",
         PAL_TEXT_FAINT);
 }
 
@@ -3504,6 +3512,41 @@ static void browser_load(void){
 /* Native text-web view is shared by Falco and the Browser, not simulated.
  * F6 in Falco loads the requested site with the same certificate checks.
  * Only HTTPS URLs are allowed; no HTTP downgrade. */
+/* REAL HTML/CSS/JS via optional host Chromium; FalconOS remains a bare-metal
+ * framebuffer client. Read-only screenshot; not a human identity attestation.
+ * No Cloudflare/CAPTCHA automation, credentials or guest-side JS execution. */
+static void falco_visual_open(bool reload){
+    falco_visual_loaded=false;
+    falco_web_view=true;
+    browser_loaded=false;
+    k_strcpy(browser_address,"https://falconos.tech/");
+    browser_address_len=k_strlen(browser_address);
+    browser_address_focus=false;
+    browser_host_gateway=true;
+    if(!net_present()){
+        k_strcpy(browser_status,"Visual mode: RTL8139 NIC missing");
+        goto finish;
+    }
+    if(!browser_dhcp_attempted){
+        browser_dhcp_attempted=true;
+        (void)net_dhcp();
+    }
+    k_strcpy(browser_status,"Loading real Chromium site pixels from host...");
+    const char *path=reload?"/visual/reload/falconos.tech/":
+                           "/visual/falconos.tech/";
+    falco_visual_loaded=native_http_get_visual_port(
+        net_gateway(),18445u,path,falco_visual_pixels,sizeof falco_visual_pixels);
+    if(falco_visual_loaded)
+        k_strcpy(browser_status,
+            "HOST CHROMIUM CSS/JS | site CA verified | NOT native / human ID");
+    else
+        k_strcpy(browser_status,
+            "Visual bridge unavailable / page unverified; start visual host");
+finish:
+#ifdef FALCON_QEMU_BROWSER_TEST
+    outb(0xE9,'v');outb(0xE9,falco_visual_loaded?'Y':'N');
+#endif
+}
 static void falco_navigate(const char *address,bool use_host){
     const char *prefix="https://";
     const char *url=address;
@@ -3526,6 +3569,7 @@ static void falco_navigate(const char *address,bool use_host){
     browser_address_len=k_strlen(browser_address);
     browser_address_focus=true;
     browser_host_gateway=use_host; /* F7: explicit local host-verified HTTPS. */
+    falco_visual_loaded=false;
     browser_load();
     /* Source authenticity also means verifying the requested site's content.
      * A TLS-authenticated error page, access-denied screen, or GitHub README
@@ -3614,9 +3658,12 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         if(my>=wy+7&&my<wy+41){
             (void)mouse_consume_click();
             if(mx<wx+100){
-                if(active_app==13)falco_web_view=false;
+                if(active_app==13){falco_web_view=false;falco_visual_loaded=false;}
                 else {browser_loaded=false;browser_address_focus=true;}
-            }else if(mx<wx+196)browser_load();
+            }else if(mx<wx+196){
+                if(falco_visual_loaded)falco_visual_open(true);
+                else browser_load();
+            }
             else if(mx>=wx+ww-160){
                 browser_host_gateway=!browser_host_gateway;
                 k_strcpy(browser_status,browser_host_gateway?
@@ -3639,7 +3686,8 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_text(wx+211,wy+16,active_app==13?"Falco Web":"Falcon Browser",PAL_ACCENT);
     gfx_round_rect_a(wx+ww-160,wy+7,141,32,9,PAL_PANEL,255);
     gfx_text(wx+ww-150,wy+15,
-        browser_host_gateway?"HOST HTTPS":"NATIVE HTTPS",PAL_TEXT_DIM);
+        falco_visual_loaded?"HOST CHROMIUM":
+        (browser_host_gateway?"HOST HTTPS":"NATIVE HTTPS"),PAL_TEXT_DIM);
     gfx_rect(wx,wy+45,ww,56,PAL_PANEL_HI);
     i32 sx=wx+margin,sy=bar,sw=ww-margin*2;
     gfx_round_rect_a(sx,sy,sw,34,10,PAL_PANEL,255);
@@ -3655,7 +3703,26 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     if(height<70)height=70;
     gfx_round_rect_a(sx,py,sw,height,10,PAL_PANEL,255);
     gfx_round_outline(sx,py,sw,height,10,PAL_HAIRLINE);
-    if(!browser_loaded){
+    if(falco_visual_loaded){
+        /* Real Chromium-paint RGB332, scaled to available FalconOS window.
+         * The bytes are a 320x180 screenshot of the actual HTTPS page, not
+         * HTML text or a fabricated painting of falconos.tech. */
+        i32 scale=(sw-40)/320;
+        i32 v=(height-22)/180;
+        if(v<scale)scale=v;
+        if(scale<1)scale=1;
+        if(scale>4)scale=4;
+        i32 ox=sx+(sw-320*scale)/2;
+        i32 oy=py+10;
+        for(i32 yy=0;yy<180;yy++)for(i32 xx=0;xx<320;xx++){
+            u8 rgb=falco_visual_pixels[yy*320+xx];
+            u32 red=((rgb>>5)&7u)*255u/7u;
+            u32 grn=((rgb>>2)&7u)*255u/7u;
+            u32 blu=(rgb&3u)*85u;
+            gfx_rect(ox+xx*scale,oy+yy*scale,scale,scale,
+                     (red<<16)|(grn<<8)|blu);
+        }
+    }else if(!browser_loaded){
         gfx_text_lg(sx+20,py+26,"Falcon Browser",PAL_TEXT);
         gfx_text(sx+20,py+76,"Open a real HTTPS page using Enter.",PAL_TEXT);
         gfx_text(sx+20,py+102,
