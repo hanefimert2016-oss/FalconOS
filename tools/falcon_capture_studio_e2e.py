@@ -142,6 +142,7 @@ def main():
                 pause(1.5)
                 off=len(events());k(driver,"space")
                 mark(b"FCAP/1 START fps=4",off,25)
+                record_start_offset=off
                 RES["workflow"].append("Started recording using real Capture Studio Space control")
                 ready=threading.Event();stop=threading.Event()
                 shots=queue.Queue();errors=[]
@@ -154,7 +155,7 @@ def main():
                 shots.put("Falcon-Capture-Studio-Control-Real-QEMU.png")
                 k(driver,"f2");t(driver,"Falco")
                 off=len(events());k(driver,"enter")
-                mark(b"zNn1",off);mark(b"gN",off)
+                mark(b"zNn2",off);mark(b"gN",off)
                 k(driver,"f4")
                 t(driver,"falconos");k(driver,"/");t(driver,"tech")
                 off=len(events());k(driver,"enter")
@@ -170,9 +171,14 @@ def main():
                 k(driver,"f2");t(driver,"Capture")
                 off=len(events());k(driver,"enter")
                 mark(b"CR",off,40)
-                off=len(events());k(driver,"space")
-                mark(b"FCAP/1 STOP",off,25)
-                RES["workflow"].append("Stopped the actual guest recorder using Space")
+                # The fixed 96-frame RAM buffer stops safely on capacity.
+                # Do not toggle Space again if the guest already stopped it.
+                if b"FCAP/1 STOP" in events()[record_start_offset:]:
+                    RES["workflow"].append("Guest RAM frame capacity stopped recording safely")
+                else:
+                    off=len(events());k(driver,"space")
+                    mark(b"FCAP/1 STOP",off,25)
+                    RES["workflow"].append("Stopped the actual guest recorder using Space")
                 pause(1.2)
                 shots.put("Falcon-Capture-Studio-Finished.png")
                 stop.set();movie.join(timeout=55)
