@@ -55,6 +55,10 @@ jobs:
           PATH="/tmp/falcon-native/bin:$PATH" bash tools/build_appimage.sh
           test -s build/FalconOS-Native-Desktop-x86_64.AppImage
           test -s build/FalconOS.iso
+      - name: Smoke-test the executable AppImage itself, not only its source
+        if: steps.native.outcome == 'success' && steps.persistence.outcome == 'success'
+        run: |
+          APPIMAGE_EXTRACT_AND_RUN=1 build/FalconOS-Native-Desktop-x86_64.AppImage --check
       - name: Deliver bootable ISO and user-openable AppImage
         if: steps.native.outcome == 'success' && steps.persistence.outcome == 'success'
         uses: actions/upload-artifact@v4
@@ -68,3 +72,30 @@ jobs:
       - name: Prevent publishing if native browser or password safety failed
         if: steps.native.outcome != 'success' || steps.persistence.outcome != 'success'
         run: exit 1
+
+  publish-native-release:
+    # Only the explicitly marked final green push makes a public release;
+    # ordinary iterative commits never spam GitHub Releases.
+    needs: native-visual-install
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-native]')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: FalconOS-Native-OneClick-Verified-ISO-AppImage
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: FalconOS-Native-Falco-Setup-Wallpaper-REAL-PNG
+          path: dist/screens
+      - name: Create public downloadable prerelease with actual AppImage and PNGs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -s dist/FalconOS-Native-Desktop-x86_64.AppImage
+          test -s dist/FalconOS.iso
+          TAG="v0.2.0-native-20261011"
+          gh release create "$TAG" dist/FalconOS-Native-Desktop-x86_64.AppImage             dist/FalconOS.iso dist/FalconOS-AppImage-SHA256.txt             dist/screens/FalconOS-*.png             --target "$GITHUB_SHA" --prerelease             --title "FalconOS Native OneClick Preview — no Chromium"             --notes-file docs/NATIVE-ONECLICK-README.md
