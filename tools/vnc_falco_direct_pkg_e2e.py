@@ -55,8 +55,13 @@ def main():
                 # Without this, a US slash becomes Turkish '/' mapping's '.',
                 # so URL is corrupted even before any HTTPS request.
                 k(c,"right")
-                for mark in (b"T",b"A",b"K",b"D",b"U"):
+                # Choose US-QWERTY in installer: Turkish-Q mappings corrupt
+                # ':' and '/' when typing an HTTPS URL over raw PS/2.
+                for mark in (b"T",b"A",b"K"):
                     off=len(data());k(c,"enter");wait(mark,off,40)
+                k(c,"right");k(c,"right")  # TR-Q -> TR-F -> US-QWERTY
+                off=len(data());k(c,"enter");wait(b"D",off,40)
+                off=len(data());k(c,"enter");wait(b"U",off,40)
                 t(c,"falcon")
                 for mark in (b"P",b"Q",b"O"):
                     off=len(data());k(c,"enter");wait(mark,off,45)
