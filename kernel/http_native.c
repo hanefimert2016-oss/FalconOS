@@ -67,3 +67,63 @@ bool native_https_get(const char *hostname,const char *path,
 }
 
 #endif /* !FALCON_BEARSSL: secure backend is kernel/https_bearssl.c */
+
+/* Opt-in visual browser transport: 320x180 RGB332 from a trusted LOCAL host
+ * Chromium renderer. This is explicitly not native guest HTTPS or code exec.
+ * Strong 200/status, content-type, provenance and exact-length checks are
+ * mandatory before drawing any pixel. Binary data may include NUL bytes. */
+bool native_http_get_visual_port(const char *host,u16 port,const char *path,
+                                 u8 *pixels,u32 len){
+    if(!host||!path||!pixels||len!=57600u||port!=18445u ||
+       k_strcmp(path,"/visual/falconos.tech/")!=0 &&
+       k_strcmp(path,"/visual/reload/falconos.tech/")!=0)return false;
+    u8 addr[4];
+    if(!native_net_parse_ipv4(host,addr))return false;
+    /* A public, DNS-overridden host must never impersonate the private visual
+     * companion. The gateway must be the VM's private NAT gateway. */
+    u8 gateway[4];
+    if(!native_net_parse_ipv4(net_gateway(),gateway))return false;
+    for(u32 i=0;i<4;i++)if(addr[i]!=gateway[i])return false;
+    if(!native_tcp_connect(addr,port))return false;
+    bool ok=false;
+    char req[156];
+    k_strcpy(req,"GET ");
+    k_strcat(req,path);
+    k_strcat(req," HTTP/1.0\r\nHost: falco-visual.local\r\nConnection: close\r\n\r\n");
+    if(native_tcp_write((const u8*)req,(u32)k_strlen(req))!=k_strlen(req))goto done;
+    char header[900];
+    u32 header_used=0,received=0;
+    bool body=false;
+    u8 block[2048];
+    for(u32 iteration=0;iteration<160u && received<len;iteration++){
+        i32 n=native_tcp_read(block,sizeof block,1800);
+        if(n<=0)break;
+        for(i32 i=0;i<n;i++){
+            u8 c=block[i];
+            if(!body){
+                if(header_used+1>=sizeof header)goto done;
+                header[header_used++]=(char)c;
+                header[header_used]=0;
+                if(header_used>=4u &&
+                   header[header_used-4]=='\r'&&header[header_used-3]=='\n'&&
+                   header[header_used-2]=='\r'&&header[header_used-1]=='\n'){
+                    /* The frame is inert pixels, but never display response
+                     * data from a 502 challenge or a spoofed HTTP endpoint. */
+                    if(k_strncmp(header,"HTTP/1.0 200",12)!=0 &&
+                       k_strncmp(header,"HTTP/1.1 200",12)!=0)goto done;
+                    if(!sh_contains_ci(header,"X-Falcon-Visual: chromium-rgb332") ||
+                       !sh_contains_ci(header,"X-Falcon-Content-Verified: FalconOS-Contour") ||
+                       !sh_contains_ci(header,"Content-Length: 57600"))goto done;
+                    body=true;
+                }
+            }else{
+                if(received>=len)goto done;
+                pixels[received++]=c;
+            }
+        }
+    }
+    ok=body&&received==len;
+done:
+    native_tcp_close();
+    return ok;
+}
