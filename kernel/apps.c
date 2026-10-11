@@ -2512,6 +2512,8 @@ static void sh_run_stmt(const char *line, char *out, i32 cap)
 
 static void sh_run_line(const char *line)
 {
+    if(k_strcmp(line,"themecreator")==0){apps_open(20);return;}
+    if(k_strcmp(line,"codedium")==0){apps_open(18);return;}
     /* split on ';' */
     char buf[128];
     i32 bi = 0;
@@ -4139,6 +4141,11 @@ static void market_launch(i32 i)
 {
     const char *script = market_script(i);
     if (!script) return;
+    /* First-party Marketplace launchers open REAL built-in windows.
+     * They do not display a fake scripted terminal application. */
+    if(k_strcmp(script,"themecreator\n")==0){apps_open(20);return;}
+    if(k_strcmp(script,"codedium\n")==0){apps_open(18);return;}
+
     outb(0xE9, 'R'); /* QEMU integration event: installed script launched */
     term_init();
     term_push("Marketplace: running verified FAPP/1 script");
@@ -4230,6 +4237,8 @@ void apps_launch_package_path(const char *path){
         }
     }
     if(!script)return;
+    if(k_strcmp(script,"themecreator\n")==0){apps_open(20);return;}
+    if(k_strcmp(script,"codedium\n")==0){apps_open(18);return;}
     /* Program metadata is shown in its OWN FalconOS application window.
      * The commands still run through the existing safe FAPP interpreter;
      * this is NOT an ELF process and never executes host machine code. */
