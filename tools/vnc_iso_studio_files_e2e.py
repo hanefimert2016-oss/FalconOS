@@ -113,11 +113,13 @@ def main():
                 STATE["checks"].append("Files UI integrates journaled archive alongside SHFS data")
                 k(client,"f6");t(client,"Research")
                 prev=len(trace());k(client,"enter")
+                wait(b"dF",prev,35)
                 # Native file creation does not need network/serial bridge.
                 pause(.7);shot(client,"FalconOS-Files-New-Folder")
                 k(client,"f7");t(client,"draft.txt")
-                k(client,"enter")
-                STATE["checks"].append("Native Files created a subfolder and text document")
+                prev=len(trace());k(client,"enter")
+                wait(b"dN",prev,35)
+                STATE["checks"].append("Real VNC keyboard created a subfolder and text document")
                 if "bridge_error" in STATE:raise AssertionError(STATE["bridge_error"])
                 assert any("iso-studio" in a["url"] and a["bytes"]>=100 for a in STATE["releases"]),STATE["releases"]
                 STATE["result"]="PASS"
