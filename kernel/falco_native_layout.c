@@ -72,7 +72,7 @@ static i32 native_paragraph(i32 x,i32 y,i32 avail,i32 bottom,
     char line[121];i32 used=0,units=0,limit=(avail-10)/(large?16:8);
     if(limit>115)limit=115;
     if(limit<12)limit=12;
-    i32 row_height=large?38:23;
+    i32 row_height=large?43:31;
     i32 n=k_strlen(src),i=0;
     while(i<n && y+row_height<bottom){
         i32 start=i;
@@ -81,8 +81,8 @@ static i32 native_paragraph(i32 x,i32 y,i32 avail,i32 bottom,
         if(wordlen>limit)wordlen=limit;
         if(units && units+1+wordlen>limit){
             line[used]=0;
-            if(large)gfx_text_lg(x,y,line,fg);
-            else gfx_text(x,y,line,fg);
+            if(large)gfx_text_smooth_lg(x,y,line,fg);
+            else gfx_text_medium(x,y,line,fg);
             y+=row_height;used=0;units=0;
         }
         if(y+row_height>=bottom)break;
@@ -94,8 +94,8 @@ static i32 native_paragraph(i32 x,i32 y,i32 avail,i32 bottom,
     }
     if(used && y+row_height<bottom){
         line[used]=0;
-        if(large)gfx_text_lg(x,y,line,fg);
-        else gfx_text(x,y,line,fg);
+        if(large)gfx_text_smooth_lg(x,y,line,fg);
+        else gfx_text_medium(x,y,line,fg);
         y+=row_height;
     }
     return y;
@@ -122,7 +122,7 @@ void falco_native_paint(i32 x,i32 y,i32 w,i32 h,i32 scroll,u32 frame){
         return;
     }
     i32 column=w-100;
-    if(column>940)column=940;
+    if(column>1440)column=1440;
     i32 bx=x+(w-column)/2;
     i32 cy=y+183-scroll*29;
     i32 bottom=y+h-56;
@@ -130,10 +130,10 @@ void falco_native_paint(i32 x,i32 y,i32 w,i32 h,i32 scroll,u32 frame){
     for(i32 i=0;i<nblocks;i++){
         const falco_block_t *b=&blocks[i];
         bool heading=b->role=='H'||b->role=='T',subtitle=b->role=='S';
-        i32 fontrow=heading?38:23;
+        i32 fontrow=heading?43:31;
         i32 textwidth=column-(heading?45:60);
         i32 count=k_strlen(b->text);
-        i32 perrow=textwidth/(heading?16:8);
+        i32 perrow=textwidth/(heading?16:12);
         if(perrow<10)perrow=10;
         i32 rows=(count+perrow-1)/perrow+1;
         if(rows>5)rows=5;
