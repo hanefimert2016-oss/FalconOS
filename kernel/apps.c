@@ -3651,7 +3651,8 @@ static bool falco_pkg_download(const char *host,const char *path){
     if(!file){k_strcpy(browser_status,"Downloads storage unavailable");return false;}
     k_memcpy(file->data,body,length+1);
     file->len=length;
-    k_strcpy(browser_status,"Downloaded FAPP/1 to Downloads. Open Files and double-click.");
+    k_strcpy(browser_status,
+        "HOST CA-verified HTTPS: FAPP/1 saved in Downloads. Double-click in Files.");
 #ifdef FALCON_QEMU_UI_GALLERY
     outb(0xE9,'f');outb(0xE9,'D');
 #endif
@@ -3708,6 +3709,9 @@ static void browser_load(void){
     path[n]=0;
     u32 urllen=(u32)k_strlen(path);
     if(urllen>=8&&k_strcmp(path+urllen-8,".app.pkg")==0){
+        /* Display the real transport security model, even when the user
+         * selected native TLS for ordinary HTML page navigation. */
+        browser_host_gateway=true;
         /* Explicit FAPP file download, never interpret it as HTML. */
         (void)falco_pkg_download(hostname,path);
         return;
