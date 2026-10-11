@@ -1,0 +1,51 @@
+name: Falcon Capture Studio true QEMU video
+on:
+  push:
+    branches: [feature/falco-codedium-engine-20261011]
+    paths:
+      - kernel/capture_studio.c
+      - kernel/gfx.c
+      - kernel/apps.c
+      - kernel/falcon.h
+      - kernel/main.c
+      - tools/falcon_capture_studio_e2e.py
+      - .github/workflows/capture-studio-real-qemu.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  screen-recording:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native-build and screen-video-encoder dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 ffmpeg python3-venv fonts-dejavu-core
+          python3 -m venv /tmp/capture-venv
+          /tmp/capture-venv/bin/pip install --quiet pillow vncdotool
+      - name: Build native FalconOS with own screen capture Studio
+        run: |
+          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY -DFALCON_QEMU_BROWSER_TEST -DFALCON_CAPTURE_BRIDGE'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Open Capture Studio and record Falco site to real 720p MP4
+        run: timeout 590s /tmp/capture-venv/bin/python tools/falcon_capture_studio_e2e.py
+      - name: Share first-party capture evidence even on failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Falcon-Capture-Studio-Real-QEMU-Video
+          path: |
+            build/falcon-capture-studio/*.mp4
+            build/falcon-capture-studio/*.png
+            build/falcon-capture-studio/*.json
+            build/falcon-capture-studio/*.log
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Upload verified FalconOS ISO after actual MP4 test
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-with-Capture-Studio-Verified-ISO
+          path: build/FalconOS.iso
