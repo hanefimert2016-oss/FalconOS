@@ -387,6 +387,10 @@ void falco_native_paint(i32 x,i32 y,i32 w,i32 h,i32 scroll,u32 frame){
       "CONTOUR NATIVE | Live HTML + site-specific software CSS layout | JS not implemented",
       0x97B9B8u);
 #ifdef FALCON_QEMU_BROWSER_TEST
+    /* This marker is emitted from the ACTUAL page painter. Tests must not
+     * accept only a keypress marker: a slow TCG frame can still show the
+     * previous page after a keyboard state transition. */
+    outb(0xE9,'c');outb(0xE9,(u8)('0'+section));
     outb(0xE9,'n');outb(0xE9,'R');
 #endif
 }
