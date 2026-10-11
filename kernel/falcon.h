@@ -140,6 +140,7 @@ void boot_glb_splash(void);
 void gfx_clear(u32 c);
 void gfx_gradient_v(u32 top, u32 bot);
 void gfx_wallpaper(void);
+/* Native vector wallpaper presets are full-resolution and persisted in SET. */
 void gfx_pixel(i32 x, i32 y, u32 c);
 void gfx_pixel_a(i32 x, i32 y, u32 c, u8 a);
 void gfx_rect(i32 x, i32 y, i32 w, i32 h, u32 c);
@@ -480,6 +481,7 @@ typedef struct {
     i32         viewport_h;
     char        password[24];    /* deprecated single-user; kept for compat */
     char        owner[24];       /* deprecated; mirrors users[default].name */
+    u32         wallpaper_style; /* 0=aurora, 1=midnight, 2=violet, 3=sunset */
     bool        widgets_shown;   /* hide widget grid if false               */
     bool        center_circle;   /* legacy v4 hero (default false in v5)    */
 
@@ -521,6 +523,11 @@ typedef struct {
 extern settings_t SET;
 
 void settings_init(void);
+/* Falco layout semantics, drawn entirely by FalconOS at native resolution. */
+bool falco_native_parse(const char *http);
+bool falco_native_ready(void);
+i32 falco_native_elements(void);
+void falco_native_paint(i32 x,i32 y,i32 w,i32 h,i32 scroll,u32 frame);
 
 const char *T(const char *en, const char *tr);  /* tr/en switch helper      */
 /* 5-way translation: NULL slots fall back to English. Used when v5.2
