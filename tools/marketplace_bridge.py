@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 
 API = "https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases?per_page=100"
-ALLOWED = {"echo", "date", "uname", "uptime", "whoami", "pwd", "ls", "help", "cal", "hwinfo", "free", "df", "clear"}
+ALLOWED = {"echo", "date", "uname", "uptime", "whoami", "pwd", "ls", "help", "cal", "hwinfo", "free", "df", "clear", "isostudio", "storagecenter"}
 MAX_BYTES = 4096
 STATIC_ROOT = "https://raw.githubusercontent.com/hanefimert2016-oss/FalconOS-Marketplace/main/site/native/"
 APP_ID = re.compile(r"[a-z][a-z0-9-]{1,31}\Z")
