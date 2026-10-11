@@ -567,8 +567,10 @@ void installer_input(i32 key)
                 case INST_KBD:
                     SET.kbd_layout = (kbd_layout_t)g_choice;
                     g_step = INST_DISK;
-                    /* Secure session is the default: no writes without explicit choice. */
-                    g_choice = ata_probe_count();
+                    /* Auto-persist only on the AppImage's explicitly stamped
+                     * 0xFA virtual disk; all ordinary disks remain opt-in. */
+                    i32 companion=diskdb_companion_target();
+                    g_choice=companion>=0?companion:ata_probe_count();
                     return;
                 case INST_DISK: {
                     i32 n_ata = ata_probe_count();
