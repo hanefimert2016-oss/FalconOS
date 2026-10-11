@@ -55,6 +55,14 @@ static void refresh(void){
 bool launchpad_is_open(void){return is_open;}
 void launchpad_open(void){
     is_open=true;opened_at=pit_ms();
+    /* Every fresh launcher session must start with an empty search.
+     * Previously the old 'Falco' term remained when searching Settings,
+     * leaving zero matching apps despite a correct real keyboard input. */
+    search_term[0]=0;
+    search_length=0;
+    selected=0;
+    section_id=0;
+    page=0;
     refresh();
 }
 void launchpad_close(void){is_open=false;}
