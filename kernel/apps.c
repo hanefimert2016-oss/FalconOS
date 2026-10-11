@@ -3311,6 +3311,13 @@ static void falco_search(void){
     }
     if(!has_space && (has_dot || k_strncmp(falco_query,"https://",8)==0 ||
                       k_strncmp(falco_query,"http://",7)==0)){
+        /* The actual falconos.tech origin opens the verified visual document
+         * from the normal omnibox. F9 is optional, not a secret demo mode. */
+        if(k_strcmp(falco_query,"falconos.tech")==0 ||
+           k_strcmp(falco_query,"https://falconos.tech/")==0 ||
+           k_strcmp(falco_query,"https://falconos.tech")==0){
+            falco_native_open();return;
+        }
         falco_open_site(falco_query);
         /* Downloaded FAPP files stay INERT in FalconOS Downloads until the
          * user opens Files and double clicks them. No auto-execution. */
@@ -3366,6 +3373,10 @@ static void falco_search(void){
 static void falco_input_key(i32 key){
     if(key==KEY_F9){falco_native_open();return;}
     if(falco_native_view){
+        if((kbd_mod_state() & KMOD_CTRL) && (key=='l'||key=='L')){
+            falco_native_view=false;falco_web_view=true;
+            chrome_focus_url();return;
+        }
         if(key==KEY_F3 || key==KEY_ESC){falco_native_view=false;return;}
         if(key==KEY_F5){falco_native_open();return;}
         if(key=='1')falco_native_scroll=0;   /* Contour hero */
@@ -3421,6 +3432,18 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             i32 mx,my;bool down;mouse_get(&mx,&my,&down);(void)down;
             i32 nav=ox+sw*54/100,sy=oy+54;
             i32 requested=-1;
+            /* Browser chrome: real back and editable omnibox actions. */
+            if(my>=oy+10&&my<oy+52){
+                if(mx>=ox+195&&mx<ox+274){
+                    (void)mouse_consume_click();
+                    falco_native_view=false;return;
+                }
+                if(mx>=ox+281&&mx<ox+sw-375){
+                    (void)mouse_consume_click();
+                    falco_native_view=false;falco_web_view=true;
+                    chrome_focus_url();return;
+                }
+            }
             /* The actual site's GitHub link opens through verified HTTPS
              * in Falco's supported inert document reader. */
             if(my>=sy+10&&my<sy+62 &&
