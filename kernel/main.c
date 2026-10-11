@@ -621,6 +621,8 @@ void long_start(u64 magic, u64 info_ptr)
 
         i32 k;
         while ((k = kbd_poll()) != -1) {
+            /* OBS-style global hotkeys still work when Falco is focused. */
+            if(capture_studio_hotkey(k)) continue;
             /* Power menu absorbs all keys while open (Esc / arrows / Enter). */
             if (power_menu_is_open()) { power_menu_handle_key(k); continue; }
             /* Help drawer absorbs everything except F-keys so the user
@@ -707,6 +709,9 @@ void long_start(u64 magic, u64 info_ptr)
         draw_cursor();
 
         gfx_present();
+        /* Capture exactly the COMPOSITED frame, including the real Falco
+         * browser and mouse cursor, and maintain a bounded native replay. */
+        capture_studio_after_present();
 #ifdef FALCON_QEMU_UI_GALLERY
         /* Only emit a framebuffer-proof marker after the complete frame
          * was painted with Launchpad closed. 'g'+appId verifies native app
