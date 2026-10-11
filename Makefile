@@ -98,7 +98,7 @@ CFLAGS      := $(CFLAGS_ARCH) -std=gnu11 -ffreestanding -fno-pic -fno-stack-prot
 LDFLAGS     := $(LDFLAGS_ARCH) -T linker.ld -nostdlib -z noexecstack
 NASMFLAGS   := -f $(NASMFMT) -DFB_W=$(FB_W) -DFB_H=$(FB_H) $(RING3_DEFS)
 
-C_SRCS      := $(wildcard kernel/*.c) $(wildcard linux/*.c)
+C_SRCS      := $(wildcard kernel/*.c) kernel/contour_font_data.c $(wildcard linux/*.c)
 C_OBJS      := $(C_SRCS:%.c=$(BUILD)/%.o)
 ASM_OBJS    := $(BUILD)/boot/multiboot2.o $(BUILD)/boot/isr.o
 
@@ -140,6 +140,11 @@ all: $(KERNEL)
 RUN_DISK_DRIVE := file=$(BUILD)/falcon-safe.raw,format=raw,if=ide,index=0
 
 # ---- compile C ---------------------------------------------------------------
+
+# Baked FALCO owned native proportional fonts; Pillow is a build tool only.
+kernel/contour_font_data.c: tools/gen_contour_font.py
+	python3 tools/gen_contour_font.py
+
 $(BUILD)/kernel/%.o: kernel/%.c kernel/falcon.h | $(BUILD)/kernel
 	$(CC) $(CFLAGS) -c $< -o $@
 
