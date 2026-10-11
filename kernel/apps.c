@@ -3635,7 +3635,8 @@ static bool falco_pkg_download(const char *host,const char *path){
     k_strcat(length_field,digits);
     k_strcat(length_field,"\r\n"); /* exact length, not a 209/2090 prefix */
     if(!sh_contains_ci(app_download_http,length_field) ||
-       !market_validate_app_pkg(body,length)){
+       (!market_validate_app_pkg(body,length) &&
+        !fapp2_validate(body,length))){
         k_strcpy(browser_status,"Downloaded package unsafe or incomplete");
 #ifdef FALCON_QEMU_UI_GALLERY
         outb(0xE9,'f');outb(0xE9,'X');
