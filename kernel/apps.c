@@ -4663,7 +4663,7 @@ static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         gfx_text(x+86,y+59,"FAPP/2 | Native FalconOS GUI - no browser",0xB6CCD0u);
         y+=109;
         i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
-        bool clicked=!wm_passive_paint&&mouse_clicked();
+        bool clicked=wm_click_enabled();
         for(u32 i=0;i<fapp2_count();i++){
             i32 kind=fapp2_kind(i);
             const char *text=fapp2_label(i);
