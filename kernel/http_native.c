@@ -5,7 +5,7 @@
 #define HTTP_LIMIT 512u
 bool native_http_get_port(const char *host,u16 port,const char *path,
                           char *response,u32 capacity){
-    if(!host||!path||!response||capacity<32 || capacity>4096 ||
+    if(!host||!path||!response||capacity<32 || capacity>8192 ||
        path[0]!='/' || !port)return false;
     u8 remote[4];
     if(!native_net_parse_ipv4(host,remote) &&
@@ -33,7 +33,7 @@ bool native_http_get_port(const char *host,u16 port,const char *path,
     bool ok=false;
     if(native_tcp_write((const u8*)request,used)!=(i32)used)goto done;
     u32 received=0;
-    for(u32 chunk=0;chunk<16;chunk++){
+    for(u32 chunk=0;chunk<32;chunk++){
         if(received+1>=capacity)break;
         i32 n=native_tcp_read((u8*)response+received,
                              capacity-received-1,200u);
