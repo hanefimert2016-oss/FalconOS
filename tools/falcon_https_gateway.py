@@ -15,6 +15,54 @@ For QEMU's -netdev user:
 """
 import argparse,http.server,ipaddress,socket,ssl,urllib.error,urllib.request
 import urllib.parse,json,html,re
+
+from html.parser import HTMLParser
+
+class FalcoSemanticHTML(HTMLParser):
+    """FalconOS-owned inert HTML structure reader. No JS, CSS or DOM execution."""
+    BLOCK={"p","div","section","article","header","footer","main",
+           "h1","h2","h3","h4","h5","h6","br","li","ul","ol","blockquote","pre","tr","title"}
+    SKIP={"script","style","svg","template","iframe","canvas"}
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts=[];self.total=0;self.skip=0;self.links=[]
+    def add(self,value):
+        if self.total>=10000:return
+        value=value[:10000-self.total]
+        self.parts.append(value);self.total+=len(value)
+    def handle_starttag(self,tag,attrs):
+        if tag in self.SKIP:
+            self.skip+=1;return
+        if self.skip:return
+        if tag in self.BLOCK:self.add("\n")
+        if tag in ("h1","h2","h3"):self.add("# " if tag=="h1" else "## ")
+        if tag=="li":self.add("- ")
+        if tag=="a":
+            link=dict(attrs).get("href") or ""
+            self.links.append(link if link.startswith("https://") and len(link)<180 else "")
+    def handle_endtag(self,tag):
+        if tag in self.SKIP:
+            if self.skip:self.skip-=1
+            return
+        if self.skip:return
+        if tag=="a" and self.links:
+            url=self.links.pop()
+            if url:self.add(" ["+url[:96]+"]")
+        if tag in self.BLOCK:self.add("\n")
+    def handle_data(self,data):
+        if not self.skip:self.add(re.sub(r"\s+"," ",data))
+
+def semantic_html_text(raw):
+    """Represent actual HTTPS HTML as a bounded UTF-8, non-executable document."""
+    reader=FalcoSemanticHTML()
+    reader.feed(raw.decode("utf-8",errors="replace")[:60000])
+    reader.close()
+    value="".join(reader.parts)
+    value=re.sub(r"[ \t]+"," ",value)
+    value=re.sub(r" *\n *","\n",value)
+    value=re.sub(r"\n{3,}","\n\n",value).strip()
+    return value.encode("utf-8")[:2650].decode("utf-8","ignore").encode("utf-8")
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):
         return None
@@ -201,14 +249,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # HTTPS-only redirects and every DNS hop are checked above.
             url="https://"+host+"/"+tail
             data=self.validated_https_request(url,60000)
-            # Compact bounded text is more useful than rejecting common pages.
-            # No JS/CSS executes on the guest.
-            if len(data)>2350:
-                page=data.decode("utf-8",errors="replace")
-                page=re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>","",page)
-                page=html.unescape(re.sub(r"(?s)<[^>]+>"," ",page))
-                page=re.sub(r"\s+"," ",page).strip()
-                data=page[:1800].encode("utf-8")
+            # Preserve real headings, paragraph and link boundaries.
+            # Unsupported CSS/JavaScript is never executed or misrepresented.
+            head=data[:1024].lower()
+            if b"<html" in head or b"<!doctype html" in head or b"<body" in head:
+                data=semantic_html_text(data)
+            else:
+                data=data[:2650].decode("utf-8","ignore").encode("utf-8")
             # No script evaluation; data rendered as inert text in FalconOS.
             self.send_response(200)
             self.send_header("Content-Type","text/html; charset=utf-8")
