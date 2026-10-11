@@ -162,7 +162,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             # HTTPS-only redirects and every DNS hop are checked above.
             url="https://"+host+"/"+tail
-            data=self.validated_https_request(url,60000)
+            package_url=urllib.parse.urlsplit(url)
+            is_package=package_url.path.endswith(".app.pkg") and not package_url.query
+            data=self.validated_https_request(url,4096 if is_package else 60000)
+            if is_package:
+                # A user explicitly requested a .app.pkg download. Return the
+                # EXACT authenticated bytes, never HTML stripped text. Only
+                # the guest strict FAPP/1 validator decides if executable.
+                if not (70<=len(data)<=4096) or b"\x00" in data:
+                    raise ValueError("Invalid FAPP transfer length or binary payload")
+                self.send_response(200)
+                self.send_header("Content-Type","application/vnd.falconos.fapp")
+                self.send_header("Content-Length",str(len(data)))
+                self.send_header("X-Falcon-Host-HTTPS-Verified","yes")
+                self.send_header("X-Falcon-Verified-Package-Bytes","yes")
+                self.send_header("Connection","close")
+                self.end_headers()
+                self.wfile.write(data)
+                return
             # Compact bounded text is more useful than rejecting common pages.
             # No JS/CSS executes on the guest.
             if len(data)>2350:
