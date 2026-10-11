@@ -22,6 +22,8 @@ jobs:
           PATH="/tmp/falcon-pkg/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=1 \
             EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
           grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Falco direct HTTPS link downloads real 209 byte .app.pkg
+        run: timeout 70s /tmp/falcon-pkg/bin/python tools/verify_falco_pkg_download.py
       - name: Real GitHub HTTPS package and TWO PS2 file manager clicks
         id: pkg
         continue-on-error: true
@@ -37,6 +39,8 @@ jobs:
             build/FalconOS-DoubleClick-PKG-App-Running.png
             build/pkg-doubleclick-*.log
             build/pkg-doubleclick-*.json
+            build/falco-pkg-https-*.log
+            build/falco-pkg-https-*.json
           if-no-files-found: warn
       - name: Publish bootable .app.pkg enabled ISO only when native clicks pass
         if: steps.pkg.outcome == 'success'
