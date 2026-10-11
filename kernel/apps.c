@@ -4747,13 +4747,45 @@ static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_round_rect(wx+31,wy+25,45,45,13,0x64E4ADu);
     gfx_text_lg_centered(wx+54,wy+31,"A",0x103228u);
     gfx_text_lg(wx+89,wy+18,fapp_running_title,0xF5FBF9u);
-    gfx_text(wx+89,wy+59,"FalconOS application  |  FAPP/1",0xB2E8D6u);
+    gfx_text(wx+89,wy+59,"FalconOS executable application | FAPP/1",0xB2E8D6u);
     gfx_round_rect(wx+17,wy+104,ww-34,wh-169,16,0x121E2Au);
-    gfx_rect_a(wx+27,wy+136,ww-54,1,0xA8D9C8u,72);
-    gfx_text(wx+36,wy+116,
+    i32 output_top=wy+157;
+    if(fapp_gui_custom){
+        gfx_text_lg(wx+37,wy+118,
+            fapp_gui_heading[0]?fapp_gui_heading:fapp_running_title,0xEAFDF6u);
+        if(fapp_gui_description[0])
+            gfx_text(wx+38,wy+166,fapp_gui_description,0xB7DCD0u);
+        i32 top=wy+210;
+        i32 button_width=(ww-104)/2;
+        if(button_width>300)button_width=300;
+        for(i32 i=0;i<fapp_button_count;i++){
+            i32 bx=wx+38+(i%2)*(button_width+18);
+            i32 by=top+(i/2)*59;
+            bool selected=i==fapp_button_selected;
+            gfx_round_rect(bx,by,button_width,45,12,
+                selected?0x81F0BAu:0x244E45u);
+            gfx_text(bx+19,by+14,fapp_buttons[i].caption,
+                selected?0x0B2A22u:0xF1FFF8u);
+            if(wm_click_enabled()){
+                i32 mx,my;bool down;mouse_get(&mx,&my,&down);
+                (void)down;
+                if(mx>=bx&&mx<bx+button_width&&my>=by&&my<by+45){
+                    (void)mouse_consume_click();
+                    fapp_button_selected=i;
+                    fapp_gui_run_action(i);
+                }
+            }
+        }
+        output_top=top+((fapp_button_count+1)/2)*59+43;
+    }else{
+        gfx_rect_a(wx+27,wy+136,ww-54,1,0xA8D9C8u,72);
+        gfx_text(wx+36,wy+116,
              fapp_running_valid?"APP OUTPUT / verified allowlist":"No active app",
              0x7DE9B8u);
-    i32 y=wy+157;
+    }
+    if(output_top+35<wy+wh-75)
+        gfx_text(wx+37,output_top-24,"PROGRAM OUTPUT",0x7DE9B8u);
+    i32 y=output_top;
     for(i32 i=0;i<TERM_LINES&&y+22<wy+wh-77;i++){
         const char *line=fapp_running_output_frozen?
                          fapp_running_output[i]:term_buf[i];
@@ -4764,10 +4796,11 @@ static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     }
     gfx_text(wx+25,wy+wh-49,fapp_running_source,0x4C6780u);
     gfx_text(wx+25,wy+wh-26,
-        "Close this window with the X. This is FalconOS FAPP/1, not x86 ELF.",
+        "FalconOS native FAPP/1 | Tab-less focus: arrows, Enter | X to close",
         PAL_TEXT_DIM);
 #ifdef FALCON_QEMU_UI_GALLERY
-    outb(0xE9,'f');outb(0xE9,'W'); /* FAPP Runner was actually painted */
+    outb(0xE9,'f');outb(0xE9,'W');
+    if(fapp_gui_custom){outb(0xE9,'f');outb(0xE9,'G');}
 #endif
 }
 static void icon_fapp_runner(i32 cx,i32 cy){
@@ -4810,7 +4843,7 @@ static app_def_t APPS[] = {
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
     { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
-    { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,NULL,icon_fapp_runner },
+    { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,fapp_gui_input,icon_fapp_runner },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
