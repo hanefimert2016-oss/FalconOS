@@ -52,13 +52,17 @@ def main():
                 k(c,"f2");t(c,"Falco")
                 off=LOG.stat().st_size;k(c,"enter")
                 wait(b"zNn1",off,60)
-                pause(1)
+                # zN proves application selection only; gN is emitted AFTER
+                # the native framebuffer is fully drawn with launcher closed.
+                wait(b"gN",off,65)
+                pause(1.3)
                 snap(c,"FalconOS-Review-Falco")
                 STATE["checks"].append("Real Falco rendered in QEMU via PS/2 input")
                 k(c,"f2");t(c,"Codedium")
                 off=LOG.stat().st_size;k(c,"enter")
                 wait(b"zS",off,60)
-                pause(1)
+                wait(b"gS",off,65)
+                pause(1.3)
                 snap(c,"FalconOS-Review-Codedium")
                 STATE["checks"].append("Real Codedium editor rendered in QEMU")
                 STATE["result"]="PASS"
