@@ -395,7 +395,7 @@ static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
  * This UI never fabricates files; only SHFS enumerated entries are displayed.
  * F4 search, Left/Right locations, Up/Down scroll. The same exact file state
  * is shared with Notes, Codedium and downloaded FAPP/1 packages. */
-static i32 files_scroll, files_scope;
+static i32 files_scroll, files_scope, files_cursor;
 static char files_selected[SHFS_PATH],files_last_click_path[SHFS_PATH];
 static u32 files_last_click_ms;
 static const char *files_action_status="Double click .app.pkg to run in FalconOS";
@@ -447,21 +447,24 @@ static void files_input_key(i32 key) {
     if(files_search_mode){
         if(key==KEY_BACKSPACE){
             if(files_filter_len>0)files_filter[--files_filter_len]=0;
-            files_scroll=0;
+            files_scroll=files_cursor=0;
         }else{
             char bytes[4];i32 n=key_to_utf8(key,bytes);
             if(n>0&&files_filter_len+n<(i32)sizeof files_filter){
                 for(i32 i=0;i<n;i++)files_filter[files_filter_len++]=bytes[i];
-                files_filter[files_filter_len]=0;files_scroll=0;
+                files_filter[files_filter_len]=0;files_scroll=files_cursor=0;
             }
         }
         return;
     }
-    if(key==KEY_LEFT){files_scope=(files_scope+4)%5;files_scroll=0;files_selected[0]=0;}
+    if(key==KEY_LEFT){files_scope=(files_scope+4)%5;files_scroll=0;files_cursor=0;files_selected[0]=0;}
     if(key==KEY_RIGHT){files_scope=(files_scope+1)%5;files_scroll=0;files_selected[0]=0;}
     if(key==KEY_ENTER&&!files_search_mode){apps_launch_package_path(files_selected);return;}
-    if(key==KEY_UP&&files_scroll>0)files_scroll--;
-    if(key==KEY_DOWN&&files_scroll<SHFS_MAX_ENTRIES-1)files_scroll++;
+    if(key==KEY_UP&&files_cursor>0)files_cursor--;
+    if(key==KEY_DOWN&&files_cursor<SHFS_MAX_ENTRIES-1)files_cursor++;
+    if(files_cursor<files_scroll)files_scroll=files_cursor;
+    /* render_files() keeps the selected file in view and resolves the path */
+    if(files_cursor>files_scroll+10)files_scroll=files_cursor-10;
 }
 typedef struct {
     i32 x,y,w,limit,row,seen,files,dirs,mx,my;
@@ -472,7 +475,9 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
     file_draw_ctx_t *c=(file_draw_ctx_t *)ud;
     if(!files_matches(path))return;
     if(is_dir)c->dirs++;else c->files++;
-    if(c->seen++<files_scroll||c->row>=c->limit)return;
+    i32 current=c->seen++;
+    if(current==files_cursor)k_strcpy(files_selected,path);
+    if(current<files_scroll||c->row>=c->limit)return;
     i32 y=c->y+c->row*37;
     bool selected=k_strcmp(files_selected,path)==0;
     gfx_round_rect_a(c->x,y,c->w,34,10,
@@ -490,6 +495,7 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
         u32 now=pit_ms();
         bool double_click=k_strcmp(files_last_click_path,path)==0 &&
             now-files_last_click_ms>=45u && now-files_last_click_ms<=3200u;
+        files_cursor=current;
         k_strcpy(files_selected,path);
         k_strcpy(files_last_click_path,path);
         files_last_click_ms=now;
