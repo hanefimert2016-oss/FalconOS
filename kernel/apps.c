@@ -409,7 +409,7 @@ static bool fscript_running;
 static char install_source_path[SHFS_PATH];
 static i32 install_choice=0; /* 0 = user Apps, 1 = Desktop */
 static const char *install_message="Enter installs; Left/Right selects destination";
-static void files_launch_pkg(const char *path);
+void apps_launch_package_path(const char *path);
 
 static bool files_search_mode;
 static char files_filter[40];
@@ -459,7 +459,7 @@ static void files_input_key(i32 key) {
     }
     if(key==KEY_LEFT){files_scope=(files_scope+4)%5;files_scroll=0;files_selected[0]=0;}
     if(key==KEY_RIGHT){files_scope=(files_scope+1)%5;files_scroll=0;files_selected[0]=0;}
-    if(key==KEY_ENTER&&!files_search_mode){files_launch_pkg(files_selected);return;}
+    if(key==KEY_ENTER&&!files_search_mode){apps_launch_package_path(files_selected);return;}
     if(key==KEY_UP&&files_scroll>0)files_scroll--;
     if(key==KEY_DOWN&&files_scroll<SHFS_MAX_ENTRIES-1)files_scroll++;
 }
@@ -558,7 +558,7 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     shfs_foreach_path(files_row,&ctx);
     /* Run OUTSIDE the SHFS enumeration callback. Never trust the file
      * extension alone: market_validate_app_pkg checks all manifest/body. */
-    if(ctx.open_path[0])files_launch_pkg(ctx.open_path);
+    if(ctx.open_path[0])apps_launch_package_path(ctx.open_path);
     if(ctx.seen==0)
         gfx_text(main_x+16,wy+top+89,
             files_filter_len?"No matching files":"No files in this location",PAL_TEXT_DIM);
@@ -4167,9 +4167,24 @@ static void market_launch(i32 i)
  * must be validated BEFORE any line executes. This is NOT Windows EXE,
  * Linux ELF, untrusted native machine code, or an executable host archive.
  * It is a bounded FalconOS FAPP/1 program with allowlisted shell commands. */
-static void files_launch_pkg(const char *path){
+void apps_launch_package_path(const char *path){
     if(!path||!path[0]){files_action_status="Select a .app.pkg file first";return;}
     u32 n=(u32)k_strlen(path);
+    if(n>=5&&k_strcmp(path+n-5,".link")==0){
+        shfs_ent_t *shortcut=shfs_lookup(path);
+        if(!shortcut||shortcut->is_dir||!shortcut->len||
+           shortcut->len>=SHFS_PATH ||
+           k_strncmp(shortcut->data,"/home/falcon/apps/",18)!=0){
+            files_action_status="Invalid application shortcut";return;
+        }
+        const char *target=shortcut->data;
+        u32 size=k_strlen(target);
+        if(size<8||k_strcmp(target+size-8,".app.pkg")!=0){
+            files_action_status="Shortcut target is not an app.pkg";return;
+        }
+        apps_launch_package_path(target);
+        return;
+    }
     if(n<8u||k_strcmp(path+n-8u,".app.pkg")!=0){
         files_action_status="No runnable .app.pkg selected";return;
     }
