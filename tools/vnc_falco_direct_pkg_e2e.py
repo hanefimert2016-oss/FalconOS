@@ -128,7 +128,8 @@ def main():
                 pause(.25)
                 off=len(data());c.mouseDown(1);pause(.35);c.mouseUp(1)
                 wait(b"f2",off,45);wait(b"fR",off,50)
-                pause(1.2)
+                wait(b"fW",off,55)  # actual native application window PAINTED
+                pause(1.5)
                 shot(c,"FalconOS-Falco-HTTPS-PKG-DoubleClick-Running")
                 STATE["checks"].append("Two real PS2 clicks ran directly downloaded .app.pkg inside its own FAPP Runner app window")
             STATE["result"]="PASS"
