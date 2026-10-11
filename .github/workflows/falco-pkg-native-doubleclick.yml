@@ -3,6 +3,11 @@ on:
   push:
     branches: [feature/falco-app-pkg-doubleclick-20261011]
   workflow_dispatch:
+# Prefer the newest code when the native engine is under active development.
+# This prevents one expensive QEMU run for every intermediate patch.
+concurrency:
+  group: fapp-pkg-native-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
