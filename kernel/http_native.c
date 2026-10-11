@@ -68,6 +68,14 @@ bool native_https_get(const char *hostname,const char *path,
 
 #endif /* !FALCON_BEARSSL: secure backend is kernel/https_bearssl.c */
 
+static bool visual_header_has(const char *haystack,const char *needle){
+    for(u32 i=0;haystack[i];i++){
+        u32 j=0;
+        while(needle[j] && haystack[i+j] && needle[j]==haystack[i+j])j++;
+        if(!needle[j])return true;
+    }
+    return false;
+}
 /* Opt-in visual browser transport: 320x180 RGB332 from a trusted LOCAL host
  * Chromium renderer. This is explicitly not native guest HTTPS or code exec.
  * Strong 200/status, content-type, provenance and exact-length checks are
@@ -75,8 +83,8 @@ bool native_https_get(const char *hostname,const char *path,
 bool native_http_get_visual_port(const char *host,u16 port,const char *path,
                                  u8 *pixels,u32 len){
     if(!host||!path||!pixels||len!=57600u||port!=18445u ||
-       k_strcmp(path,"/visual/falconos.tech/")!=0 &&
-       k_strcmp(path,"/visual/reload/falconos.tech/")!=0)return false;
+       (k_strcmp(path,"/visual/falconos.tech/")!=0 &&
+        k_strcmp(path,"/visual/reload/falconos.tech/")!=0))return false;
     u8 addr[4];
     if(!native_net_parse_ipv4(host,addr))return false;
     /* A public, DNS-overridden host must never impersonate the private visual
@@ -111,9 +119,9 @@ bool native_http_get_visual_port(const char *host,u16 port,const char *path,
                      * data from a 502 challenge or a spoofed HTTP endpoint. */
                     if(k_strncmp(header,"HTTP/1.0 200",12)!=0 &&
                        k_strncmp(header,"HTTP/1.1 200",12)!=0)goto done;
-                    if(!sh_contains_ci(header,"X-Falcon-Visual: chromium-rgb332") ||
-                       !sh_contains_ci(header,"X-Falcon-Content-Verified: FalconOS-Contour") ||
-                       !sh_contains_ci(header,"Content-Length: 57600"))goto done;
+                    if(!visual_header_has(header,"X-Falcon-Visual: chromium-rgb332") ||
+                       !visual_header_has(header,"X-Falcon-Content-Verified: FalconOS-Contour") ||
+                       !visual_header_has(header,"Content-Length: 57600"))goto done;
                     body=true;
                 }
             }else{
