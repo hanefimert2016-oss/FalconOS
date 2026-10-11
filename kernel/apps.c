@@ -2766,7 +2766,11 @@ static void set_input_key(i32 key)
             i32 v=(i32)SET.wallpaper_style+d;
             if(v<0)v=3;
             SET.wallpaper_style=(u32)(v%4);
-            (void)diskdb_save(); /* save only on a valid selected disk */
+            bool saved=diskdb_save(); /* only validated FalconFS partition */
+#ifdef FALCON_QEMU_UI_GALLERY
+            outb(0xE9,'w');outb(0xE9,saved?'S':'s');
+            outb(0xE9,'w');outb(0xE9,'P');
+#endif
             break;
         }
         case SR_VIEWPORT:
