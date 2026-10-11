@@ -4430,17 +4430,43 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 static char code_text[CODE_CAP];
 static i32 code_len, code_cursor;
 static bool code_ready,code_dirty,code_publish_armed;
-static const char *code_status = "F5 Save  |  F6 Run  |  F7 Export .app.pkg";
+static const char *code_status = "F5 Save  F6 Test  F7 Export installer+app  F8 Help";
+static bool code_help_visible;
 static void code_init(void)
 {
     if (code_ready) return;
     code_ready = true;
     shfs_init();
-    shfs_ent_t *file = shfs_lookup("/home/falcon/Desktop/project.fsh");
-    const char *sample = "# app-id: codedium-demo\n# app-name: Codedium Demo\n# app-version: 1.0.0\n# app-summary: Built inside FalconOS\nclear\necho Hello from Codedium\nuname\n";
+    shfs_ent_t *file = shfs_lookup("/home/falcon/Desktop/project.fsc");
+    const char *sample = "FSC/1\nuygulama Ilk FScript Uygulamam\narka #122238\nrenk #67E7B3\nbaslik Merhaba FalconOS\nmetin Bu uygulama FScript diliyle yazildi.\nsayac tiklama 0\ndugme Bana tikla -> tiklama 1\ndeger tiklama\n";
+    const char *manual="FScript 0.1 - FalconOS kendi uygulama dili\n\n"
+      "Dosyanin ilk satiri FSC/1 olmalidir. Satir sonlari onemlidir.\n"
+      "uygulama AD : pencerenin basligi.\n"
+      "arka #RRGGBB : arka plan rengi.\n"
+      "renk #RRGGBB : vurgu/dugme rengi.\n"
+      "baslik YAZI : buyuk baslik.\n"
+      "metin YAZI : aciklama satiri.\n"
+      "sayac isim 0 : adlandirilmis tamsayi (en cok 8).\n"
+      "dugme Etiket -> isim 1 : dugmeye basinca sayaci +1 yapar.\n"
+      "deger isim : sayac degerini ekrana koyar.\n"
+      "cizgi : ayirici.\n"
+      "F5 kaydet; F6 calistir; F7 iki app.pkg olusturur.\n"
+      "my-app.setup.app.pkg acilinca kurulum asistani cikar.\n"
+      "my-app.app.pkg dogrudan calisir.\n"
+      "Guvenlik: Ag, disk erisimi, yabanci kod ve C/ELF yok.\n";
+    (void)shfs_mkdir_abs("/home/falcon");
+    shfs_ent_t *guide=shfs_lookup("/home/falcon/yardimci.txt");
+    if(!guide){
+        guide=shfs_open_w_abs("/home/falcon/yardimci.txt",false);
+        if(guide){
+            k_strcpy(guide->data,manual);
+            guide->len=k_strlen(manual);
+        }
+    }
     const char *source = (file && !file->is_dir) ? file->data : sample;
     i32 disklen = codedium_project_load(code_text, CODE_CAP);
-    if (disklen > 0) source = code_text;
+    if(disklen>0&&k_strncmp(code_text,"FSC/1\n",6)==0)source=code_text;
+    if(source!=sample&&k_strncmp(source,"FSC/1\n",6)!=0)source=sample;
     i32 n = k_strlen(source);
     if (n >= CODE_CAP) n = CODE_CAP - 1;
     k_memcpy(code_text, source, n);
@@ -4449,7 +4475,7 @@ static void code_init(void)
 }
 static void code_save(void)
 {
-    shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/project.fsh", false);
+    shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/project.fsc", false);
     if (!file) { code_status = "Save error: RAM file system is full"; return; }
     k_memcpy(file->data, code_text, code_len + 1);
     file->len = code_len;
@@ -4458,52 +4484,45 @@ static void code_save(void)
         ? "Saved project to RAM and safe FalconOS disk"
         : "Saved in RAM only (no safe disk selected)";
 }
-static void code_run(void)
-{
-    term_init();
-    for (i32 at = 0; at < code_len;) {
-        char line[184]; i32 n = 0;
-        while (at + n < code_len && code_text[at + n] != '\n' && n < 182) n++;
-        if (at + n < code_len && code_text[at + n] != '\n') {
-            code_status = "Script line exceeds 182 chars"; return;
-        }
-        k_memcpy(line, code_text + at, n); line[n] = 0;
-        if (n && line[0] != '#') {
-            if (!market_line_allowed(line, n)) {
-                code_status = "Unsafe command denied (FAPP/1 allowlist)"; return;
-            }
-            sh_run_line(line);
-        }
-        at += n;
-        if (at < code_len && code_text[at] == '\n') at++;
+static void code_run(void){
+    if(!fscript_load(code_text,(u32)code_len)){
+        code_status="FScript compile error. F8 helper, check statement order.";
+        return;
     }
-    code_status = "Executed in built-in Terminal";
-    apps_open(5);
+    code_status="Compiled FSC/1; native FScript UI running";
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'F');outb(0xE9,'C');
+#endif
+    apps_open(FSCRIPT_APP_ID);
 }
-static bool code_export(void)
-{
-    static char pkg[SHFS_FBYTES];
-    u32 bytes=0;
-    if (!codedium_build_pkg(code_text,(u32)code_len,pkg,
-                            sizeof pkg,&bytes)) {
-        code_status = "Export failed: check # app-* metadata, commands or 4 KiB limit";
+static bool code_export(void){
+    if(!fscript_load(code_text,(u32)code_len)){
+        code_status="FScript source invalid. F8 opens yardimci.txt.";
         return false;
     }
-    shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/code.app.pkg", false);
-    if (!file) {
-        code_status = "Export failed: guest RAM file system is full"; return false;
+    const char *targets[]={
+        "/home/falcon/Desktop/my-app.app.pkg",
+        "/home/falcon/Desktop/my-app.setup.app.pkg"
+    };
+    for(i32 j=0;j<2;j++){
+        shfs_ent_t *file=shfs_open_w_abs(targets[j],false);
+        if(!file||code_len>=SHFS_FBYTES-1){
+            code_status="FalconFS full. Cannot export both package types.";
+            return false;
+        }
+        k_memcpy(file->data,code_text,(u32)code_len+1);
+        file->len=(u32)code_len;
     }
-    k_memcpy(file->data,pkg,bytes+1);
-    file->len=bytes;
-    code_status = "Created valid FAPP/1 code.app.pkg in guest Desktop";
+    code_status="Exported my-app.app.pkg + my-app.setup.app.pkg to Desktop";
 #ifdef FALCON_QEMU_UI_GALLERY
-    outb(0xE9,'E'); /* package actually built and written */
+    outb(0xE9,'E');
 #endif
     return true;
 }
 static void code_input_key(i32 key)
 {
     code_init();
+    if (key == KEY_F8) {code_help_visible=!code_help_visible;return;}
     if (key == KEY_F5) { code_save(); return; }
     if (key == KEY_F6) { code_run(); return; }
     if (key == KEY_F7) { (void)code_export(); return; }
@@ -4583,10 +4602,13 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 {
     (void)frame;
     code_init();
-    section(wx,wy,"Codedium Studio","FAPP/1 editor  |  sandboxed commands only");
+    gfx_round_rect(wx+15,wy+7,ww-30,75,17,0x0C2138u);
+    gfx_round_rect(wx+29,wy+18,47,47,12,0x2275D4u);
+    gfx_text_lg_centered(wx+52,wy+23,"</>",0xFFFFFFu);
+    gfx_text_lg(wx+91,wy+12,"CodeDium",0xF5FAFFu);
+    gfx_text(wx+91,wy+54,"FScript Studio | Own FalconOS language",0xA8C9E7u);
     /* Toolbar performs real actions; not placeholder or static artwork. */
-    const char *names[]={"Save  F5","Run  F6","Export  F7",
-                         "GitHub F10"};
+    const char *names[]={"Save F5","Test F6","Build F7","Helper F8"};
     const u32 tones[]={0x3478E6u,0x19A680u,0x8862D7u,0x167B54u};
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool clicked=wm_click_enabled();
@@ -4600,11 +4622,11 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
             if(i==0)code_save();
             else if(i==1)code_run();
             else if(i==2)(void)code_export();
-            else code_input_key(KEY_F10);
+            else code_input_key(KEY_F8);
         }
     }
     if(ww>=800){
-        gfx_text(wx+ww-240,wy+58,"Desktop/project.fsh",PAL_TEXT_DIM);
+        gfx_text(wx+ww-240,wy+58,"Desktop/project.fsc",PAL_TEXT_DIM);
         gfx_circle(wx+ww-24,wy+64,5,code_dirty?COL_WARN:COL_OK);
     }
     i32 top=wy+91;
@@ -4642,6 +4664,22 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
             }
         }
         bi=0;line++;
+    }
+    if(code_help_visible){
+        gfx_round_rect(wx+ww/3,top+11,ww*2/3-42,area-22,14,0xF3F8FDu);
+        gfx_text_lg(wx+ww/3+23,top+21,"yardimci.txt",0x153B5Eu);
+        shfs_ent_t *guide=shfs_lookup("/home/falcon/yardimci.txt");
+        if(guide){
+            i32 yy=top+75;const char *p=guide->data;
+            while(*p&&yy<top+area-25){
+                char line[110];i32 n=0;
+                while(*p&&*p!='\n'&&n<105)line[n++]=*p++;
+                if(*p=='\n')p++;
+                line[n]=0;
+                gfx_text(wx+ww/3+24,yy,line,0x304962u);
+                yy+=22;
+            }
+        }
     }
     /* Bottom status follows the real cursor and unsaved-project state. */
     i32 footer=wy+wh-43;
@@ -4758,6 +4796,12 @@ static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         "Close this window with the X. This is FalconOS FAPP/1, not x86 ELF.",
         PAL_TEXT_DIM);
 }
+static void icon_codedium(i32 cx,i32 cy){
+    gfx_round_rect(cx-17,cy-17,34,34,9,0x103457u);
+    gfx_round_outline(cx-17,cy-17,34,34,9,0x82CAF6u);
+    gfx_text_centered(cx,cy-8,"</>",0xD6F6FFu);
+    gfx_circle(cx+10,cy+12,3,0x68EEB0u);
+}
 static void icon_theme_creator(i32 cx,i32 cy){
     gfx_round_rect(cx-17,cy-17,34,34,11,0x102E47u);
     gfx_circle(cx-6,cy-5,9,0x78F0BFu);
@@ -4804,7 +4848,7 @@ static app_def_t APPS[] = {
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
-    { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
+    { "Codedium",   "FScript Studio",    0x367DF8, render_codedium, code_input_key,   icon_codedium },
     { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,NULL,icon_fapp_runner },
     { "Theme Creator","design palettes & gradients",0x369B84,theme_creator_render,theme_creator_input,icon_theme_creator },
     { "FScript Window","custom FScript app",0x5AA2DB,fscript_render,fscript_key,icon_fapp_runner },
