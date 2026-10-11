@@ -255,8 +255,13 @@ static void contour_hero(i32 x,i32 y,i32 w,i32 h){
     gfx_rect_a(x,y+h/2,w,h/2,0x0A2255u,48);
     i32 halo=min_(w/6,h/3);
     if(halo>120){
-        gfx_circle_a(x+w*73/100,y+h*41/100,halo,0x244C9Fu,44);
-        gfx_circle_a(x+w*21/100,y+h*91/100,halo,0x17458Cu,35);
+        /* Feathered software radial glows approximate the real CSS's
+         * deep-blue radial gradients without a browser/GPU dependency. */
+        for(i32 n=0;n<7;n++){
+            i32 radius=halo-n*halo/10;
+            gfx_circle_a(x+w*73/100,y+h*41/100,radius,0x244C9Fu,(u8)(5+n));
+            gfx_circle_a(x+w*21/100,y+h*91/100,radius,0x17458Cu,(u8)(3+n));
+        }
     }
     for(i32 xx=0;xx<w;xx+=128)gfx_rect_a(x+xx,y,1,h,0x6B9DC8u,7);
     for(i32 yy=0;yy<h;yy+=128)gfx_rect_a(x,y+yy,w,1,0x6B9DC8u,7);
@@ -299,11 +304,12 @@ static void contour_hero(i32 x,i32 y,i32 w,i32 h){
                 gfx_contour_text_styled(left,description_y+row*42,line,18,2,false,0xB6C9E3u);
             }
         }
-        i32 buttons=y+h*79/100;
+        /* Reserve space for all three lines of live document text. */
+        i32 buttons=y+h*85/100;
         contour_round(left,buttons,285,66,30,0xF4FAFFu);
         contour_label(left+31,buttons+19,"FalconOS'u dene   >",0x153772u);
         contour_label(left+326,buttons+20,"Contour'u keşfet   v",0xE8F1FFu);
-        i32 stats=y+h*92/100;
+        i32 stats=y+h*95/100;
         contour_label(left,stats,"01",0x97BFFFu);
         contour_label(left+76,stats,"Bağımsız çekirdek",0xC0D0E5u);
         contour_label(left+320,stats,"TLS",0x97BFFFu);
