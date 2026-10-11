@@ -433,6 +433,7 @@ void lockscreen_render(u32 frame);
 void lockscreen_input(i32 key);
 bool lockscreen_is_unlocked(void);
 void lockscreen_lock(void);
+void lockscreen_boot_autologin(void);
 
 /* ---- Power menu (FalconOS 1) --------------------------------------------- */
 void power_menu_open(void);
