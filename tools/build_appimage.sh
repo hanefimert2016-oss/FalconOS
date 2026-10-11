@@ -10,16 +10,22 @@ cp "$FALCON_ISO" "$APPDIR/usr/share/falconos/FalconOS.iso"
 cp tools/falcon_oneclick_launcher.py tools/falco_native_gateway.py \
    tools/falcon_https_gateway.py tools/make_safe_disk.py \
    tools/marketplace_bridge.py "$APPDIR/usr/share/falconos/"
+# Portable runtime is bundled from the CI builder: guests only need Linux.
+python3 tools/bundle_appimage_runtime.py "$APPDIR"
 cat >"$APPDIR/AppRun" <<'APP'
 #!/bin/sh
 HERE="$(cd "$(dirname "$0")" && pwd)"
-if ! command -v python3 >/dev/null 2>&1; then
-    if command -v zenity >/dev/null 2>&1; then
-        zenity --error --title=FalconOS --text="Python 3 is required."
-    fi
+export PYTHONHOME="$HERE/usr"
+export PYTHONPATH="$HERE/usr/lib/python3.12"
+export LD_LIBRARY_PATH="$HERE/usr/lib/falcon-runtime:${LD_LIBRARY_PATH:-}"
+export PATH="$HERE/usr/bin:$PATH"
+export QEMU_MODULE_DIR="$HERE/usr/lib/qemu"
+export FALCON_QEMU_FIRMWARE="$HERE/usr/share/qemu"
+if [ ! -x "$HERE/usr/bin/python3" ] || [ ! -x "$HERE/usr/bin/qemu-system-x86_64" ]; then
+    echo "FalconOS portable QEMU/Python runtime is incomplete" >&2
     exit 127
 fi
-exec python3 "$HERE/usr/share/falconos/falcon_oneclick_launcher.py" "$@"
+exec "$HERE/usr/bin/python3" "$HERE/usr/share/falconos/falcon_oneclick_launcher.py" "$@"
 APP
 chmod 0755 "$APPDIR/AppRun"
 cat >"$APPDIR/FalconOS.desktop" <<'DESKTOP'
