@@ -130,7 +130,8 @@ def main():
     ip=ipaddress.ip_address(args.bind)
     if not (ip.is_loopback or ip.is_private):
         raise SystemExit("Only loopback / private addresses permitted")
-    httpd=http.server.ThreadingHTTPServer((args.bind,args.port),Handler)
+    # Playwright's synchronous browser driver is thread-affine.
+    httpd=http.server.HTTPServer((args.bind,args.port),Handler)
     print(f"Falco visual Chromium renderer on {args.bind}:{args.port} - real {SITE}",flush=True)
     httpd.serve_forever()
 if __name__=="__main__":main()
