@@ -39,7 +39,7 @@ def start():
     raise RuntimeError("Guest VNC unavailable")
 def open_app(c,name,marker):
     k(c,"f2");t(c,name)
-    off=len(data());k(c,"enter");wait(marker,off,55)
+    off=len(data());k(c,"enter");wait(marker.encode("ascii"),off,55)
 def main():
     proc,out=start()
     try:
