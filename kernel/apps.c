@@ -399,6 +399,10 @@ static i32 files_scroll, files_scope;
 static char files_selected[SHFS_PATH],files_last_click_path[SHFS_PATH];
 static u32 files_last_click_ms;
 static const char *files_action_status="Double click .app.pkg to run in FalconOS";
+#define FAPP_RUNNER_APP_ID 19  /* appended after original 19 builtin apps */
+static char fapp_running_title[48]="FalconOS application";
+static char fapp_running_source[SHFS_PATH];
+static bool fapp_running_valid;
 static void files_launch_pkg(const char *path);
 
 static bool files_search_mode;
@@ -4167,8 +4171,27 @@ static void files_launch_pkg(const char *path){
         }
     }
     if(!script)return;
+    /* Program metadata is shown in its OWN FalconOS application window.
+     * The commands still run through the existing safe FAPP interpreter;
+     * this is NOT an ELF process and never executes host machine code. */
+    k_strcpy(fapp_running_title,"FalconOS application");
+    const char *name=file->data+7; /* FAPP/1 + newline */
+    for(i32 header=0;header<4&&*name;header++){
+        const char *begin=name;
+        while(*name&&*name!='\n')name++;
+        if(header==1 && (name-begin)>5 && k_strncmp(begin,"name=",5)==0){
+            i32 take=(i32)(name-begin)-5;
+            if(take>0&&take<(i32)sizeof fapp_running_title){
+                k_memcpy(fapp_running_title,begin+5,(u32)take);
+                fapp_running_title[take]=0;
+            }
+        }
+        if(*name=='\n')name++;
+    }
+    k_strcpy(fapp_running_source,path);
+    fapp_running_valid=true;
     term_init();
-    term_push("FalconOS: running FAPP/1 from Files (allowlisted)");
+    term_push("FAPP/1: sandboxed FalconOS application launched");
     while(*script){
         char line[184];i32 used=0;
         while(script[used]&&script[used]!='\n'&&used<182)used++;
@@ -4180,11 +4203,11 @@ static void files_launch_pkg(const char *path){
         script+=used;
         if(*script=='\n')script++;
     }
-    files_action_status="FAPP/1 launched in FalconOS Terminal";
+    files_action_status="FAPP/1 launched in its own FalconOS window";
 #ifdef FALCON_QEMU_UI_GALLERY
     outb(0xE9,'f');outb(0xE9,'R');
 #endif
-    apps_open(5); /* user's script output appears in the actual Terminal */
+    apps_open(FAPP_RUNNER_APP_ID); /* native app window; real interpreter output */
 }
 static void market_input_key(i32 key)
 {
@@ -4594,6 +4617,39 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
     }
 }
 
+/* Dedicated application window for downloaded executable .app.pkg files.
+ * Independently composited by Contour WM, with user app name, icon,
+ * actual interpreter output, app source and Close button. */
+static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    (void)frame;
+    gfx_round_rect(wx+17,wy+13,ww-34,77,17,0x12372Cu);
+    gfx_round_rect(wx+31,wy+25,45,45,13,0x64E4ADu);
+    gfx_text_lg_centered(wx+54,wy+31,"A",0x103228u);
+    gfx_text_lg(wx+89,wy+18,fapp_running_title,0xF5FBF9u);
+    gfx_text(wx+89,wy+59,"FalconOS application  |  FAPP/1",0xB2E8D6u);
+    gfx_round_rect(wx+17,wy+104,ww-34,wh-169,16,0x121E2Au);
+    gfx_rect_a(wx+27,wy+136,ww-54,1,0xA8D9C8u,72);
+    gfx_text(wx+36,wy+116,
+             fapp_running_valid?"APP OUTPUT / verified allowlist":"No active app",
+             0x7DE9B8u);
+    i32 y=wy+157;
+    for(i32 i=0;i<TERM_LINES&&y+22<wy+wh-77;i++){
+        if(term_buf[i][0]){
+            gfx_text(wx+36,y,term_buf[i],0xE8F4F0u);
+            y+=25;
+        }
+    }
+    gfx_text(wx+25,wy+wh-49,fapp_running_source,0x4C6780u);
+    gfx_text(wx+25,wy+wh-26,
+        "Close this window with the X. This is FalconOS FAPP/1, not x86 ELF.",
+        PAL_TEXT_DIM);
+}
+static void icon_fapp_runner(i32 cx,i32 cy){
+    gfx_round_rect(cx-16,cy-16,32,32,9,0x208D66u);
+    gfx_round_outline(cx-16,cy-16,32,32,9,0x95F0CCu);
+    gfx_text_centered(cx,cy-7,"A",0xFFFFFFu);
+}
+
 /* ===== app table & dispatch ============================================= */
 typedef void (*app_render_fn)(i32 x, i32 y, i32 w, i32 h, u32 f);
 typedef void (*app_input_fn)(i32 key);
@@ -4628,6 +4684,7 @@ static app_def_t APPS[] = {
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
     { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
+    { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,NULL,icon_fapp_runner },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
