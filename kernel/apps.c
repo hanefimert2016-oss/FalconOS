@@ -2967,8 +2967,8 @@ static void set_input_key(i32 key)
             break;
         case SR_WALLPAPER: {
             i32 v=(i32)SET.wallpaper_style+d;
-            if(v<0)v=3;
-            SET.wallpaper_style=(u32)(v%4);
+            if(v<0)v=7;
+            SET.wallpaper_style=(u32)(v%8);
             bool saved=diskdb_save(); /* only validated FalconFS partition */
 #ifdef FALCON_QEMU_UI_GALLERY
             outb(0xE9,'w');outb(0xE9,saved?'S':'s');
@@ -3148,11 +3148,12 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     /* Wallpaper --------------------------------------------- */
     {
         static const char *wallpapers[]={
-            "Aurora", "Midnight blue", "Violet", "Sunset"
+            "Aurora", "Midnight Blue", "Violet", "Sunset",
+            "Ocean Mint", "Glacier", "Forest", "Rose Night"
         };
         s_row(sx,sy+SR_WALLPAPER*step,sw,
               T("Wallpaper", "Arka plan"),
-              wallpapers[SET.wallpaper_style%4u],
+              wallpapers[SET.wallpaper_style%8u],
               set_row==SR_WALLPAPER,PAL_ACCENT);
     }
 
