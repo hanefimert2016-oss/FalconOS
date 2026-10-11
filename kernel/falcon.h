@@ -368,6 +368,17 @@ const char *market_publish_status(void);
 bool market_line_allowed(const char *line, i32 size);
 /* .app.pkg runs only FAPP/1 scripts using existing allowlisted commands. */
 bool market_validate_app_pkg(const char *bytes,u32 length);
+/* Strictly declarative GUI packages; no ELF, shell or HTML runtime. */
+bool fapp2_validate(const char *bytes,u32 length);
+bool fapp2_load(const char *bytes,u32 length);
+const char *fapp2_title(void);
+u32 fapp2_accent(void);
+const char *fapp2_status(void);
+u32 fapp2_count(void);
+i32 fapp2_kind(u32 index);
+const char *fapp2_label(u32 index);
+void fapp2_press(u32 index);
+
 
 /* ---- application framework (Personal kernel) ------------------------------ */
 i32          apps_count(void);
