@@ -366,6 +366,8 @@ bool market_publish_package(const char *payload,u32 bytes);
 bool market_publish_installed(i32 index);
 const char *market_publish_status(void);
 bool market_line_allowed(const char *line, i32 size);
+/* .app.pkg is a verified FAPP/1 app document, NOT a host ELF or PE binary. */
+bool app_pkg_validate(const char *path,char out_name[76],const char **script);
 
 /* ---- application framework (Personal kernel) ------------------------------ */
 i32          apps_count(void);
