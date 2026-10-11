@@ -11,7 +11,8 @@
 typedef struct {char role;char text[NATIVE_TEXT];} falco_block_t;
 static falco_block_t blocks[NATIVE_MAX_BLOCKS];
 static i32 nblocks;
-static bool loaded;
+static bool loaded,contour_origin;
+static char origin_host[181];
 
 static bool includes(const char *hay,const char *needle){
     for(i32 i=0;hay&&hay[i];i++){
@@ -31,9 +32,25 @@ bool falco_native_parse(const char *http){
     while(*p && !(p[0]=='\r'&&p[1]=='\n'&&p[2]=='\r'&&p[3]=='\n'))p++;
     if(!*p)return false;
     p+=4;
-    const char *magic="FALCO/1\nSOURCE|falconos.tech\n";
+    const char *magic="FALCO/1\nSOURCE|";
     if(k_strncmp(p,magic,k_strlen(magic))!=0)return false;
     p+=k_strlen(magic);
+    u32 hostlen=0;
+    while(p[hostlen]&&p[hostlen]!='\n'&&hostlen<180u){
+        char c=p[hostlen];
+        if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+             (c>='0'&&c<='9')||c=='.'||c=='-'))return false;
+        origin_host[hostlen++]=c;
+    }
+    if(hostlen<3||hostlen>180u||p[hostlen]!='\n')return false;
+    origin_host[hostlen]=0;
+    p+=hostlen+1;
+    char expected[220];
+    k_strcpy(expected,"X-Falco-Source: ");
+    k_strcat(expected,origin_host);
+    k_strcat(expected,"\r\n");
+    if(!includes(http,expected))return false;
+    contour_origin=k_strcmp(origin_host,"falconos.tech")==0;
     while(*p && nblocks<NATIVE_MAX_BLOCKS){
         char role=*p++;
         if(*p!='|')return false;
@@ -57,7 +74,7 @@ bool falco_native_parse(const char *http){
         if(includes(blocks[i].text,"FalconOS"))found_site=true;
         if(includes(blocks[i].text,"Contour"))found_contour=true;
     }
-    loaded=found_site&&found_contour;
+    loaded=contour_origin?(found_site&&found_contour):nblocks>0;
 #ifdef FALCON_QEMU_BROWSER_TEST
     outb(0xE9,'n');outb(0xE9,loaded?'Y':'N');
 #endif
@@ -367,9 +384,60 @@ static void contour_section(i32 x,i32 y,i32 w,i32 h,i32 section){
             "Sadece açık kaynak. Güvenli sınırlar. Tamamen kendi çekirdeği.",C_MUTED);
     }
 }
+/* Portable semantic HTML reader: own geometry and AA typography, real
+ * extracted static headings/links/text. No CSS cascade, JS, media or forms.
+ * This is deliberately NOT represented as a full standards browser. */
+static void falco_generic_page(i32 x,i32 y,i32 w,i32 h,i32 scroll){
+    const u32 black=0x122233u,slate=0x53667Bu,bg=0xF5F7FAu;
+    gfx_rect(x,y,w,h,bg);
+    gfx_round_rect(x+24,y+20,w-48,75,16,0xFFFFFFu);
+    gfx_round_outline(x+24,y+20,w-48,75,16,0xD9E2EDu);
+    gfx_circle(x+49,y+57,9,0x19B58Eu);
+    gfx_contour_text(x+70,y+29,origin_host,36,black);
+    gfx_text(x+38,y+107,
+             "Live CA-verified HTML  |  Falcons' own reader  |  CSS / JS unsupported",
+             slate);
+    i32 pad=(w<880?28:70),bw=w-pad*2;
+    i32 top=y+148-scroll*29,bottom=y+h-46;
+    for(i32 i=0;i<nblocks;i++){
+        const falco_block_t *b=&blocks[i];
+        bool big=b->role=='T'||b->role=='H';
+        bool sub=b->role=='S';
+        i32 size=big?36:18;
+        i32 avail=bw-50;
+        i32 letters=(avail/(big?19:10));
+        if(letters<12)letters=12;
+        i32 len=(i32)k_strlen(b->text);
+        i32 rows=len/letters+1;
+        if(rows>6)rows=6;
+        i32 height=big?(65+rows*43):(38+rows*30);
+        if(height<67)height=67;
+        if(top+height>=y+148&&top<bottom){
+            u32 fill=big?0xE9F1FCu:(sub?0xE8F6F4u:0xFFFFFFu);
+            gfx_round_rect(x+pad,top,bw,height,12,fill);
+            gfx_round_outline(x+pad,top,bw,height,12,0xD7E2EBu);
+            if(big)gfx_rect(x+pad+15,top+13,4,height-26,0x2281C9u);
+            if(b->role=='A')gfx_text(x+pad+bw-75,top+13,"LINK",0x1884A2u);
+            (void)native_paragraph(x+pad+29,top+15,bw-58,top+height-8,
+                                   b->text,big,black);
+        }
+        top+=height+12;
+        if(top>bottom+60)break;
+    }
+    gfx_round_rect(x+18,y+h-36,w-36,28,9,0xE6EDF4u);
+    gfx_text(x+33,y+h-28,"Reader mode: static document only | Up/Down scroll | F5 reload",
+             slate);
+}
 void falco_native_paint(i32 x,i32 y,i32 w,i32 h,i32 scroll,u32 frame){
     (void)frame;
     if(w<260||h<270)return;
+    if(loaded&&!contour_origin){
+        falco_generic_page(x,y,w,h,scroll);
+#ifdef FALCON_QEMU_BROWSER_TEST
+        outb(0xE9,'n');outb(0xE9,'G');
+#endif
+        return;
+    }
     /* Real native browser UI, with independent scrollable site surface. */
     contour_browser_chrome(x,y,w);
     i32 top=y+54,siteh=h-78;
