@@ -3301,11 +3301,8 @@ static void falco_search(void){
         /* Downloaded FAPP files stay INERT in FalconOS Downloads until the
          * user opens Files and double clicks them. No auto-execution. */
         i32 l=falco_query_len;
-        if(l>=8&&k_strcmp(falco_query+l-8,".app.pkg")==0){
+        if(l>=8&&k_strcmp(falco_query+l-8,".app.pkg")==0)
             falco_web_view=false;
-            if(k_strlen(browser_status)<sizeof falco_status)
-                k_strcpy(falco_status,browser_status);
-        }
         return;
     }
     if(!net_present()){
@@ -3771,6 +3768,15 @@ static void falco_navigate(const char *address,bool use_host){
     browser_address_focus=true;
     browser_host_gateway=use_host; /* F7: explicit local host-verified HTTPS. */
     browser_load();
+    /* Package download is not a website navigation. Reflect the result in
+     * Falco's status line and do not turn it into HTML or auto-run it. */
+    i32 navlen=k_strlen(browser_address);
+    if(navlen>=8&&k_strcmp(browser_address+navlen-8,".app.pkg")==0){
+        falco_web_view=false;
+        if(k_strlen(browser_status)<(i32)sizeof falco_status)
+            k_strcpy(falco_status,browser_status);
+        return;
+    }
     /* Source authenticity also means verifying the requested site's content.
      * A TLS-authenticated error page, access-denied screen, or GitHub README
      * must not be reported as the FalconOS landing page. No fabricated HTML.
