@@ -137,3 +137,43 @@ class GuestPublishingTests(unittest.TestCase):
                     bridge.validate_package(self.PKG,"hello-world")),
                 "app-hello-world-v2.0.0")
 
+
+
+class HardeningTests(unittest.TestCase):
+    def test_latest_static_version_selected_even_out_of_order(self):
+        import io,hashlib
+        def line(version):
+            return ("CAT|hello-world|"+version+"|Hello World|"
+                    +hashlib.sha256(version.encode()).hexdigest()
+                    +"|hello-world-v"+version+".app.pkg")
+        data=("FCAT/1\n"+line("1.10.0")+"\n"+line("1.2.0")+"\n").encode()
+        with mock.patch.object(bridge.urllib.request,"urlopen",return_value=io.BytesIO(data)):
+            result=bridge.static_catalog()
+        self.assertEqual(result["hello-world"]["version"],"1.10.0")
+
+    def test_missing_title_cannot_break_listing(self):
+        entry={"hello-world":{
+            "version":"1.0.0",
+            "asset":{"name":"hello-world-v1.0.0.app.pkg","browser_download_url":"https://example.com/app"},
+            "checksum_asset":{"browser_download_url":"https://example.com/sha"},
+            "release":{"name":None}}}
+        wire=FakeUART(["LIST"])
+        with mock.patch.object(bridge,"releases",return_value=entry),mock.patch.object(bridge.time,"sleep",return_value=None):
+            with self.assertRaises(ConnectionError):bridge.serve(wire)
+        self.assertIn("CAT|hello-world|1.0.0|hello-world",wire.outbound.decode())
+
+    def test_empty_checksum_does_not_raise_indexerror(self):
+        data=(b"FAPP/1\nid=hello-world\nname=Hello World\nversion=1.0.0\n"
+              b"summary=My example app\n\necho hello\n")
+        entry={"hello-world":{
+            "version":"1.0.0",
+            "asset":{"name":"hello-world-v1.0.0.app.pkg","browser_download_url":"https://example.com/app"},
+            "checksum_asset":{"browser_download_url":"https://example.com/sha"},
+            "release":{"name":"Hello World"}}}
+        wire=FakeUART(["GET|hello-world"])
+        with mock.patch.object(bridge,"releases",return_value=entry), \
+             mock.patch.object(bridge,"request_bytes",side_effect=lambda url:b"" if url.endswith("/sha") else data), \
+             mock.patch.object(bridge.time,"sleep",return_value=None):
+            with self.assertRaises(ConnectionError):bridge.serve(wire)
+        self.assertIn("ERR|download failed",wire.outbound.decode())
+
