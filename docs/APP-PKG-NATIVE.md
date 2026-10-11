@@ -11,8 +11,7 @@ FalconOS calls **.app.pkg** its own executable document type.
 3. Open **Files → Downloads**. The file has the `A` application marker.
 4. Double-click the file (two actual PS/2 clicks), or select and hit Enter.
 5. FalconOS validates `FAPP/1` metadata and the entire body against its
-   allowlisted commands **before** executing it. Valid scripts run in the
-   FalconOS Terminal; invalid files are rejected.
+   allowlisted commands **before** executing it. Valid scripts run in their **own native FalconOS application window**, with the real program's name, output and Close control; invalid files are rejected.
 
 Discover/Marketplace also downloads real GitHub Release `.app.pkg` assets,
 checks the publisher-provided SHA-256 against the bytes fetched, and creates a
@@ -41,8 +40,7 @@ uname
   Marketplace additionally authenticates its release digest. A downloaded
   file cannot directly execute arbitrary x86_64 ELF, Windows PE, or Linux
   executables. It cannot write privileged host files.
-- **Current limitation:** FAPP/1 programs are interpreted terminal scripts,
-  not native GUI programs or ABI-compatible Windows .exe. An isolated
+- **Current limitation:** FAPP/1 program commands are interpreted, and their output is presented inside a native FalconOS window; they are not isolated machine-code GUI processes or ABI-compatible Windows .exe. An isolated
   graphical application API and process sandbox are still in development.
 - **Offline:** existing Marketplace packages persist on the safe 0xFA
   FalconFS partition and are replayed in Downloads when installed packages
@@ -62,8 +60,7 @@ PATH="$PWD/.venv/bin:$PATH" make iso ENABLE_BEARSSL=1 ENABLE_BOOT_GLB=0   EXTRA_
 ```
 
 These tests use real QEMU and PS/2 inputs, fetch actual public GitHub Release
-bytes, verify digests, click the Files row twice and inspect the genuine guest
-Terminal. Testing separate input/keyboard layouts is important: a US RFB
+bytes, verify digests, click the Files row twice and inspect the real native FAPP application window. Testing separate input/keyboard layouts is important: a US RFB
 keyboard sending `/` to a guest configured as Turkish Q creates different
 physical scancodes. Choose matching layouts for reliable URL entry.
 
