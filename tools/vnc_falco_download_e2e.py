@@ -8,6 +8,7 @@ from pathlib import Path
 from vncdotool import api
 from vnc_real_input_audit import k,t,pause,shot
 import vnc_real_input_audit as v
+import vnc_app_pkg_doubleclick_e2e as pkg_input
 B=Path("build").absolute();B.mkdir(exist_ok=True)
 LOG=B/"falco-app-download-debug.log"
 REPORT=B/"falco-app-download-results.json"
@@ -74,6 +75,16 @@ def main():
             pause(1)
             shot(c,"FalconOS-Downloads-Real-Internet-AppPkg")
             RESULT["checks"].append("FalconOS Files showed the real .app.pkg internet download")
+            pkg_input.LOG=LOG
+            pkg_input.STATUS=RESULT
+            pkg_input.point(c,target=(1090,534))
+            at=len(data())
+            pkg_input.click(c);wait(b"dS",at,35);pause(.26)
+            pkg_input.click(c)
+            wait(b"dC",at,50);wait(b"dY",at,50);wait(b"zTn3",at,70)
+            pause(1.2)
+            shot(c,"FalconOS-Downloaded-AppPkg-DoubleClick-Running")
+            RESULT["checks"].append("Real internet-downloaded FAPP/1 executed via two native PS2 mouse clicks in its own window")
         RESULT["status"]="PASS"
     finally:
         if proc:
