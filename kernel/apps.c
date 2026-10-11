@@ -3578,7 +3578,13 @@ static void browser_page_from_http(void){
             if(c=='>'){intag=false;space=true;}
             continue;
         }
-        if(c=='\r'||c=='\n'||c=='\t'||c==' '){
+        /* Keep semantic block breaks supplied by the authenticated HTML
+         * reader: merging everything to spaces makes real pages unreadable. */
+        if(c=='\n'){
+            if(n>0&&browser_text[n-1]!='\n')browser_text[n++]='\n';
+            space=false;continue;
+        }
+        if(c=='\r'||c=='\t'||c==' '){
             space=true;continue;
         }
         if((u8)c<32u)continue; /* preserve UTF-8 letters; glyph renderer validates */
@@ -3589,7 +3595,7 @@ static void browser_page_from_http(void){
     browser_text[n]=0;
     browser_loaded=true;
     browser_scroll=0;
-    k_strcpy(browser_status,"TLS+hostname verified - bounded HTML text preview (may be partial)");
+    k_strcpy(browser_status,"TLS checked | structured HTML reader | text-only preview");
 }
 /* Direct HTTPS .app.pkg download. CA and redirect policy are checked by
  * the opt-in 18444 host HTTPS companion; the package is transferred through
@@ -3955,7 +3961,8 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             if(c=='\n'||col>=chars){
                 line[col]=0;
                 if(line_no>=browser_scroll){
-                    gfx_text(sx+18,py+14+row*19,line,PAL_TEXT);
+                    gfx_text(sx+18,py+14+row*19,line,
+                             line[0]=='#'?PAL_ACCENT:PAL_TEXT);
                     row++;
                 }
                 col=0;line_no++;
@@ -3964,7 +3971,8 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             if(col<126)line[col++]=c;
         }
         if(row<rows&&col&&line_no>=browser_scroll){
-            line[col]=0;gfx_text(sx+18,py+14+row*19,line,PAL_TEXT);
+            line[col]=0;gfx_text(sx+18,py+14+row*19,line,
+                                 line[0]=='#'?PAL_ACCENT:PAL_TEXT);
         }
     }
     gfx_text(wx+margin,wy+wh-26,
