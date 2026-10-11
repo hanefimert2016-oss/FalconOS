@@ -4290,6 +4290,7 @@ static void market_launch(i32 i)
     const char *script = market_script(i);
     if (!script) return;
     outb(0xE9, 'R'); /* QEMU integration event: installed script launched */
+    bool used_native=false;
     term_init();
     term_push("Marketplace: running verified FAPP/1 script");
     while (*script) {
@@ -4306,13 +4307,15 @@ static void market_launch(i32 i)
                 term_push("Marketplace: unsafe command rejected");
                 break;
             }
-            if(k_strcmp(line,"isostudio")==0)apps_open(ISO_STUDIO_APP_ID);
+            if(k_strcmp(line,"isostudio")==0){
+                apps_open(ISO_STUDIO_APP_ID);used_native=true;
+            }
             else sh_run_line(line);
         }
         script += n;
         if (*script == '\n') script++;
     }
-    apps_open(5); /* real Terminal output, no arbitrary ELF execution */
+    if(!used_native)apps_open(5); /* script output or ISO Studio native window */
 }
 /* File association for FalconOS .app.pkg documents: the entire package
  * must be validated BEFORE any line executes. This is NOT Windows EXE,
@@ -4358,6 +4361,7 @@ static void files_launch_pkg(const char *path){
     }
     k_strcpy(fapp_running_source,path);
     fapp_running_valid=true;
+    bool used_native=false;
     term_init();
     term_push("FAPP/1: sandboxed FalconOS application launched");
     while(*script){
@@ -4368,7 +4372,9 @@ static void files_launch_pkg(const char *path){
         }
         k_memcpy(line,script,(u32)used);line[used]=0;
         if(used&&line[0]!='#'){
-            if(k_strcmp(line,"isostudio")==0)apps_open(ISO_STUDIO_APP_ID);
+            if(k_strcmp(line,"isostudio")==0){
+                apps_open(ISO_STUDIO_APP_ID);used_native=true;
+            }
             else sh_run_line(line);
         }
         script+=used;
@@ -4378,7 +4384,8 @@ static void files_launch_pkg(const char *path){
 #ifdef FALCON_QEMU_UI_GALLERY
     outb(0xE9,'f');outb(0xE9,'R');
 #endif
-    apps_open(FAPP_RUNNER_APP_ID); /* native app window; real interpreter output */
+    if(!used_native)apps_open(FAPP_RUNNER_APP_ID);
+    /* native ISO Studio keeps focus when launched by .app.pkg */
 }
 static void market_input_key(i32 key)
 {
