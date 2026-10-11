@@ -31,8 +31,9 @@ static void falco_open_site_host(const char *address);
 static void chrome_input_key(i32 key);
 static void chrome_focus_url(void);
 static void falco_visual_open(bool reload);
+static void falco_visual_click(i32 x,i32 y);
 static bool falco_visual_loaded;
-static u8 falco_visual_pixels[320u*180u];
+static u8 falco_visual_pixels[4][320u*180u];
 static void render_browser(i32 x,i32 y,i32 w,i32 h,u32 frame);
 static void market_launch(i32 i);
 static i32 builtin_app_count(void);
@@ -3515,7 +3516,7 @@ static void browser_load(void){
 /* REAL HTML/CSS/JS via optional host Chromium; FalconOS remains a bare-metal
  * framebuffer client. Read-only screenshot; not a human identity attestation.
  * No Cloudflare/CAPTCHA automation, credentials or guest-side JS execution. */
-static void falco_visual_open(bool reload){
+static void falco_visual_request(const char *first_path){
     falco_visual_loaded=false;
     falco_web_view=true;
     browser_loaded=false;
@@ -3531,14 +3532,30 @@ static void falco_visual_open(bool reload){
         browser_dhcp_attempted=true;
         (void)net_dhcp();
     }
-    k_strcpy(browser_status,"Loading real Chromium site pixels from host...");
-    const char *path=reload?"/visual/reload/falconos.tech/":
-                           "/visual/falconos.tech/";
-    falco_visual_loaded=native_http_get_visual_port(
-        net_gateway(),18445u,path,falco_visual_pixels,sizeof falco_visual_pixels);
-    if(falco_visual_loaded)
+    k_strcpy(browser_status,"Chromium visual: receiving four verified pixel tiles...");
+    bool complete=true;
+    for(u32 i=0;i<4;i++){
+        const char *path=first_path;
+        char tile_path[32];
+        if(i){
+            char digit[12];k_itoa(i,digit,10);
+            k_strcpy(tile_path,"/visual/chunk/");
+            k_strcat(tile_path,digit);
+            path=tile_path;
+        }
+        if(!native_http_get_visual_port(net_gateway(),18445u,path,
+                                        falco_visual_pixels[i],
+                                        sizeof falco_visual_pixels[i])){
+            complete=false;break;
+        }
+#ifdef FALCON_QEMU_BROWSER_TEST
+        outb(0xE9,'v');outb(0xE9,(u8)('0'+i));
+#endif
+    }
+    falco_visual_loaded=complete;
+    if(complete)
         k_strcpy(browser_status,
-            "HOST CHROMIUM CSS/JS | site CA verified | NOT native / human ID");
+            "HOST CHROMIUM CSS/JS | real HTTPS | 640x360 | NOT native / human ID");
     else
         k_strcpy(browser_status,
             "Visual bridge unavailable / page unverified; start visual host");
@@ -3546,6 +3563,19 @@ finish:
 #ifdef FALCON_QEMU_BROWSER_TEST
     outb(0xE9,'v');outb(0xE9,falco_visual_loaded?'Y':'N');
 #endif
+}
+static void falco_visual_open(bool reload){
+    falco_visual_request(reload?"/visual/reload/falconos.tech/":
+                                "/visual/falconos.tech/");
+}
+static void falco_visual_click(i32 x,i32 y){
+    if(x<0||x>=640||y<0||y>=360)return;
+    char target[56],number[16];
+    k_strcpy(target,"/visual/click/");
+    k_itoa((u32)x,number,10);k_strcat(target,number);
+    k_strcat(target,"/");
+    k_itoa((u32)y,number,10);k_strcat(target,number);
+    falco_visual_request(target);
 }
 static void falco_navigate(const char *address,bool use_host){
     const char *prefix="https://";
@@ -3704,23 +3734,32 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_round_rect_a(sx,py,sw,height,10,PAL_PANEL,255);
     gfx_round_outline(sx,py,sw,height,10,PAL_HAIRLINE);
     if(falco_visual_loaded){
-        /* Real Chromium-paint RGB332, scaled to available FalconOS window.
-         * The bytes are a 320x180 screenshot of the actual HTTPS page, not
-         * HTML text or a fabricated painting of falconos.tech. */
-        i32 scale=(sw-40)/320;
-        i32 v=(height-22)/180;
+        /* Four 320x180 RGB332 quadrants from the SAME Chromium screenshot,
+         * composited into a genuine 640x360 visual page. */
+        i32 scale=(sw-40)/640;
+        i32 v=(height-22)/360;
         if(v<scale)scale=v;
         if(scale<1)scale=1;
-        if(scale>4)scale=4;
-        i32 ox=sx+(sw-320*scale)/2;
+        if(scale>2)scale=2;
+        i32 ox=sx+(sw-640*scale)/2;
         i32 oy=py+10;
-        for(i32 yy=0;yy<180;yy++)for(i32 xx=0;xx<320;xx++){
-            u8 rgb=falco_visual_pixels[yy*320+xx];
+        for(i32 yy=0;yy<360;yy++)for(i32 xx=0;xx<640;xx++){
+            u32 tile=(u32)(yy/180)*2u+(u32)(xx/320);
+            u32 index=(u32)(yy%180)*320u+(u32)(xx%320);
+            u8 rgb=falco_visual_pixels[tile][index];
             u32 red=((rgb>>5)&7u)*255u/7u;
             u32 grn=((rgb>>2)&7u)*255u/7u;
             u32 blu=(rgb&3u)*85u;
             gfx_rect(ox+xx*scale,oy+yy*scale,scale,scale,
                      (red<<16)|(grn<<8)|blu);
+        }
+        /* Only real PS/2 mouse clicks in the page are relayed. No scripted
+         * CAPTCHA solving and no background synthetic interaction. */
+        if(wm_click_enabled()&&mx>=ox&&mx<ox+640*scale &&
+           my>=oy&&my<oy+360*scale){
+            i32 page_x=(mx-ox)/scale,page_y=(my-oy)/scale;
+            (void)mouse_consume_click();
+            falco_visual_click(page_x,page_y);
         }
     }else if(!browser_loaded){
         gfx_text_lg(sx+20,py+26,"Falcon Browser",PAL_TEXT);
