@@ -3419,29 +3419,37 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         falco_native_paint(ox,oy,sw,sh,falco_native_scroll,frame);
         if(wm_click_enabled()){
             i32 mx,my;bool down;mouse_get(&mx,&my,&down);(void)down;
-            i32 nav=ox+sw/2-175,sy=oy+54;
+            i32 nav=ox+sw*54/100,sy=oy+54;
             i32 requested=-1;
+            /* The actual site's GitHub link opens through verified HTTPS
+             * in Falco's supported inert document reader. */
+            if(my>=sy+10&&my<sy+62 &&
+               mx>=ox+sw-216&&mx<ox+sw-47){
+                (void)mouse_consume_click();
+                falco_native_view=false;
+                falco_open_site_host("https://github.com/hanefimert2016-oss/FalconOS");
+                return;
+            }
             /* These are actual on-page anchors, not demo buttons:
              * mouse clicks navigate the page's own header and hero.
              * GitHub external navigation stays unavailable, as our HTML
              * engine does not implement arbitrary off-site links yet. */
             if(my>=sy+8&&my<sy+65){
-                if(mx>=nav&&mx<nav+123)requested=8;
-                else if(mx>=nav+131&&mx<nav+226)requested=16;
-                else if(mx>=nav+241&&mx<nav+338)requested=24;
-                else if(mx>=nav+339&&mx<nav+500)requested=30;
-                if(mx>=ox+35&&mx<ox+190)requested=0;
+                if(mx>=nav&&mx<nav+130)requested=8;
+                else if(mx>=nav+135&&mx<nav+238)requested=16;
+                else if(mx>=nav+249&&mx<nav+350)requested=24;
+                else if(mx>=nav+354&&mx<nav+508)requested=30;
+                if(mx>=ox+sw*13/100&&mx<ox+sw*13/100+200)requested=0;
             }
             if(falco_native_scroll<8){
                 i32 siteh=sh-78;
-                i32 header=sy+(siteh/5<125?125:siteh/5>240?240:siteh/5);
-                i32 leftw=sw*49/100-45;
-                i32 shift=leftw>690?89:55;
-                i32 buttons=header+60+shift*2+151;
-                i32 lx=ox+(sw/24<31?31:sw/24>82?82:sw/24);
-                if(my>=buttons&&my<buttons+56){
-                    if(mx>=lx&&mx<lx+215)requested=24;
-                    if(mx>=lx+249&&mx<lx+495)requested=8;
+                i32 lx=ox+sw*15/100;
+                i32 buttons;
+                if(sw>=2100&&siteh>=1080)buttons=sy+siteh*79/100;
+                else buttons=sy+siteh-111;
+                if(my>=buttons&&my<buttons+66){
+                    if(mx>=lx&&mx<lx+285)requested=24;
+                    if(mx>=lx+326&&mx<lx+650)requested=8;
                 }
             }
             if(requested>=0){
