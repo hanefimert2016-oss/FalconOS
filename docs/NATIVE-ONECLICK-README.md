@@ -13,9 +13,9 @@
 
 ## Running the downloaded AppImage
 
-Download `FalconOS-Native-Desktop-x86_64.AppImage` from the verified GitHub Actions artifact or release. On Arch Linux with QEMU and Python 3 already installed: mark the downloaded AppImage executable in your file manager if asked, then double-click it. The application opens the FalconOS desktop in QEMU; no manual terminal commands to boot the VM.
+Download `FalconOS-Native-Desktop-x86_64.AppImage` from the verified GitHub Actions artifact or release. On a regular Linux x86_64 desktop, download the single .AppImage from this GitHub Release. If your file manager requires the standard Linux executable/trust permission for newly downloaded files, enable it once in File Properties. Then double-click the AppImage to start FalconOS; QEMU, the required Python runtime and QEMU BIOS are included inside the AppImage. The application opens the FalconOS desktop in QEMU; no manual terminal commands to boot the VM.
 
-**System dependencies:** Linux x86_64, Python 3 and `qemu-system-x86_64` with GTK or SDL display backend. The first-run VM helpers use Python's standard library. Downloads from browsers may not retain the executable filesystem bit; this is an OS security requirement and cannot be circumvented by the package.
+**System requirements:** Linux x86_64, a working desktop display and compatible glibc. The downloadable AppImage includes its own QEMU, GTK GUI plugin, QEMU BIOS, Python 3.12 and required non-glibc shared libraries. Linux may still require approving execution of any downloaded AppImage; the package does not bypass this OS security setting. This is not a Windows .exe.
 
 Open **Falco**, press **F9** for the own native semantic visual engine. Go to **Settings → Wallpaper** to cycle through the four backgrounds.
 
@@ -44,3 +44,21 @@ Manrope is licensed under the SIL Open Font License 1.1. Its license and
 copyright notice can be found at
 https://github.com/google/fonts/blob/main/ofl/manrope/OFL.txt .
 Raw font files are not bundled: FalconOS's own kernel paints baked alpha glyphs.
+
+## Release qualification and limitations
+
+Falco reproduces the verified `falconos.tech` Contour landing page using the
+site's real CSS design tokens and our original native vector/software layout
+engine. F9 opens the page, keys 1–4 or the built-in navigation move between
+the hero, features, architecture and install sections. This **is not
+pixel-for-pixel full browser compatibility**: arbitrary CSS cascade, third-
+party sites, dynamic JS, authentication forms and Cloudflare human verification
+are not implemented. The source of the *text* is public live HTML, host CA TLS
+verified. No source HTML, user agent string or CSS substitute proves the
+user to be human.
+
+Release CI validates (1) passwordless auto-login; (2) password-protected lock;
+(3) no second user by default; (4) real Falco live site; (5) page section
+painting; (6) background settings and persistence over two boots;
+(7) the directly executed, self-contained AppImage's actual QEMU ISO boot;
+(8) QEMU GTK display under virtual X11, rather than only a headless service.
