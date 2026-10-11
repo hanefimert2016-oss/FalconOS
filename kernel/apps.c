@@ -4718,6 +4718,16 @@ static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         "Close this window with the X. This is FalconOS FAPP/1, not x86 ELF.",
         PAL_TEXT_DIM);
 }
+/* FAPP/2 keyboard accessibility: Enter activates the first real GUI button.
+ * Original FAPP/1 runner remains read-only. */
+static void fapp2_input_key(i32 key){
+    if(!fapp2_running)return;
+    if(key==KEY_ENTER || key==' '){
+        for(u32 i=0;i<fapp2_count();i++)if(fapp2_kind(i)==4){
+            fapp2_press(i);return;
+        }
+    }
+}
 static void icon_fapp_runner(i32 cx,i32 cy){
     gfx_round_rect(cx-16,cy-16,32,32,9,0x208D66u);
     gfx_round_outline(cx-16,cy-16,32,32,9,0x95F0CCu);
@@ -4758,7 +4768,7 @@ static app_def_t APPS[] = {
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
     { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
     { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
-    { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,NULL,icon_fapp_runner },
+    { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,fapp2_input_key,icon_fapp_runner },
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
