@@ -73,6 +73,18 @@ def main():
             off=len(data());k(c,"f7");wait(b"E",off,45)
             STATE["checks"].append("CodeDium exports two distinct files: installed .app.pkg and setup .setup.app.pkg")
             shot(c,"FalconOS-FScript-Editor")
+            open_app(c,"Files","zB")
+            k(c,"right");k(c,"right") # All -> Home -> Desktop
+            k(c,"f4");t(c,"setup");k(c,"f4") # match only .setup.app.pkg
+            pause(1.0)
+            shot(c,"FalconOS-Theme-FScript-Installer-File")
+            off=len(data());k(c,"enter");wait(b"zW",off,50)
+            pause(.7)
+            shot(c,"FalconOS-Theme-FScript-Setup-Wizard")
+            off=len(data());k(c,"enter");wait(b"iY",off,50)
+            STATE["checks"].append("Real .setup.app.pkg selected in Files and installed by native wizard into apps folder")
+            pause(.7)
+            shot(c,"FalconOS-Theme-FScript-Installed")
             STATE["status"]="PASS"
     finally:
         proc.terminate()
