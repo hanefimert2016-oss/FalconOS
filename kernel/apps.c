@@ -4877,7 +4877,7 @@ static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
  * connected AI) are deliberately absent rather than mislabeled as working.
  * USB UVC camera is not yet implemented and is never faked.
  */
-static const i32 LAUNCH_FAVORITES[] = {1,14,13,20,6,7,3,5,2,8};
+static const i32 LAUNCH_FAVORITES[] = {1,14,13,18,20,6,7,3,5,2,8};
 static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,18,5};
 static const i32 LAUNCH_ALL[] = {1,14,13,20,6,7,3,5,2,8,9,4,17,18};
 i32 apps_launcher_count(i32 group) {
