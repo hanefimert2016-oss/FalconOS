@@ -25,6 +25,37 @@ def announce(message):
         print("FalconOS:",message,file=sys.stderr)
 
 def main():
+    if len(sys.argv)>1 and sys.argv[1]=="--smoke-boot":
+        import tempfile
+        if QEMU is None or not ISO.is_file():
+            raise RuntimeError("Portable QEMU or ISO missing")
+        with tempfile.TemporaryDirectory(prefix="falconos-smoke-") as testdir:
+            proof=Path(testdir)/"qemu-debugcon.log"
+            command=[QEMU,"-accel","tcg","-m","768",
+                     "-cdrom",str(ISO),"-boot","d",
+                     "-display","none","-vga","std",
+                     "-netdev","user,id=net0","-device","rtl8139,netdev=net0",
+                     "-serial","none","-monitor","none",
+                     "-debugcon",f"file:{proof}",
+                     "-global","isa-debugcon.iobase=0xe9",
+                     "-no-reboot"]
+            firmware=os.environ.get("FALCON_QEMU_FIRMWARE")
+            if firmware:command += ["-L",firmware]
+            with subprocess.Popen(command,stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.PIPE) as guest:
+                try:
+                    for step in range(125):
+                        if proof.exists() and b"L" in proof.read_bytes():
+                            print("PASS: bundled QEMU firmware booted FalconOS ISO to actual installer")
+                            return 0
+                        if guest.poll() is not None:
+                            raise RuntimeError("Bundled QEMU terminated before installer")
+                        time.sleep(.2)
+                    raise RuntimeError("FalconOS boot marker timed out")
+                finally:
+                    guest.terminate()
+                    try:guest.wait(timeout=4)
+                    except subprocess.TimeoutExpired:guest.kill()
     if len(sys.argv)>1 and sys.argv[1]=="--check":
         expected=["FalconOS.iso","make_safe_disk.py","marketplace_bridge.py",
                   "falcon_https_gateway.py","falco_native_gateway.py"]
