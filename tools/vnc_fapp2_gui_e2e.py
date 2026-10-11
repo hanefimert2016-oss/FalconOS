@@ -125,7 +125,7 @@ def main():
                 off=len(data())
                 c.mouseDown(1);pause(.35);c.mouseUp(1)
                 wait(b"f1",off,40)
-                STATE["steps"].append("Real mouse single-click selected the .app.pkg file")
+                STATE["checks"].append("Real mouse single-click selected the .app.pkg file")
                 pause(.25)
                 off=len(data())
                 c.mouseDown(1);pause(.35);c.mouseUp(1)
