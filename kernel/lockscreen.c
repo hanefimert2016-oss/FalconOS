@@ -59,6 +59,24 @@ static bool buf_append_key(char *buf, i32 *len, i32 cap, i32 key)
 }
 
 bool lockscreen_is_unlocked(void) { return g_unlocked; }
+/* Auto-login is allowed ONLY for an explicitly passwordless default user.
+ * It runs once during cold-boot handoff; manual Lock never silently unlocks.
+ * All password-protected accounts still require interactive PBKDF2 checking. */
+void lockscreen_boot_autologin(void){
+    if(SET.default_user<0 || SET.default_user>=FALCON_MAX_USERS)return;
+    const falcon_user_t *u=&SET.users[SET.default_user];
+    if(!u->in_use || !u->no_password)return;
+    if(!users_verify(SET.default_user,""))return;
+    SET.active_user=SET.default_user;
+    g_user_cursor=SET.default_user;
+    g_unlocked=true;
+    g_input_len=0;
+    k_explicit_bzero(g_input,sizeof g_input);
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'a');outb(0xE9,'U');
+#endif
+}
+
 
 static void ensure_cursor_valid(void)
 {
@@ -157,18 +175,24 @@ void lockscreen_render(u32 frame)
     }
     ensure_cursor_valid();
 
-    gfx_gradient_v(0xD9EBFFu,0x8EB8E8u);
+    /* Same user-selected native wallpaper as the desktop. Frosted lock UI
+     * uses native framebuffer geometry, not pixel-stretched screenshots. */
+    gfx_wallpaper();
     i32 W=(i32)FB.width,H=(i32)FB.height;
     i32 cx=W/2,cy=H/2;
-    gfx_round_rect_a(W/7,H/4,160,55,22,0xEAF4FFu,42);
-    gfx_round_rect_a(W*3/4,H*3/4,160,55,22,0x286FE8u,32);
-    gfx_round_rect_a(cx-296,cy-153,592,373,28,
-        SET.theme==THEME_DARK?0x253753u:0xFAFCFFu,229);
-    gfx_round_outline(cx-296,cy-153,592,373,28,
-        SET.theme==THEME_DARK?0x6580AEu:0xDBE9FAu);
-    gfx_round_rect(cx-265,cy-133,30,30,10,0x3478EAu);
-    gfx_text_centered(cx-250,cy-126,"F",0xFFFFFFu);
-    gfx_text(cx-220,cy-126,"FalconOS  /  Sign in",PAL_TEXT_DIM);
+    bool dark=SET.wallpaper_style==1;
+    u32 title_ink=dark?0xF7FAFFu:0x163151u;
+    u32 hint_ink=dark?0xD2E2F7u:0x385779u;
+    gfx_round_rect_a(0,0,W,H,0,0x071631u,dark?80:26);
+    gfx_round_rect_a(cx-306,cy-148,612,378,30,0xFFFFFFu,232);
+    gfx_round_outline(cx-306,cy-148,612,378,30,0xBED7F1u);
+    gfx_round_rect_a(cx-64,cy-321,128,38,17,0x112D54u,216);
+    gfx_text_centered(cx,cy-310,"FALCON  /  OS",0xFFFFFFu);
+    gfx_circle_a(cx,cy-106,47,0x357BF0u,48);
+    gfx_circle(cx,cy-106,34,0x337EEDu);
+    gfx_text_lg_centered(cx,cy-122,"F",0xFFFFFFu);
+    gfx_text_centered(cx,cy-147,"PRIVATE WORKSPACE",title_ink);
+    gfx_text_centered(cx,cy+204,"Your session. Your desktop.",hint_ink);
 
     /* ---- live clock + "welcome back" line ------------------------------- */
     {
@@ -184,12 +208,12 @@ void lockscreen_render(u32 frame)
         k_strcat(clk, tmp);
         /* Big crisp clock + small helper text; gives the lockscreen a
          * proper macOS-style headline rather than a tiny terminal time. */
-        gfx_text_lg_centered(cx, cy - 245, clk, PAL_TEXT);
+        gfx_text_lg_centered(cx, cy - 272, clk, title_ink);
         /* date below the clock, locale-formatted */
         char date_buf[16];
         loc_format_date(date_buf, &now);
-        gfx_text_centered(cx, cy - 215, date_buf, PAL_TEXT_DIM);
-        gfx_text_centered   (cx, cy - 195,
+        gfx_text_centered(cx, cy - 239, date_buf, hint_ink);
+        gfx_text_centered   (cx, cy - 214,
                             TX("Welcome back",
                                "Tekrar hoşgeldin",
                                "Willkommen zuruck",
