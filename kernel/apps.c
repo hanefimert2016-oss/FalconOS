@@ -466,7 +466,7 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
        c->my>=y && c->my<y+34){
         u32 now=pit_ms();
         c->activate=selected && now>=files_previous_click_ms &&
-                    now-files_previous_click_ms<=700u;
+                    now-files_previous_click_ms<=1600u;
         k_strcpy(files_selected_path,path);
         files_previous_click_ms=now;
         k_strcpy(c->chosen_path,path);
