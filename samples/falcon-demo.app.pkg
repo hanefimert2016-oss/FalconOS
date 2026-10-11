@@ -1,0 +1,13 @@
+FAPP/1
+id=falcon-demo
+name=FalconOS Demo
+version=1.0.0
+summary=Native FalconOS application package
+
+# app-id: falcon-demo
+# app-name: FalconOS Demo
+# app-version: 1.0.0
+# app-summary: Created for FalconOS
+clear
+echo Hello from my FalconOS app.pkg
+uname
