@@ -472,6 +472,9 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
         k_strcpy(files_selected_path,path);
         files_previous_click_ms=now;
         k_strcpy(c->chosen_path,path);
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'d');outb(0xE9,'S');
+#endif
         c->clicked=false;
     }
     gfx_round_rect(c->x+9,y+7,24,20,6,
