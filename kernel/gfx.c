@@ -32,6 +32,22 @@ static u32 BACK[BACK_W * BACK_H];
 
 u32 gfx_back_w(void) { return BACK_W; }
 u32 gfx_back_h(void) { return BACK_H; }
+/* Real-time OBS-style preview of the COMPLETE frame just rendered by
+ * FalconOS, downsampled without a browser screenshot, host GPU or QEMU
+ * fake canvas. Exactly the same software pixels gfx_present() outputs. */
+void gfx_capture_thumbnail(u32 *pixels,u32 w,u32 h){
+    if(!pixels||!w||!h||w>320||h>240)return;
+    for(u32 y=0;y<h;y++){
+        u32 sy=(u32)(((u64)y*BACK_H)/h);
+        if(sy>=BACK_H)sy=BACK_H-1;
+        for(u32 x=0;x<w;x++){
+            u32 sx=(u32)(((u64)x*BACK_W)/w);
+            if(sx>=BACK_W)sx=BACK_W-1;
+            pixels[y*w+x]=BACK[sy*BACK_W+sx];
+        }
+    }
+}
+
 
 void gfx_init(void *p, u32 w, u32 h, u32 pitch, u8 bpp)
 {
