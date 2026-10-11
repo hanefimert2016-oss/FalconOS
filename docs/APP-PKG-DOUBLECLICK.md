@@ -3,8 +3,8 @@
 FalconOS **içinde** indirilen bir `.app.pkg` dosyasına iki kez
 tıklanınca, işletim sistemi bunu gerçek dosya yöneticisinden
 `FAPP/1` olarak doğrular ve yalnızca izin verilen uygulama komutlarını
-kendi yerel yorumlayıcısıyla çalıştırır. Sonuç FalconOS Terminal
-penceresinde görünür. `.exe`, ELF veya Linux programı çalıştırıldığı
+kendi yerel yorumlayıcısıyla çalıştırır. Sonuç ayrı bir FalconOS uygulama penceresinde görünür; uygulamanın kendi adı,
+çıktısı ve pencereyi kapatma düğmesi vardır. `.exe`, ELF veya Linux programı çalıştırıldığı
 iddia edilmez.
 
 ## Gerçek kullanım
@@ -18,7 +18,7 @@ iddia edilmez.
    gelen dosya doğrulandıktan sonra `/home/falcon/Downloads` içine
    kaydedilir. İndirme sırasında **çalıştırılmaz**.
 3. **Dosyalar → Downloads** bölümünde dosyaya iki kez tıkla.
-   İlgili paket yerel FalconOS Terminal'de açılır.
+   İlgili paket kendi FalconOS uygulama penceresinde açılır.
    Tek tık yalnızca seçer. Klavyede seçili dosya + Enter da açar.
 
 ## Desteklenen .app.pkg biçimi
@@ -43,7 +43,7 @@ doğrulaması yalnızca bozuk/engellenmiş sözdizimini reddeder.
 
 ## Sınırlar
 
-Bu sürümde FAPP/1 yorumlanan konsol uygulamasıdır. Tümüyle yerel
+Bu sürümde FAPP/1, komutları yorumlanan ve çıktısı FalconOS'un kendi uygulama penceresinde gösterilen program biçimidir. Tümüyle yerel
 makine kodu / GUI süreçleri, `ring3` uygulama izolasyonu ve keyfi ELF
 çalıştırma henüz sunulmamaktadır. Uzantıyı yeniden adlandırmak
 kontrolleri geçirmez. Host TLS yardımcısı da Chromium değildir; Python
