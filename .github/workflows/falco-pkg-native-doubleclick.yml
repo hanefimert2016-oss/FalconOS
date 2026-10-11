@@ -96,6 +96,8 @@ jobs:
             > release/SHA256SUMS.txt
           ls -lh release/FalconOS.iso release/hello-world-v1.0.0.app.pkg
       - name: Publish FalconOS native executable package release WITHOUT AppImage
+        id: publish
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -122,3 +124,8 @@ jobs:
               --title "FalconOS native .app.pkg launch preview — no AppImage" \
               --notes "Inside FalconOS, download a real .app.pkg through Falco or Discover, open Files → Downloads, and double-click the app to launch its own FAPP Runner window. Tested on real QEMU native mouse/keyboard using real GitHub Releases bytes and SHA-256. FalconOS itself runs from the bootable ISO; do not download a Linux AppImage. FAPP/1 is currently a bounded allowlisted script application format, not an x86 machine-code EXE. Falco Contour is site-specific software rendered; not a general HTML/CSS/JS browser. No Chromium."
           fi
+      - name: Explain missing GitHub release permission without hiding tested artifacts
+        if: steps.publish.outcome == 'failure'
+        run: |
+          echo "::warning::GitHub Actions token cannot create releases here (HTTP 403)."
+          echo "::warning::The verified ISO and real .app.pkg test screenshots remain downloadable from this run's Artifacts. Enable Settings > Actions > General > Workflow permissions > Read and write permissions, or publish the release manually."
