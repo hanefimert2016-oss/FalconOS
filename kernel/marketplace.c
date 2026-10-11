@@ -70,6 +70,26 @@ static bool app_meta(const char *p, const char *id) {
     if (k_strncmp(beg, id, len) != 0 || beg[len] != '\n') return false;
     return true;
 }
+/* Every verified release is also presented as a normal downloadable
+ * FalconOS executable document: /downloads/ID.app.pkg. The legacy
+ * /home/falcon/apps/ID.pkg Marketplace cache remains unmodified for
+ * compatibility with earlier system disks. Internet-origin packages are
+ * never executed during download, only after explicit double-click. */
+static void save_download_alias(const char *id,const char *bytes,u32 length){
+    if(!id || !bytes || length<70u || length>=SHFS_FBYTES)return;
+    char path[SHFS_PATH]="/downloads/";
+    k_strcat(path,id);k_strcat(path,".app.pkg");
+    if(k_strlen(path)>=SHFS_PATH)return;
+    (void)shfs_mkdir_abs("/downloads");
+    shfs_ent_t *f=shfs_open_w_abs(path,false);
+    if(f){
+        k_memcpy(f->data,bytes,length);
+        f->data[length]=0;f->len=length;
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'d');outb(0xE9,'D'); /* verified download now in Files */
+#endif
+    }
+}
 static bool check_package(void) {
     if (rx_used != rx_expected || !app_meta(rx_data, rx_id)) return false;
     for (i32 i = 0; i < rx_used; i++) if (rx_data[i] == 0) return false;
@@ -200,6 +220,7 @@ static void on_line(char *line) {
                 k_memcpy(file->data, rx_data, rx_used);
                 file->data[rx_used] = 0;
                 file->len = rx_used;
+                save_download_alias(rx_id,rx_data,(u32)rx_used);
                 status_text = market_disk_save(rx_id, rx_data, rx_used)
                     ? "Verified app installed to safe disk"
                     : "Verified app installed to RAM (secure session)";
@@ -397,6 +418,7 @@ static bool direct_https_download(i32 i){
     shfs_ent_t *file=shfs_open_w_abs(path,false);
     if(!file)return false;
     k_memcpy(file->data,rx_data,n);file->data[n]=0;file->len=n;
+    save_download_alias(app->id,rx_data,n);
     bool saved=market_disk_save(app->id,rx_data,n);
     status_text=saved ? "HTTPS verified: app saved to disk" :
                         "HTTPS verified: installed to RAM only";
