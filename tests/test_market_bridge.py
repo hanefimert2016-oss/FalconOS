@@ -63,6 +63,8 @@ class VersionSelectionTests(unittest.TestCase):
 
 
 class FakeUART:
+    def settimeout(self,seconds):
+        self.timeout=seconds
     def __init__(self,lines):
         self.inbound=bytearray(("\n".join(lines)+"\n").encode("ascii"))
         self.outbound=bytearray()
