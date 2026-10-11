@@ -78,7 +78,7 @@ def main():
                 mark=len(data());k(c,"enter")
                 wait(b"aU",mark,65);wait(b"H",mark,70)
                 k(c,"esc");pause(.35)
-                k(c,"f2");t(c,"Codedium")
+                k(c,"f2");k(c,"tab");t(c,"Codedium") # Codedium is in System, not Essentials
                 mark=len(data());k(c,"enter");wait(b"zSn1",mark,70)
                 mark=len(data());k(c,"f7");wait(b"E",mark,45)
                 STATUS["tests"].append("Real Codedium exported native FAPP/1 Desktop/code.app.pkg")
@@ -94,8 +94,8 @@ def main():
                 click(c)
                 wait(b"dC",mark,45)
                 wait(b"dY",mark,60)
-                wait(b"zFn3",mark,55)
-                STATUS["tests"].append("Two real PS2 mouse clicks on selected .app.pkg launched Terminal")
+                wait(b"zTn3",mark,55)
+                STATUS["tests"].append("Two real PS2 mouse clicks on selected .app.pkg launched a dedicated FalconOS application window")
                 pause(1.1)
                 shot(c,"FalconOS-APP-PKG-DoubleClick-Running")
                 STATUS["status"]="PASS"
