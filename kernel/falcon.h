@@ -576,6 +576,7 @@ void diskdb_load(void);          /* searches only valid FalconOS partitions */
 bool diskdb_save(void);          /* refuses to write unpartitioned disks    */
 bool diskdb_present(void);       /* true if valid saved settings were read  */
 bool diskdb_target_available(i32 disk); /* true for a safe MBR target */
+i32 diskdb_companion_target(void); /* auto-select ONLY stamped VM-only virtual disks */
 bool diskdb_store_io(u32 rel_sector, u8 *buffer, u32 sectors, bool write);
 /* App payload slots, reserved after the settings superblock. */
 void market_disk_restore(void);
