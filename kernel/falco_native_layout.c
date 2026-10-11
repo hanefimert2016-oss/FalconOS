@@ -160,153 +160,178 @@ static void contour_falcon_icon(i32 x,i32 y,i32 size,u32 color){
     gfx_line(x+size/2,y+size/2,x+size/3,y+size-size/8,color);
 }
 static void contour_browser_chrome(i32 x,i32 y,i32 w){
-    contour_round(x,y,w,54,14,0x17242Cu);
-    contour_round(x+15,y+13,145,34,10,0x24353Du);
-    gfx_circle(x+28,y+30,6,C_MINT);
-    contour_label(x+45,y+18,"Falco",C_WHITE);
-    gfx_text(x+174,y+18,"<   >",0xA0B8BBu);
-    contour_round(x+251,y+11,w-430,33,10,0x0F1B23u);
-    gfx_circle(x+266,y+26,5,C_MINT);
-    contour_label(x+282,y+16,"https://falconos.tech/",0xBDCFD0u);
-    contour_label(x+w-159,y+18,"TLS 1.2  |  F5",0x8CB0AFu);
+    contour_round(x,y,w,53,13,0x14213Au);
+    contour_round(x+15,y+9,171,42,11,0x243651u);
+    gfx_circle(x+34,y+29,6,0x75A7FFu);
+    contour_label(x+52,y+17,"Falco",C_WHITE);
+    gfx_text(x+202,y+19,"<   >",0x91A8C6u);
+    i32 addrw=w-650;
+    if(addrw<140)addrw=140;
+    contour_round(x+280,y+10,addrw,36,11,0x091529u);
+    gfx_circle(x+299,y+28,5,0x68DAB1u);
+    contour_label(x+317,y+17,"https://falconos.tech/",0xC8D8F5u);
+    contour_round(x+w-352,y+11,335,33,12,0x1C2F4Au);
+    contour_label(x+w-335,y+17,"HTTPS  /  Host CA verified",0x95BADFu);
 }
 static void contour_site_nav(i32 x,i32 y,i32 w){
-    contour_falcon_icon(x+35,y+19,25,C_MINT);
-    contour_label(x+74,y+21,"FalconOS",C_WHITE);
-    i32 nav=x+w/2-175;
+    /* Independent reference viewport: centred 1150px site composition, not
+     * edge-to-edge fake navigation pinned to the application's left edge. */
+    i32 margin=clamp_(w*13/100,22,380);
+    contour_falcon_icon(x+margin,y+21,28,0x91BBFFu);
+    contour_label(x+margin+41,y+20,"FalconOS",C_WHITE);
+    i32 nav=x+w*54/100;
     if(w>1000){
-        contour_label(nav,y+22,"Özellikler",C_WHITE);
-        contour_label(nav+131,y+22,"Mimari",C_WHITE);
-        contour_label(nav+241,y+22,"Kurulum",C_WHITE);
-        contour_label(nav+339,y+22,"Yol haritası",C_WHITE);
+        contour_label(nav,y+22,"Özellikler",0xC4D1E4u);
+        contour_label(nav+135,y+22,"Mimari",0xC4D1E4u);
+        contour_label(nav+249,y+22,"Kurulum",0xC4D1E4u);
+        contour_label(nav+354,y+22,"Yol haritası",0xC4D1E4u);
+        contour_label(nav+525,y+22,"TR  EN",0xD5E6FFu);
     }
-    contour_round(x+w-155,y+12,128,39,13,0x163D3Bu);
-    contour_label(x+w-136,y+17,"GitHub",C_MINT);
+    contour_round(x+w-216,y+10,169,48,24,0x253B5Bu);
+    gfx_round_outline(x+w-216,y+10,169,48,24,0x5D7698u);
+    contour_label(x+w-170,y+21,"GitHub",C_WHITE);
 }
 static void contour_mock_browser(i32 x,i32 y,i32 w,i32 h){
-    contour_round(x,y,w,h,19,0x122D32u);
-    gfx_round_outline(x,y,w,h,19,0x3D6065u);
-    contour_round(x+1,y+1,w-2,35,13,0x091820u);
-    contour_label(x+21,y+7,"FalconOS",C_WHITE);
-    gfx_circle(x+w/2,y+18,4,C_MINT);
-    gfx_circle(x+w/2+11,y+18,3,0x80999Au);
-    gfx_circle(x+w/2+22,y+18,3,0x80999Au);
-    contour_label(x+w-105,y+7,"09:41",0xCADADBu);
-    i32 bx=x+w/9,by=y+53,bw=w*72/100,bh=h*69/100;
-    contour_round(bx,by,bw,bh,11,0xEDF1EEu);
-    gfx_round_outline(bx,by,bw,bh,11,0xDCE4DEu);
-    contour_round(bx+1,by+1,bw-2,24,9,0xDFE5E1u);
-    gfx_circle(bx+18,by+14,5,0xFF6059u);
-    gfx_circle(bx+33,by+14,5,0xFFBD44u);
-    gfx_circle(bx+48,by+14,5,0x00CA4Eu);
-    gfx_text_centered(bx+bw/2,by+7,"Falco",0x516166u);
-    contour_round(bx+1,by+25,bw-2,32,0,0xF7F8F7u);
-    gfx_text(bx+17,by+34,"<   >",0x627477u);
-    contour_round(bx+76,by+31,bw-131,21,9,0xE7ECE9u);
-    gfx_text(bx+89,by+33,"falcon://home",0x516166u);
-    i32 mx=bx+bw/2,my=by+80;
-    contour_round(mx-18,my,36,36,10,0x092328u);
-    contour_medium(mx-12,my+2,"F",C_MINT);
-    gfx_text_centered(mx,my+46,"Merhaba, pilot.",0x1D3435u);
-    i32 sw=bw*75/100;
-    contour_round(mx-sw/2,my+76,sw,31,7,0xFFFFFFu);
-    gfx_round_outline(mx-sw/2,my+76,sw,31,7,0xCDD7D1u);
-    gfx_text(mx-sw/2+12,my+85,"Web'de ara veya adres gir  > ",0x627A75u);
+    /* Site's own decorative Falco desktop mock-up, not the actual browser.
+     * Rendered from FalconOS vector primitives and AA Manrope glyph atlas. */
+    contour_round(x+8,y+10,w,h,26,0x142850u);
+    contour_round(x,y,w,h-6,27,0x172B58u);
+    gfx_round_outline(x,y,w,h-6,27,0x486899u);
+    contour_round(x+1,y+1,w-2,56,19,0x111B37u);
+    gfx_circle(x+26,y+29,4,0xA8C8FFu);
+    gfx_text(x+42,y+20,"FalconOS",0xF0F4FFu);
+    for(i32 d=0;d<3;d++)gfx_circle(x+w/2+d*17,y+27,5,d==0?0x85AFFFu:0x64799Du);
+    contour_label(x+w-115,y+19,"09:41",0xC5D4E9u);
+
+    i32 bx=x+w*6/100,by=y+104,bw=w*72/100,bh=h*62/100;
+    contour_round(bx,by,bw,bh,16,0xF7FAF8u);
+    gfx_round_outline(bx,by,bw,bh,16,0xD4DEE5u);
+    contour_round(bx+1,by+1,bw-2,33,12,0xE7EFEEu);
+    gfx_circle(bx+20,by+17,5,0xFF6059u);
+    gfx_circle(bx+37,by+17,5,0xFFBD44u);
+    gfx_circle(bx+54,by+17,5,0x00CA4Eu);
+    gfx_text_centered(bx+bw/2,by+12,"Falco",0x395060u);
+    contour_round(bx+1,by+35,bw-2,45,3,0xFFFFFFu);
+    gfx_text(bx+22,by+48,"<   >",0x7B8D9Bu);
+    contour_round(bx+97,by+42,bw-157,29,14,0xEBF1EFu);
+    gfx_text(bx+115,by+50,"falcon://home",0x657A78u);
+    i32 mx=bx+bw/2,my=by+131;
+    contour_round(mx-27,my,54,54,13,0x0C2530u);
+    contour_medium(mx-15,my+7,"F",0x91BCFFu);
+    contour_label(mx-92,my+70,"Merhaba, pilot.",0x173844u);
+    i32 sw=bw*78/100;
+    contour_round(mx-sw/2,my+115,sw,48,11,0xFFFFFFu);
+    gfx_round_outline(mx-sw/2,my+115,sw,48,11,0xD1DDDFu);
+    gfx_text(mx-sw/2+18,my+130,"Web'de ara veya adres gir",0x80919Au);
     for(i32 n=0;n<3;n++){
-        i32 cw=(sw-12)/3;
-        i32 cx=mx-sw/2+n*(cw+6);
-        contour_round(cx,my+123,cw,53,9,0xF5F7F5u);
-        gfx_round_outline(cx,my+123,cw,53,9,0xDAE1DEu);
-        gfx_text_centered(cx+cw/2,my+139,n==0?"Terminal":(n==1?"Updates":"Dosyalar"),0x2F5151u);
+        i32 cw=(sw-18)/3;
+        i32 cx=mx-sw/2+n*(cw+9);
+        contour_round(cx,my+180,cw,75,12,0xF9FBFBu);
+        gfx_round_outline(cx,my+180,cw,75,12,0xDDE5E8u);
+        gfx_circle(cx+cw/2,my+201,5,0x70A5DAu);
+        gfx_text_centered(cx+cw/2,my+229,n==0?"Terminal":(n==1?"Güncellemeler":"Dosyalar"),0x3B5967u);
     }
-    /* System status pill / dock overlay from actual CSS desktop mock-up */
-    contour_round(x+w*52/100,y+h*73/100,w*44/100,58,13,0xF3F6F2u);
-    gfx_circle(x+w*57/100,y+h*73/100+29,13,0xCDF5DFu);
-    gfx_text(x+w*57/100+27,y+h*73/100+11,"Secure connection",0x102E2Fu);
-    gfx_text(x+w*57/100+27,y+h*73/100+31,"BearSSL - TLS 1.2",0x617B77u);
-    contour_round(x+w/4,y+h-45,w/2,36,13,0x112F35u);
+    /* Same floating status and bottom dock layering as public HTML.
+     * These are content of the site's illustration, NOT Falco security UI. */
+    contour_round(x+w*70/100,y+h*44/100,w*28/100,82,18,0x11233Du);
+    gfx_round_outline(x+w*70/100,y+h*44/100,w*28/100,82,18,0x344F70u);
+    gfx_circle(x+w*73/100,y+h*44/100+41,11,0x467C97u);
+    gfx_text(x+w*75/100,y+h*44/100+21,"Secure connection",0xE1E9F1u);
+    gfx_text(x+w*75/100,y+h*44/100+46,"BearSSL  -  TLS 1.2",0xA8B7C9u);
+    contour_round(x+w*34/100,y+h-86,w*32/100,65,21,0x0E203Cu);
     for(i32 j=0;j<5;j++){
-        contour_round(x+w/4+14+j*(w/2-25)/5,y+h-39,27,25,7,
-                      j==1?C_MINT:0x38585Du);
+        i32 ix=x+w*34/100+15+j*(w*32/100-23)/5;
+        contour_round(ix,y+h-74,47,43,12,j==1?0xD9F3E8u:0x273B59u);
+        gfx_text_centered(ix+24,y+h-58,j==1?"F":(j==2?">":"*"),
+                          j==1?0x153D47u:0xBDD1E7u);
     }
 }
 static void contour_hero(i32 x,i32 y,i32 w,i32 h){
-    gfx_rect(x,y,w,h,C_BG);
-    /* Site real CSS design token colors: #050d13 -> #08161d -> #0c2328.
-     * Two soft transparent glows and an 80px graticule are native graphics. */
-    for(i32 i=0;i<min_(w,h);i+=80){
-        (void)i; /* The grid is drawn with fixed low alpha lines below. */
+    /* Rebuilt from the real 1600x900 site reference: deep blue hero, centred
+     * content width, a 4-row Manrope display headline and outlined second
+     * half. Browser engine stays 100% FalconOS-owned software framebuffer. */
+    gfx_rect(x,y,w,h,0x071329u);
+    gfx_rect_a(x,y,w,h/2,0x111D43u,45);
+    gfx_rect_a(x,y+h/2,w,h/2,0x0A2255u,48);
+    i32 halo=min_(w/6,h/3);
+    if(halo>120){
+        gfx_circle_a(x+w*73/100,y+h*41/100,halo,0x244C9Fu,44);
+        gfx_circle_a(x+w*21/100,y+h*91/100,halo,0x17458Cu,35);
     }
-    for(i32 xx=0;xx<w;xx+=80)
-        gfx_rect_a(x+xx,y,1,h,0xA7DAD6u,6);
-    for(i32 yy=0;yy<h;yy+=80)
-        gfx_rect_a(x,y+yy,w,1,0xA7DAD6u,6);
-    i32 halo=min_(w/7,h/4);
-    if(halo>75){
-        gfx_circle_a(x+w*76/100,y+h*37/100,halo,0x193D46u,46);
-        gfx_circle_a(x+w*22/100,y+h*76/100,halo,0x1D5C5Fu,36);
-    }
+    for(i32 xx=0;xx<w;xx+=128)gfx_rect_a(x+xx,y,1,h,0x6B9DC8u,7);
+    for(i32 yy=0;yy<h;yy+=128)gfx_rect_a(x,y+yy,w,1,0x6B9DC8u,7);
     contour_site_nav(x,y,w);
-    i32 left=x+clamp_(w/24,31,82);
-    i32 top=y+clamp_(h/5,125,240);
-    gfx_circle(left+5,top+12,5,C_MINT);
-    contour_label(left+23,top,"AÇIK KAYNAK  ·  BARE-METAL  ·  X86_64",0x8FE6C5u);
-    i32 leftw=w*49/100-45;
-    /* The live document must contain the actual headline. We don't display
-     * an invented copy if the upstream HTML changes or is challenged. */
+    i32 left=x+w*15/100;
+    i32 leftw=w*33/100;
+    i32 eyebrow=y+clamp_(h*16/100,106,202);
+    gfx_circle(left+6,eyebrow+12,6,0x77EDB7u);
+    contour_label(left+24,eyebrow,"AÇIK KAYNAK  ·  BARE-METAL  ·  X86_64",0xAAC5E3u);
     if(!contour_hero_headline_present())return;
-    const char *first="Sadece çalışmaz.";
-    const char *second="Uçmak için doğdu.";
-    i32 big=leftw>690?70:36;
-    i32 shift=big==70?89:55;
-    gfx_contour_text(left,top+49,first,big,C_WHITE);
-    gfx_contour_text(left,top+49+shift,second,big,0xA3CFC9u);
-    const char *description=real_hero_lede();
-    if(description){
-        /* Live verified page prose; line-break with proportional metrics. */
-        i32 py=top+60+shift*2;
-        char line[110];i32 written=0,pos=0;
-        i32 chars=k_strlen(description);
-        for(i32 row=0;row<4 && pos<chars;row++){
-            written=0;
-            while(pos<chars&&written<109){
-                while(description[pos]==' ')pos++;
-                i32 st=pos;
-                while(pos<chars&&description[pos]!=' ')pos++;
-                i32 n=pos-st;
-                if(written && gfx_contour_text_width(line,18)+n*10>leftw-32){
-                    pos=st;break;
+    bool expansive=w>=2100&&h>=1080;
+    if(expansive){
+        /* 2x Manrope atlas and native stroke approximate CSS font-size
+         * 105.6px with 800 weight at the independently measured site scale. */
+        i32 head=y+clamp_(h*22/100,190,288);
+        gfx_contour_text_styled(left,head,"Sadece",70,2,false,0xF1F8FAu);
+        gfx_contour_text_styled(left,head+139,"çalışmaz.",70,2,false,0xF1F8FAu);
+        gfx_contour_text_styled(left,head+278,"Uçmak için",70,2,true,0x9BC1E5u);
+        gfx_contour_text_styled(left,head+417,"doğdu.",70,2,true,0x9BC1E5u);
+        i32 description_y=head+575;
+        const char *desc=real_hero_lede();
+        if(desc){
+            /* Structured wrapping uses live authenticated upstream prose. */
+            char line[100];i32 i=0,n=(i32)k_strlen(desc);
+            for(i32 row=0;row<3&&i<n;row++){
+                i32 used=0;
+                while(i<n&&used<92){
+                    while(i<n&&desc[i]==' ')i++;
+                    i32 start=i;
+                    while(i<n&&desc[i]!=' ')i++;
+                    i32 count=i-start;
+                    if(used&&gfx_contour_text_width(line,18)*2+count*21>leftw-16){
+                        i=start;break;
+                    }
+                    if(used)line[used++]=' ';
+                    for(i32 j=0;j<count&&used<92;j++)line[used++]=desc[start+j];
+                    line[used]=0;
                 }
-                if(written)line[written++]=' ';
-                for(i32 j=0;j<n&&written<109;j++)line[written++]=description[st+j];
-                line[written]=0;
+                line[used]=0;
+                gfx_contour_text_styled(left,description_y+row*42,line,18,2,false,0xB6C9E3u);
             }
-            gfx_contour_text(left,py+row*34,line,18,0xAEBDBFu);
         }
+        i32 buttons=y+h*79/100;
+        contour_round(left,buttons,285,66,30,0xF4FAFFu);
+        contour_label(left+31,buttons+19,"FalconOS'u dene   >",0x153772u);
+        contour_label(left+326,buttons+20,"Contour'u keşfet   v",0xE8F1FFu);
+        i32 stats=y+h*92/100;
+        contour_label(left,stats,"01",0x97BFFFu);
+        contour_label(left+76,stats,"Bağımsız çekirdek",0xC0D0E5u);
+        contour_label(left+320,stats,"TLS",0x97BFFFu);
+        contour_label(left+391,stats,"Yerleşik güven",0xB0C7E6u);
+        contour_label(left+591,stats,"+",0x97BFFFu);
+        contour_label(left+627,stats,"Açık kaynak",0xB0C7E6u);
+    }else{
+        /* Smaller screens use the same genuine content with a compact title. */
+        i32 head=y+clamp_(h/4,110,210);
+        gfx_contour_text(left,head,"Sadece çalışmaz.",36,0xF1F8FAu);
+        gfx_contour_text_styled(left,head+68,"Uçmak için doğdu.",36,1,true,0x9BC1E5u);
+        const char *desc=real_hero_lede();
+        if(desc)native_paragraph(left,head+152,leftw,y+h-150,desc,false,0xBDD2E9u);
+        contour_round(left,y+h-111,240,48,25,0xF4FAFFu);
+        contour_label(left+20,y+h-103,"FalconOS'u dene >",0x153772u);
     }
-    i32 buttons_y=top+60+shift*2+151;
-    if(buttons_y+150<y+h){
-        contour_round(left,buttons_y,215,56,8,C_MINT);
-        contour_label(left+19,buttons_y+14,"FalconOS'u dene   >",0x082019u);
-        contour_label(left+249,buttons_y+14,"Contour'u keşfet   v",C_WHITE);
-        i32 stats_y=buttons_y+85;
-        contour_label(left,stats_y,"01",C_MINT);
-        gfx_text(left,stats_y+28,"Bağımsız çekirdek",0x9AABADu);
-        contour_label(left+180,stats_y,"TLS",C_MINT);
-        gfx_text(left+180,stats_y+28,"Yerleşik güven",0x9AABADu);
-        contour_label(left+367,stats_y,"+",C_MINT);
-        gfx_text(left+367,stats_y+28,"Açık kaynak",0x9AABADu);
-    }
-    i32 rightx=x+w*54/100;
-    i32 rightw=w*41/100;
-    i32 cardh=clamp_(h*64/100,330,600);
-    if(rightw>160 && cardh<h-75){
-        i32 cardy=y+(h-cardh)/2;
+    i32 rightx=x+w*52/100;
+    i32 rightw=w*43/100;
+    i32 cardh=clamp_(h*69/100,340,835);
+    i32 cardy=y+clamp_(h*22/100,125,320);
+    if(rightw>420&&cardy+cardh<y+h+14){
         contour_mock_browser(rightx,cardy,rightw,cardh);
-        contour_round(rightx-38,cardy+cardh/2,158,48,13,0x18393Bu);
-        contour_label(rightx-24,cardy+cardh/2+9,"shfs  /  kalici",C_MINT);
-        contour_round(rightx+rightw-120,cardy+cardh-58,145,45,12,0x153834u);
-        contour_label(rightx+rightw-102,cardy+cardh-50,"prg  /  katalog",C_MINT);
+        contour_round(rightx-61,cardy+cardh*73/100,177,66,18,0x102442u);
+        contour_label(rightx-43,cardy+cardh*73/100+9,"shfs",0x92B7FBu);
+        gfx_text(rightx-43,cardy+cardh*73/100+39,"kalıcı dosya ağacı",0xB9CBDDu);
+        contour_round(rightx+rightw-162,cardy+62,180,58,15,0x102442u);
+        contour_label(rightx+rightw-141,cardy+73,"prg",0x92B7FBu);
+        gfx_text(rightx+rightw-141,cardy+99,"tek paket kataloğu",0xB9CBDDu);
     }
 }
 static void contour_section(i32 x,i32 y,i32 w,i32 h,i32 section){
