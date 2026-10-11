@@ -583,7 +583,9 @@ void long_start(u64 magic, u64 info_ptr)
      * does not see a stale Enter from the final wizard step.            */
     kbd_drain(); mouse_drain();
 
-    /* lock screen — must enter the password to reach the desktop           */
+    /* Passwordless default accounts bypass only the INITIAL cold-boot lock.
+     * Explicit Lock remains visible and requires Enter to unlock. */
+    lockscreen_boot_autologin();
     modal_loop(lockscreen_is_unlocked, lockscreen_render, lockscreen_input);
 
     /* Same for the lockscreen → desktop handoff.                          */
