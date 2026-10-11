@@ -35,6 +35,10 @@ void settings_init(void)
     SET.viewport_w    = 0;              /* native                        */
     SET.viewport_h    = 0;
     SET.wallpaper_style = 0;
+    SET.user_theme_active=0;
+    SET.user_wallpaper_top=0x0B193Au;
+    SET.user_wallpaper_bottom=0x2B72A5u;
+    SET.user_accent_color=0x72E1D0u;
     SET.widgets_shown = true;
     SET.center_circle = false;          /* removed in v5 by user request */
     k_strcpy(SET.password, "");
@@ -105,6 +109,12 @@ u32 PAL(u8 role)
     if ((u32)t >= THEME_COUNT) t = THEME_LIGHT;
     /* All themes honor the selected user accent, including Liquid and Rose.
      * Otherwise changing Accent has no effect in the default theme. */
+    if(SET.user_theme_active){
+        if(role==0)return SET.user_wallpaper_top&0xFFFFFFu;
+        if(role==1)return SET.user_wallpaper_bottom&0xFFFFFFu;
+        if(role==9)return SET.user_accent_color&0xFFFFFFu;
+        if(role==10)return ((SET.user_accent_color&0xFEFEFEu)>>1)+0x606060u;
+    }
     if (role == 9) return ACCENTS[SET.accent];
     return THEMES[t].c[role];
 }
