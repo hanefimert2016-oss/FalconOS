@@ -3196,6 +3196,37 @@ static char falco_status[128]="Enter searches live Wikipedia, via HTTPS host gat
 static bool falco_has_results;
 static bool falco_dhcp_done;
 static bool falco_web_view;
+static bool falco_native_view;
+static bool falco_native_dhcp_started;
+static i32 falco_native_scroll;
+static char falco_native_result[4096];
+static void falco_native_open(void){
+    if(!net_present()){
+        k_strcpy(falco_status,"Native Falco requires RTL8139 network");return;
+    }
+    if(!falco_native_dhcp_started){
+        falco_native_dhcp_started=true;(void)net_dhcp();
+    }
+    k_strcpy(falco_status,"Native HTML/CSS subset: loading verified real site...");
+    if(!native_http_get_port(net_gateway(),18446,
+                            "/falcon/native/",falco_native_result,
+                            sizeof falco_native_result) ||
+       !falco_native_parse(falco_native_result)){
+        k_strcpy(falco_status,
+            "Site unavailable. Run the native HTTPS layout companion.");
+        falco_native_view=false;
+#ifdef FALCON_QEMU_BROWSER_TEST
+        outb(0xE9,'v');outb(0xE9,'N');
+#endif
+        return;
+    }
+    falco_native_view=true;falco_web_view=false;falco_native_scroll=0;
+    k_strcpy(falco_status,"Falco own layout, native pixels; host-verified TLS");
+#ifdef FALCON_QEMU_BROWSER_TEST
+    outb(0xE9,'v');outb(0xE9,'Y');
+#endif
+}
+
 static void falco_set_query(const char *q){
     falco_query_len=0;
     while(q&&q[falco_query_len]&&falco_query_len<79){
@@ -3206,6 +3237,7 @@ static void falco_set_query(const char *q){
     falco_sel=0;
     falco_has_results=false;
     falco_web_view=false;
+    falco_native_view=false;
 }
 static void falco_search(void){
     falco_has_results=false;
@@ -3265,6 +3297,14 @@ static void falco_search(void){
          "Live Wikipedia results - host certificate verified");
 }
 static void falco_input_key(i32 key){
+    if(key==KEY_F9){falco_native_open();return;}
+    if(falco_native_view){
+        if(key==KEY_F3 || key==KEY_ESC){falco_native_view=false;return;}
+        if(key==KEY_F5){falco_native_open();return;}
+        if(key==KEY_UP&&falco_native_scroll>0)falco_native_scroll--;
+        if(key==KEY_DOWN&&falco_native_scroll<60)falco_native_scroll++;
+        return;
+    }
     if ((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
         if(falco_web_view){chrome_focus_url();return;}
         falco_query[0]=0;falco_query_len=0;falco_has_results=false;return;
@@ -3298,6 +3338,11 @@ static void falco_input_key(i32 key){
     (void)sh_buf_append_key(falco_query,&falco_query_len,80,key);
 }
 static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    if(falco_native_view){
+        falco_native_paint(wx+5,wy+5,ww-10,wh-10,
+                           falco_native_scroll,frame);
+        return;
+    }
     if(falco_web_view){render_browser(wx,wy,ww,wh,frame);return;}
     (void)frame;
     i32 x=wx+22,w=ww-44;
@@ -3315,7 +3360,7 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             if(rel<160)falco_open_site("https://falconos.tech/");
             else if(rel<326)falco_open_site_host("https://falconos.tech/");
             else if(rel<492)falco_input_key(KEY_F8);
-            else falco_search();
+            else falco_native_open();
             return;
         }
     }
@@ -3332,7 +3377,7 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_round_rect(x+w-110,wy+117,100,35,13,0x246DE8);
     gfx_text_centered(x+w-60,wy+128,"Enter",0xFFFFFF);
     /* Explicit clickable HTTPS navigation; no fake "button" labels. */
-    const char *actions[4]={"Live site","Host HTTPS","GitHub docs","Search"};
+    const char *actions[4]={"Live site","Host HTTPS","GitHub docs","Native Visual"};
     for(i32 i=0;i<4;i++){
         i32 bx=x+i*166;
         if(bx+157>x+w)break;
@@ -3374,7 +3419,7 @@ static void render_falco(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
     }
     gfx_text(x+5,wy+wh-36,
-        "Ctrl+L search | Enter go | F5 refresh | Alt+Left back | F8 Docs",
+        "F9 visual (own engine) | F5 refresh | F3 back | F6 TLS text",
         PAL_TEXT_FAINT);
 }
 
