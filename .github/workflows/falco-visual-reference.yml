@@ -1,0 +1,29 @@
+name: Falco independent website visual reference
+on:
+  push:
+    branches: [feature/falco-codedium-engine-20261011]
+    paths: [tools/falco_visual_reference.py, .github/workflows/falco-visual-reference.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reference-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install independent browser for screenshot comparison only
+        run: |
+          python3 -m venv /tmp/falco-reference-venv
+          /tmp/falco-reference-venv/bin/pip install playwright
+          /tmp/falco-reference-venv/bin/python -m playwright install chromium --with-deps
+      - name: Capture live FalconOS.tech site reference, no Falco rendering
+        run: /tmp/falco-reference-venv/bin/python tools/falco_visual_reference.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Falco-Independent-Real-Site-Reference
+          path: |
+            build/Falco-Reference-*.png
+            build/falco-reference-visual.json
+          if-no-files-found: warn
