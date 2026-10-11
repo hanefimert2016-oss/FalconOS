@@ -14,7 +14,7 @@ jobs:
       - name: Install compiler, QEMU and Python VNC
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86             python3-venv ca-certificates curl file
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 qemu-system-gui xvfb xauth             python3-venv ca-certificates curl file
           python3 -m venv /tmp/falcon-native
           /tmp/falcon-native/bin/pip -q install pillow vncdotool
           /tmp/falcon-native/bin/python -m py_compile tools/falco_native_gateway.py             tools/falcon_oneclick_launcher.py tools/vnc_native_upgrade_e2e.py \
@@ -57,6 +57,8 @@ jobs:
           test -s build/FalconOS.iso
           APPIMAGE_EXTRACT_AND_RUN=1 build/FalconOS-Native-Desktop-x86_64.AppImage --check
           timeout 35s env APPIMAGE_EXTRACT_AND_RUN=1             build/FalconOS-Native-Desktop-x86_64.AppImage --smoke-boot
+          xvfb-run -a timeout 35s env APPIMAGE_EXTRACT_AND_RUN=1 \
+            build/FalconOS-Native-Desktop-x86_64.AppImage --smoke-gui
       - name: Smoke-test the executable AppImage itself, not only its source
         if: steps.native.outcome == 'success' && steps.persistence.outcome == 'success'
         run: |
