@@ -5,7 +5,7 @@ Guest uses its own keyboard/RTL8139/HTTP/FAPP parser and file system.
 Host Python stdlib performs real certificate+hostname checked public HTTPS.
 No fake files or staged package, no Chromium, no QMP keyboard injection.
 """
-import json,subprocess,sys,socket,time,traceback
+import json,subprocess,sys,socket,time,traceback,re
 from pathlib import Path
 from vncdotool import api
 from vnc_real_input_audit import k,t,pause,shot
@@ -94,6 +94,43 @@ def main():
                 pause(1.8)
                 shot(c,"FalconOS-Falco-Direct-HTTPS-PKG-in-Files")
                 STATE["checks"].append("Downloaded .app.pkg is visible in the FalconOS filesystem")
+                # Verify the WHOLE requested user flow in the SAME QEMU guest:
+                # Falco HTTPS URL -> inert downloaded file -> two real RFB/
+                # PS2 mouse clicks on the file -> actual native app window.
+                c.mouseMove(400,320);pause(.25)
+                for x,y in ((420,330),(440,345)):
+                    c.mouseMove(x,y);pause(.24)
+                def pointer():
+                    samples=re.findall(rb"p(\d+),(\d+);",data())
+                    return tuple(map(int,samples[-1])) if samples else None
+                target=(1110,493)
+                hx,hy=440,345
+                for step in range(155):
+                    pos=pointer()
+                    if pos and abs(target[0]-pos[0])<=12 and abs(target[1]-pos[1])<=12:
+                        break
+                    if pos is None:
+                        c.mouseMove(hx+15,hy+10);hx+=15;hy+=10
+                        pause(.16);continue
+                    dx=target[0]-pos[0];dy=target[1]-pos[1]
+                    sx=max(-22,min(22,round(dx/(2.5 if abs(dx)>25 else 1.5))))
+                    sy=max(-22,min(22,round(dy/(2.5 if abs(dy)>25 else 1.5))))
+                    if sx==0 and dx:sx=1 if dx>0 else -1
+                    if sy==0 and dy:sy=1 if dy>0 else -1
+                    hx=max(6,min(2500,hx+sx))
+                    hy=max(6,min(1400,hy+sy))
+                    c.mouseMove(hx,hy);pause(.12)
+                pos=pointer()
+                if pos is None or abs(target[0]-pos[0])>14 or abs(target[1]-pos[1])>14:
+                    raise AssertionError(f"Cannot aim guest pointer at downloaded file: {pos!r}")
+                off=len(data());c.mouseDown(1);pause(.35);c.mouseUp(1)
+                wait(b"f1",off,45)
+                pause(.25)
+                off=len(data());c.mouseDown(1);pause(.35);c.mouseUp(1)
+                wait(b"f2",off,45);wait(b"fR",off,50)
+                pause(1.2)
+                shot(c,"FalconOS-Falco-HTTPS-PKG-DoubleClick-Running")
+                STATE["checks"].append("Two real PS2 clicks ran directly downloaded .app.pkg inside its own FAPP Runner app window")
             STATE["result"]="PASS"
         finally:
             if vm:
