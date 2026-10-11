@@ -1,0 +1,13 @@
+FAPP/1
+id=falcon-gui-demo
+name=Falcon GUI Demo
+version=1.0.0
+summary=Native FalconOS window with interactive buttons
+
+#ui:title=My first FalconOS application
+#ui:text=This window belongs to a real downloadable FAPP package.
+#ui:button=Show date|date
+#ui:button=System info|uname
+#ui:button=Who am I|whoami
+#ui:button=Memory info|free
+echo FalconOS Native UI ready
