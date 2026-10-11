@@ -38,7 +38,8 @@ def wait_tcp(port):
     raise TimeoutError(f"QEMU auxiliary TCP port {port} not listening")
 def capture_movie(ready,stop,shots,errors):
     """Second RFB observer; it NEVER sends keyboard/mouse control events."""
-    images=[]
+    frame_count=0
+    latest=None
     hashes=set()
     snap_index=0
     temp=OUT/"capture-current.png"
@@ -53,14 +54,15 @@ def capture_movie(ready,stop,shots,errors):
         try:
             with api.connect(QEMU_VNC,timeout=22) as recorder:
                 ready.set()
-                while not stop.is_set() and len(images)<130:
+                while not stop.is_set() and frame_count<480:
                     started=time.monotonic()
                     recorder.captureScreen(str(temp))
                     with Image.open(temp) as f:
                         image=f.convert("RGB").resize((1280,720),Image.Resampling.LANCZOS)
                     current_hash=hashlib.sha256(image.tobytes()).hexdigest()
                     hashes.add(current_hash)
-                    images.append(image)
+                    latest=image
+                    frame_count+=1
                     ffmpeg.stdin.write(image.tobytes())
                     try:
                         while True:
@@ -75,7 +77,7 @@ def capture_movie(ready,stop,shots,errors):
                 while True:
                     try:name=shots.get_nowait()
                     except queue.Empty:break
-                    image=images[-1] if images else None
+                    image=latest
                     if image:
                         image.save(OUT/name,format="PNG")
                         RES["shots"].append(name)
@@ -86,13 +88,13 @@ def capture_movie(ready,stop,shots,errors):
                 ffmpeg.wait(timeout=45)
             except subprocess.TimeoutExpired:
                 ffmpeg.kill();ffmpeg.wait()
-        RES["frames_encoded"]=len(images)
+        RES["frames_encoded"]=frame_count
         RES["distinct_frames"]=len(hashes)
-        RES["recording_seconds"]=round(len(images)/4,2)
-        if ffmpeg.returncode!=0 or len(images)<8 or len(hashes)<3:
+        RES["recording_seconds"]=round(frame_count/4,2)
+        if ffmpeg.returncode!=0 or frame_count<8 or len(hashes)<3:
             raise AssertionError(
                 f"Capture invalid: encoder status={ffmpeg.returncode}, "
-                f"frames={len(images)}, unique={len(hashes)}, stderr="
+                f"frames={frame_count}, unique={len(hashes)}, stderr="
                 f"{ffmpeg.stderr.read(1500)!r}")
     except Exception as exc:
         errors.append(str(exc))
