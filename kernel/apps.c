@@ -716,10 +716,35 @@ static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     hid_keymap_dump(hidsum, sizeof hidsum);
     gfx_text_centered(cx, wy + 274, hidsum, PAL_TEXT_FAINT);
 
+    /* Live capabilities, not fictional readiness badges. The native OS
+     * must distinguish devices being detected from production support. */
     gfx_text_centered(cx, wy + 296,
-        T("bare-metal microkernel  -  prg packages  -  Store  -  POSIX shell",
-          "bare-metal mikroçekirdek  -  prg paketleri  -  Mağaza  -  POSIX kabuk"),
+        T("Experimental beta  -  native x86 kernel  -  QEMU verification",
+          "Deneysel beta  -  yerel x86 cekirdegi  -  QEMU dogrulamasi"),
         PAL_TEXT_FAINT);
+    if(wh>=515 && ww>=550){
+        i32 left=wx+26, gap=15, cardw=(ww-67)/2, cy=wy+337;
+        gfx_round_rect(left,cy,cardw,124,14,PAL_PANEL_DEEP);
+        gfx_round_outline(left,cy,cardw,124,14,PAL_HAIRLINE);
+        gfx_round_rect(left+cardw+gap,cy,cardw,124,14,PAL_PANEL_DEEP);
+        gfx_round_outline(left+cardw+gap,cy,cardw,124,14,PAL_HAIRLINE);
+        gfx_text(left+16,cy+14,T("NETWORK","AG"),PAL_ACCENT);
+        gfx_text(left+16,cy+43,net_present()?
+                 T("RTL8139 detected","RTL8139 algilandi"):
+                 T("No supported network card","Desteklenen ag karti yok"),PAL_TEXT);
+        gfx_text(left+16,cy+76,
+                 T("Native TLS not release-certified","Yerel TLS surum onayli degil"),
+                 PAL_TEXT_DIM);
+        i32 right=left+cardw+gap;
+        gfx_text(right+16,cy+14,T("STORAGE","DEPOLAMA"),PAL_ACCENT);
+        gfx_text(right+16,cy+43,diskdb_present()?
+                 T("FalconFS test partition active","FalconFS test bolumu etkin"):
+                 T("RAM-only / no persistent volume","Sadece RAM / kalici disk yok"),PAL_TEXT);
+        gfx_text(right+16,cy+76,
+                 T("Do not use production drives","Gercek disklerde kullanmayin"),
+                 PAL_TEXT_DIM);
+    }
+    (void)frame;
 }
 
 /* --- Sistem Güncellemeleri (offline channel UI) ---------------------------- */
@@ -745,12 +770,12 @@ static void render_updates(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     gfx_text(wx + 24, wy + 88, buf, PAL_TEXT_DIM);
 
     gfx_text(wx + 24, wy + 124,
-             T("Online updates need virtio-net + TLS (planned).",
-               "Çevrimiçi güncelleme virtio-net + TLS gerektirir (planlanıyor)."),
+             T("Kernel updates require a new tested ISO; not installed here.",
+               "Cekirdek guncellemesi yeni testli ISO gerektirir."),
              PAL_TEXT_DIM);
     gfx_text(wx + 24, wy + 152,
-             T("Terminal:  update check  |  update apply",
-               "Terminal:  update check  |  update apply"),
+             T("update check / apply: offline package catalogue only",
+               "update check / apply: sadece cevrimdisi paket katalogu"),
              PAL_TEXT_FAINT);
 
     (void)ww; (void)wh;
@@ -1305,7 +1330,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             return 0;
         }
         if (k_strcmp(argv[1], "update") == 0) {
-            k_strcpy(out, "update check | update apply: upgrade FalconOS components without reinstall.");
+            k_strcpy(out, "update check | apply: select optional local package catalogue entries; does not update the kernel.");
             return 0;
         }
         if (k_strcmp(argv[1], "video") == 0) {
@@ -1415,7 +1440,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             char num[16];
             k_strcpy(out, "update check: ");
             k_itoa((u32)pending, num, 10); k_strcat(out, num);
-            k_strcat(out, " package(s) pending. Run: update apply");
+            k_strcat(out, " unselected catalogue entries (offline). update apply");
             return 0;
         }
         i32 done = 0;
@@ -1426,7 +1451,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         char num[16];
         k_strcpy(out, "update apply: ");
         k_itoa((u32)done, num, 10); k_strcat(out, num);
-        k_strcat(out, " package(s) ready. Reinstall not required.");
+        k_strcat(out, " local catalogue entries selected; kernel ISO unchanged.");
         return 0;
     }
     if (k_strcmp(cmd, "prg") == 0 || k_strcmp(cmd, "pkg") == 0) {
