@@ -8,6 +8,7 @@ on:
       - kernel/fapp_policy.c
       - kernel/falcon.h
       - tools/marketplace_bridge.py
+      - tests/test_bridge_protocol.py
       - kernel/launchpad.c
       - kernel/personal.c
       - kernel/aeroflow.h
