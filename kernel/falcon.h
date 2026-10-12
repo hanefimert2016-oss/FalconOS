@@ -363,6 +363,7 @@ void market_poll(void);
 void market_refresh(void);
 i32 market_count(void);
 const char *market_name(i32 i);
+const char *market_id(i32 i);
 const char *market_version(i32 i);
 const char *market_status(void);
 bool market_installed(i32 i);
