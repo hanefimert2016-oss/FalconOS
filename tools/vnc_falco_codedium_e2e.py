@@ -80,6 +80,17 @@ def main():
                 t(c,"uname");k(c,"enter");pause(1.1)
                 snap(c,"FalconOS-V2-Beta-Terminal-Real-QEMU")
                 STATE["checks"].append("Native Terminal accepted ver and uname commands in QEMU")
+                # V2 Calendar is a real RTC-based application, present in
+                # Launchpad's All catalogue, not a demo counter of uptime.
+                k(c,"f2");t(c,"Calendar")
+                off=LOG.stat().st_size;k(c,"enter")
+                wait(b"zK",off,60);wait(b"gK",off,65)
+                pause(1)
+                snap(c,"FalconOS-V2-Gregorian-Calendar-Today-Real-QEMU")
+                k(c,"right");pause(.8)
+                snap(c,"FalconOS-V2-Gregorian-Calendar-Next-Month-Real-QEMU")
+                k(c,"t");pause(.6)
+                STATE["checks"].append("RTC Calendar launched and navigated to the following month using a real PS/2 key")
                 STATE["result"]="PASS"
         finally:
             guest.terminate()
