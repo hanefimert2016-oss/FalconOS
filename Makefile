@@ -104,6 +104,11 @@ ASM_OBJS    := $(BUILD)/boot/multiboot2.o $(BUILD)/boot/isr.o
 
 KERNEL      := $(BUILD)/falcon.elf
 ISO         := $(BUILD)/FalconOS.iso
+KERNEL_BIN  := $(BUILD)/FALCON-KERNEL.BIN
+UEFI_EFI    := $(BUILD)/BOOTX64.EFI
+UEFI_CLANG  ?= clang
+UEFI_LINK   ?= lld-link
+
 
 # Omit -no-shutdown / -no-reboot so ACPI power-off (PW_REG) and keyboard reset
 # behave like real hardware and terminate or restart the QEMU process.
@@ -115,8 +120,8 @@ CPUS          ?= 6
 VRAM          ?= 256
 DISK_CAPACITY ?= 4G
 
-# Boot the GRUB CD-ROM before the unbootable persistent data disk.
-# This must match the explicit -boot d used by our real QEMU CI tests.
+# Boot the FalconBoot UEFI CD-ROM before the unbootable test data disk.
+# QEMU now also requires OVMF x86_64 UEFI firmware (not SeaBIOS).
 QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -boot order=d \
                  -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
                  -netdev user,id=net0 -device rtl8139,netdev=net0 \
@@ -197,16 +202,35 @@ $(KERNEL): $(ASM_OBJS) $(C_OBJS) $(TLS_OBJECTS) $(TLS_LIBRARY) linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(ASM_OBJS) $(C_OBJS) $(TLS_OBJECTS) $(TLS_LIBRARY)
 	@echo "[OK] linked $@  ($$(wc -c < $@) bytes, ARCH=$(ARCH), back-buffer $(FB_W)×$(FB_H))"
 
-# ---- ISO ----------------------------------------------------------------------
+# ---- GRUB-FREE FalconBoot/1 x86_64 UEFI ISO -----------------------------------
+# The EFI FAT filesystem holds our own /EFI/BOOT/BOOTX64.EFI and a flat
+# fixed-address 32 MiB kernel binary. There is no GRUB in the boot chain.
 iso: $(ISO)
 
-$(ISO): $(KERNEL) boot/grub.cfg
+$(KERNEL_BIN): $(KERNEL)
+	objcopy -O binary $(KERNEL) $@
+	@test $$(wc -c < $@) -lt 67108864 || { echo "Kernel exceeds FalconBoot reserved 64MiB"; exit 1; }
+
+$(UEFI_EFI): $(KERNEL_BIN) boot/falcon_uefi/loader.c boot/falcon_uefi/uefi.h boot/falcon_uefi/handoff.S
+	$(UEFI_CLANG) -target x86_64-pc-windows-msvc -ffreestanding -fshort-wchar -fno-stack-protector -fno-builtin -mno-red-zone -Wall -Wextra \
+	  -DFALCON_KERNEL_BYTES=$$(wc -c < $(KERNEL_BIN)) \
+	  -DFALCON_KERNEL_ENTRY=0x$$(nm -n $(KERNEL) | awk '$$3=="long_start"{print $$1;exit}')ULL \
+	  -c boot/falcon_uefi/loader.c -o $(BUILD)/falcon-loader.obj
+	$(UEFI_CLANG) -target x86_64-pc-windows-msvc -c boot/falcon_uefi/handoff.S -o $(BUILD)/falcon-handoff.obj
+	$(UEFI_LINK) /subsystem:efi_application /entry:EfiMain /nodefaultlib \
+	  /out:$(UEFI_EFI) $(BUILD)/falcon-loader.obj $(BUILD)/falcon-handoff.obj
+	@echo "[OK] FalconBoot UEFI application $@"
+
+$(ISO): $(UEFI_EFI) $(KERNEL_BIN)
 	@rm -rf $(ISO_DIR)
-	@mkdir -p $(ISO_DIR)/boot/grub
-	cp $(KERNEL)        $(ISO_DIR)/boot/falcon.elf
-	cp boot/grub.cfg    $(ISO_DIR)/boot/grub/grub.cfg
-	grub-mkrescue -o $@ $(ISO_DIR) 2>/dev/null
-	@echo "[OK] ISO   $@  (ARCH=$(ARCH), single ISO supports HD/FHD/2K via GRUB menu)"
+	@mkdir -p $(ISO_DIR)
+	@truncate -s 50331648 $(ISO_DIR)/falcon-esp.img
+	mformat -i $(ISO_DIR)/falcon-esp.img -h 64 -t 96 -s 16 -v FALCONV2 ::
+	mmd -i $(ISO_DIR)/falcon-esp.img ::/EFI ::/EFI/BOOT ::/FALCONOS
+	mcopy -i $(ISO_DIR)/falcon-esp.img $(UEFI_EFI) ::/EFI/BOOT/BOOTX64.EFI
+	mcopy -i $(ISO_DIR)/falcon-esp.img $(KERNEL_BIN) ::/FALCONOS/KERNEL.BIN
+	xorriso -as mkisofs -r -J -V FALCONOS_V2 -e falcon-esp.img -no-emul-boot -o $(ISO) $(ISO_DIR)
+	@echo "[OK] GRUB-free FalconOS V2 UEFI ISO $@ (native FalconBoot/1)"
 
 # ---- run ----------------------------------------------------------------------
 # Run FalconOS first, then start this in a second terminal to enable
