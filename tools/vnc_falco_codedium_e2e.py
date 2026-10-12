@@ -93,19 +93,28 @@ def main():
                 off=LOG.stat().st_size
                 k(c,"right")
                 wait(b"MN",off,40) # guest month state increment acknowledged
-                wait(b"gK",off,65) # a complete native Calendar framebuffer
-                pause(1.2)
-                snap(c,"FalconOS-V2-Gregorian-Calendar-Next-Month-Real-QEMU")
-                following=Image.open(B/"FalconOS-V2-Gregorian-Calendar-Next-Month-Real-QEMU.png").convert("RGB")
-                # The native framebuffer is 2560x1440, not the 1280x720
-                # screenshot-thumbnail coordinate system. Keep the ROI
-                # proportional across supported display resolutions.
+                # Set a NEW cursor after the input acknowledgement. Otherwise
+                # gK could match an OLD frame rendered during keyPress().
+                painted_after=LOG.stat().st_size
+                wait(b"gK",painted_after,90)
                 month_title_box=(initial.width*35//100,initial.height*29//100,
                                  initial.width*47//100,initial.height*35//100)
-                delta=ImageChops.difference(initial.crop(month_title_box),
-                                            following.crop(month_title_box))
-                if delta.getbbox() is None:
-                    raise AssertionError("Calendar did not render next month: identical month title pixels")
+                # VNC is asynchronous even after guest gfx_present. Poll the
+                # ACTUAL QEMU framebuffer until its month title changes;
+                # never silently accept a stale screenshot.
+                changed=False
+                for attempt in range(14):
+                    pause(.7)
+                    shot(c,"FalconOS-V2-Gregorian-Calendar-Next-Month-Real-QEMU")
+                    following=Image.open(B/"FalconOS-V2-Gregorian-Calendar-Next-Month-Real-QEMU.png").convert("RGB")
+                    delta=ImageChops.difference(initial.crop(month_title_box),
+                                                following.crop(month_title_box))
+                    if delta.getbbox() is not None:
+                        changed=True
+                        break
+                STATE["screenshots"].append("FalconOS-V2-Gregorian-Calendar-Next-Month-Real-QEMU.png")
+                if not changed:
+                    raise AssertionError("Guest confirmed month navigation but no new Calendar title reached VNC after 10s")
                 off=LOG.stat().st_size
                 k(c,"t");wait(b"MT",off,40)
                 STATE["checks"].append("REAL RTC Calendar: guest acknowledged right arrow and month header visibly changed")
