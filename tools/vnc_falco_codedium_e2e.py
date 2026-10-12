@@ -65,7 +65,12 @@ def main():
                 wait(b"aU",off,60);wait(b"H",off,60)
                 k(c,"esc");pause(.6)
                 snap(c,"FalconOS-Review-Desktop")
-                k(c,"f2");t(c,"Falco")
+                off=LOG.stat().st_size
+                k(c,"f2");wait(b"LP",off,60)
+                pause(.9)
+                snap(c,"FalconOS-V2-AeroFlow-Launcher")
+                t(c,"Falco");pause(.7)
+                snap(c,"FalconOS-V2-AeroFlow-Search")
                 off=LOG.stat().st_size;k(c,"enter")
                 wait(b"zNn1",off,60)
                 # zN proves application selection only; gN is emitted AFTER
