@@ -231,6 +231,7 @@ static void on_line(char *line) {
         /* An accepted CAT entry is not the end of a multi-release transfer.
          * GUI tests must wait for this marker before searching the catalog. */
         outb(0xE9,'m');outb(0xE9,'D');
+        outb(0xE9,'m');outb(0xE9,N_APP?'A':'Z');
 #endif
         return;
     }
