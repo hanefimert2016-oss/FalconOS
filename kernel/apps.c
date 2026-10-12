@@ -22,6 +22,7 @@
 #include "falcon.h"
 #include "shfs.h"
 #include "falco_theme.h"
+#include "version.h"
 
 static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
@@ -683,14 +684,15 @@ static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
     (void)frame; (void)wh;
     section(wx, wy, T("About FalconOS", "FalconOS Hakkında"),
-            T("Version & credits", "Sürüm ve katkılar"));
+            T("V2 Beta | Version & credits", "V2 Beta | Sürüm ve katkılar"));
 
     i32 cx = wx + ww / 2;
     gfx_circle(cx, wy + 110, 56, PAL_ACCENT);
     gfx_circle(cx, wy + 110, 36, PAL_PANEL);
     gfx_circle(cx, wy + 110, 18, PAL_ACCENT);
 
-    gfx_text_centered(cx, wy + 190, "FalconOS 1",                            PAL_TEXT);
+    /* Never hardcode the V1 label on the V2 beta branch. */
+    gfx_text_lg_centered(cx, wy + 180, FALCON_RELEASE_LABEL, PAL_TEXT);
     gfx_text_centered(cx, wy + 210,
 #if ARCH_x86_64
         "bare-metal x86_64 — personal + developer",
@@ -699,8 +701,8 @@ static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 #endif
                       PAL_ACCENT);
     gfx_text_centered(cx, wy + 232,
-        T("two kernels, one binary - F1 to flip - F2 Launchpad",
-          "iki çekirdek, tek ikili - F1 ile geç - F2 Launchpad"),
+        T("Beta channel: v2-beta | Desktop & developer tools",
+          "Beta kanali: v2-beta | Masaustu ve gelistirici araclari"),
         PAL_TEXT_DIM);
 
     /* Native subsystems strip */
@@ -1688,9 +1690,9 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     if (k_strcmp(cmd, "pwd") == 0)    { k_strcpy(out, shfs_cwd); return 0; }
     if (k_strcmp(cmd, "uname") == 0)  {
 #if ARCH_x86_64
-        k_strcpy(out, "FalconOS 1 x86_64 bare-metal");
+        k_strcpy(out, FALCON_RELEASE_LABEL " x86_64 bare-metal");
 #else
-        k_strcpy(out, "FalconOS 1 i386 bare-metal");
+        k_strcpy(out, FALCON_RELEASE_LABEL " i386 bare-metal");
 #endif
         return 0;
     }
@@ -1703,11 +1705,11 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 0;
     }
     if (k_strcmp(cmd, "ver") == 0 || k_strcmp(cmd, "version") == 0) {
-        k_strcpy(out, "FalconOS 1  kernel  ");
+        k_strcpy(out, FALCON_RELEASE_KERNEL_PREFIX);
 #if ARCH_x86_64
-        k_strcat(out, "x86_64  (tek komut: make start)");
+        k_strcat(out, "x86_64  channel=" FALCON_RELEASE_CHANNEL);
 #else
-        k_strcat(out, "i386");
+        k_strcat(out, "i386  channel=" FALCON_RELEASE_CHANNEL);
 #endif
         return 0;
     }
@@ -4943,7 +4945,7 @@ static app_def_t APPS[] = {
     { "Browser",    "Native TLS 1.2 text web", 0x4285F4, render_browser, chrome_input_key, icon_browser },
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
     { "Jarvis",     "AI assistant",        0x6D5BFF, jarvis_render,  jarvis_input,     jarvis_icon   },
-    { "About",      "FalconOS 1",      0xA45EE5, render_about,    NULL,             icon_about    },
+    { "About",      FALCON_RELEASE_LABEL, 0xA45EE5, render_about, NULL, icon_about },
     { "Codedium",   "native app editor",   0x367DF8, render_codedium, code_input_key,   icon_term     },
     { "FAPP Runner","user-launched .app.pkg",0x208D66,render_fapp_runner,fapp_gui_input,icon_fapp_runner },
     { "Capture Studio","first-party screen recorder",0x346DDA,capture_studio_render,capture_studio_input,capture_studio_icon },
