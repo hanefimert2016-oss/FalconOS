@@ -29,6 +29,30 @@ class ProtocolTest(unittest.TestCase):
         finally:
             left.close();right.close()
 
+    def test_refresh_during_cat_ack_is_safe(self):
+        left,right=socket.socketpair()
+        errors=[]
+        def send_cat():
+            try:
+                bridge.send_acknowledged(left,"CAT|device-doctor|1.0.0|Device Doctor")
+            except Exception as exc:
+                errors.append(str(exc))
+        t=threading.Thread(target=send_cat,daemon=True)
+        t.start()
+        try:
+            response=bytearray()
+            while not response.endswith(b"\n"):
+                response.extend(right.recv(1))
+            self.assertTrue(response.startswith(b"CAT|device-doctor|"))
+            # A duplicate F5 arrived before guest's ACK: do not abort
+            # an otherwise valid immutable Release transfer.
+            right.sendall(b"LIST\nACK\n")
+            t.join(timeout=4)
+            self.assertFalse(t.is_alive(),"catalog ACK timed out")
+            self.assertFalse(errors,errors)
+        finally:
+            left.close();right.close()
+
     def test_catalog_and_chunked_download(self):
         release = {
             "hello-world": {
