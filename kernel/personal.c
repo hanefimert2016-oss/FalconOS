@@ -27,10 +27,21 @@ void mode_personal_input(i32 key){
 /* AeroFlow desktop header; real activity and clock only. */
 static void backdrop(void){
     const i32 w=(i32)FB.width,h=(i32)FB.height;
-    /* Soft ambient planes echo our angular Falcon wing logomark. */
-    gfx_round_rect_a(w-535,210,432,98,28,PAL_ACCENT,18);
-    gfx_round_rect_a(w-425,223,322,60,20,PAL_GLASS,31);
-    gfx_round_rect_a(50,h-269,365,68,22,PAL_ACCENT,17);
+    /* AeroFlow wallpaper artwork: Falcon wing-lines (native vector pixels,
+     * no wallpaper bitmap or fake Windows background). Hide on narrow
+     * screens so the functional cards always get priority. */
+    if(w>=1350){
+        const i32 ax=w-575, ay=h-335;
+        for(i32 i=0;i<8;i++){
+            gfx_line(ax+9*i,ay+12*i,w-156+7*i,h-485+11*i,PAL_BG_HINT);
+            gfx_line(w-156+7*i,h-485+11*i,w-94+5*i,h-524+7*i,
+                     PAL_ACCENT_DIM);
+        }
+        gfx_text_lg(w-385,h-304,"AeroFlow",PAL_TEXT_DIM);
+        gfx_rect(w-385,h-268,210,3,PAL_ACCENT_DIM);
+        gfx_text(w-383,h-250,T("FALCONOS VISUAL SYSTEM",
+                               "FALCONOS GORSEL SISTEM"),PAL_TEXT_DIM);
+    }
     aero_panel(31,53,w-62,113,24);
     gfx_round_rect(53,76,61,61,20,aero_accent());
     gfx_text_lg_centered(83,86,"F",aero_accent_ink());
