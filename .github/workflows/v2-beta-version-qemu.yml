@@ -4,6 +4,10 @@ on:
     branches: [v2-beta]
     paths:
       - kernel/apps.c
+      - kernel/launchpad.c
+      - kernel/personal.c
+      - kernel/aeroflow.h
+      - kernel/gfx.c
       - kernel/main.c
       - kernel/version.h
       - kernel/calendar_math.c
@@ -62,6 +66,8 @@ jobs:
             build/FalconOS-V2-Beta-*.png
             build/FalconOS-V2-Gregorian-Calendar-*.png
             build/FalconOS-Review-Desktop.png
+            build/FalconOS-V2-AeroFlow-Launcher.png
+            build/FalconOS-V2-AeroFlow-Search.png
             build/falco-codedium-review-result.json
             build/falco-codedium-review-guest.log
             build/falco-codedium-review-qemu.log
