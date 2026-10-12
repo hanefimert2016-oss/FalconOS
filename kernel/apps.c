@@ -24,6 +24,7 @@
 #include "falco_theme.h"
 #include "version.h"
 #include "calendar_math.h"
+#include "aeroflow.h"
 
 static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
@@ -5455,22 +5456,34 @@ static void wm_paint_window(u32 frame,bool focused) {
     /* Geometry must match the WM's hit-test on every frame. Animated
      * visual offsets previously made traffic lights impossible to click
      * during the first 200ms after focusing or opening a window. */
-    gfx_round_rect_a(wx+4,wy+12,ww,wh,24,COL_SHADOW,70);
-    gfx_round_rect_a(wx,wy,ww,wh,24,PAL_PANEL,SET.aero_enabled?246:255);
-    gfx_round_outline(wx,wy,ww,wh,24,
-                      focused?PAL_ACCENT:PAL_HAIRLINE);
-    gfx_round_rect(wx+14,wy+8,28,28,10,a->tint);
+    /* AeroFlow top-level chrome. WM targets stay byte-for-byte aligned with
+     * the original 40px hit rectangles; native application ABI unchanged. */
+    aero_panel(wx,wy,ww,wh,22);
+    gfx_round_rect_a(wx+8,wy+5,ww-16,36,16,PAL_PANEL_HI,
+                     focused?(aero_dark()?154:165):95);
+    gfx_rect(wx+13,wy+42,ww-26,1,aero_line());
+    gfx_round_rect(wx+14,wy+8,28,28,9,a->tint);
     apps_draw_icon(active_app,wx+28,wy+22);
-    gfx_text(wx+54,wy+13,apps_display_name(active_app),PAL_TEXT);
-    if (focused) gfx_rect_a(wx+54,wy+34,98,2,PAL_ACCENT,220);
-    /* 40px click targets correspond exactly to wm_handle_mouse() below. */
-    gfx_round_rect_a(wx+ww-124,wy+7,38,30,10,PAL_PANEL_HI,255);
-    gfx_text_centered(wx+ww-105,wy+14,"_",PAL_TEXT_DIM);
-    gfx_round_rect_a(wx+ww-84,wy+7,38,30,10,PAL_PANEL_HI,255);
-    gfx_text_centered(wx+ww-65,wy+13,wm_max?"o":"[]",PAL_TEXT_DIM);
-    gfx_round_rect(wx+ww-44,wy+7,35,30,10,0xFBE6E8u);
-    gfx_text_centered(wx+ww-26,wy+14,"x",0xAE3E4Bu);
-    gfx_rect_a(wx+13,wy+42,ww-26,1,PAL_HAIRLINE,255);
+    gfx_text(wx+54,wy+13,apps_display_name(active_app),
+             focused?aero_text():aero_dim());
+    if(focused)gfx_rect(wx+54,wy+39,88,3,aero_accent());
+    i32 mx,my;bool down;mouse_get(&mx,&my,&down);(void)down;
+    const bool hover_min=focused && mx>=wx+ww-134&&mx<wx+ww-90&&
+                         my>=wy+5&&my<wy+42;
+    const bool hover_max=focused && mx>=wx+ww-90&&mx<wx+ww-48&&
+                         my>=wy+5&&my<wy+42;
+    const bool hover_close=focused && mx>=wx+ww-48&&mx<wx+ww-6&&
+                           my>=wy+5&&my<wy+42;
+    aero_card(wx+ww-124,wy+7,38,30,10,hover_min);
+    gfx_text_centered(wx+ww-105,wy+14,"_",hover_min?aero_accent():aero_dim());
+    aero_card(wx+ww-84,wy+7,38,30,10,hover_max);
+    gfx_text_centered(wx+ww-65,wy+13,wm_max?"o":"[]",
+                      hover_max?aero_accent():aero_dim());
+    gfx_round_rect(wx+ww-44,wy+7,35,30,10,
+                   hover_close?0xD94556u:(aero_dark()?0x643847u:0xFBE5E9u));
+    gfx_text_centered(wx+ww-26,wy+14,"x",
+                      hover_close?0xFFFFFFu:
+                      (aero_dark()?0xFFBAC2u:0x9C4453u));
     a->render(wx,wy+44,ww,wh-44,frame);
     if(!wm_max){
         i32 hx=wx+ww-14,hy=wy+wh-14;
