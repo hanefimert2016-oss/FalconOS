@@ -209,8 +209,33 @@ void launchpad_render(u32 frame){
         apps_draw_icon(id,cx,ty+35);
         gfx_text_centered(cx,ty+69,apps_display_name(id),aero_text());
         if(tile_h>102){
-            const char *sub=apps_subtitle(id);
-            if(sub)gfx_text_centered(cx,ty+94,sub,aero_dim());
+            /* App-supplied long descriptions must never bleed into the
+             * adjacent tile. Use short, factual, locally translated labels
+             * for the primary native applications and truncate others. */
+            const char *sub=id==1?T("Local files","Dosyalar"):
+                            id==13?T("Web search","Web arama"):
+                            id==14?T("Text browser","Metin tarayici"):
+                            id==20?T("Screen capture","Ekran kaydi"):
+                            id==6?T("Calculator","Hesaplama"):
+                            id==7?T("Saved notes","Notlar"):
+                            id==3?T("Themes & tools","Tema ve sistem"):
+                            id==5?T("Commands","Komutlar"):
+                            id==2?T("App catalogue","Uygulamalar"):
+                            id==18?T("Code editor","Kod editoru"):
+                            apps_subtitle(id);
+            if(sub){
+                char shortsub[40];
+                i32 limit=(tile_w-14)/8;
+                if(limit>37)limit=37;
+                if(limit<0)limit=0;
+                i32 n=0;
+                while(sub[n]&&n<limit){shortsub[n]=sub[n];n++;}
+                if(sub[n] && n>3){
+                    shortsub[n-3]='.';shortsub[n-2]='.';shortsub[n-1]='.';
+                }
+                shortsub[n]=0;
+                gfx_text_centered(cx,ty+94,shortsub,aero_dim());
+            }
         }
         if(desktop_pin_is_pinned(id))
             gfx_circle(cx+30,ty+15,5,0x16B88Fu);
