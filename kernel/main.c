@@ -77,11 +77,12 @@ static void parse_multiboot(u64 magic, u64 info_ptr)
 /* Top menu bar (full-width frosted strip with kernel name + clock).           */
 static void draw_menu_bar(void){
     i32 W=(i32)FB.width,H=30;
-    gfx_rect_a(0,0,W,H,0xF6FAFFu,
-               SET.theme==THEME_DARK?210:244);
-    gfx_rect_a(0,H-1,W,1,0xD6E2F3u,230);
-    gfx_round_rect(13,4,22,22,8,0x3479E9u);
-    gfx_text_centered(24,7,"F",0xFFFFFFu);
+    /* System palette is the single source of truth across Liquid/Nox/
+     * Lumen/Nordic/Rose Gold. No hardcoded light background in dark mode. */
+    gfx_rect_a(0,0,W,H,PAL_PANEL,SET.theme==THEME_DARK?248:238);
+    gfx_rect(0,H-1,W,1,PAL_HAIRLINE);
+    gfx_round_rect(13,4,22,22,8,PAL_ACCENT);
+    gfx_text_centered(24,7,"F",SET.theme==THEME_DARK?0x101418u:0xFFFFFFu);
     gfx_text(45,7,"FalconOS",PAL_TEXT);
     /* Always expose the actual release channel on the V2 desktop, not only
      * inside About/Terminal; badge uses runtime theme and user accent. */
@@ -94,8 +95,9 @@ static void draw_menu_bar(void){
                        "F2 Uygulamalar  |  F1 Yardım  |  F12 Güç");
     i32 hw=gfx_text_width(hint)+34;
     i32 hx=(W-hw)/2;
-    gfx_round_rect_a(hx,3,hw,24,11,0xE6F0FFu,220);
-    gfx_text(hx+17,7,hint,0x55749Bu);
+    gfx_round_rect(hx,3,hw,24,11,PAL_PANEL_DEEP);
+    gfx_round_outline(hx,3,hw,24,11,PAL_HAIRLINE);
+    gfx_text(hx+17,7,hint,PAL_TEXT_DIM);
 
     /* Match the legacy hit test's variable-width clock geometry. */
     rtc_time_t now;rtc_local(&now);
@@ -117,14 +119,22 @@ static void draw_menu_bar(void){
     gfx_text(W-cw-18,7,clk,PAL_TEXT);
     const char *codes[]={"TR","EN","DE","FR","ES"};
     const char *lang=SET.lang<LANG_COUNT?codes[SET.lang]:"EN";
-    gfx_round_rect_a(W-cw-56,5,29,20,10,0xDEEAFDu,242);
-    gfx_text(W-cw-49,8,lang,0x2866CEu);
+    gfx_round_rect(W-cw-56,5,29,20,10,PAL_ACCENT_DIM);
+    gfx_text(W-cw-49,8,lang,PAL_ACCENT);
     i32 px=W-cw-88;
-    gfx_circle_outline(px,15,9,0xCE5669u);
-    gfx_rect(px-1,3,3,11,0xCE5669u);
+    gfx_circle_outline(px,15,9,COL_ERR);
+    gfx_rect(px-1,3,3,11,COL_ERR);
     i32 hpx=px-28;
     gfx_circle_outline(hpx,15,9,PAL_TEXT_DIM);
     gfx_text_centered(hpx,8,"?",PAL_TEXT_DIM);
+    /* Persistent recording reminder across all first-party windows. */
+    if(capture_studio_recording()){
+        i32 rx=hx-76;
+        gfx_round_rect(rx,4,66,22,10,PAL_PANEL_DEEP);
+        gfx_round_outline(rx,4,66,22,10,COL_ERR);
+        gfx_circle(rx+13,15,4,COL_ERR);
+        gfx_text(rx+24,8,"REC",COL_ERR);
+    }
 }
 
 /* Hit-test for the power glyph in the menu bar; returns true if (mx,my) is
