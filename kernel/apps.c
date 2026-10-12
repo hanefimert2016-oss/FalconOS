@@ -4353,7 +4353,7 @@ static void market_update_view(void){
     for(i32 i=0;i<market_count()&&market_view_count<MARKET_VIEW_CAP;i++){
         if(market_category==1&&!market_installed(i))continue;
         if(market_category==2&&!market_has_update(i))continue;
-        if(market_category>=3 && market_kind(i)!=market_category-3)continue;
+        if(market_category>=3 && market_kind(i)!=market_category-2)continue;
         if(!market_match(market_name(i),market_query))continue;
         market_view[market_view_count++]=i;
     }
