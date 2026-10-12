@@ -119,16 +119,23 @@ RAM           ?= 12288
 CPUS          ?= 6
 VRAM          ?= 256
 DISK_CAPACITY ?= 4G
+OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd))
+OVMF_VARS_TEMPLATE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd))
+OVMF_VARS := $(BUILD)/FalconBoot-OVMF-VARS.fd
+UEFI_QEMU_FLAGS := -machine q35 \
+    -drive if=pflash,format=raw,unit=0,readonly=on,file=$(OVMF_CODE) \
+    -drive if=pflash,format=raw,unit=1,file=$(OVMF_VARS)
+
 
 # Boot the FalconBoot UEFI CD-ROM before the unbootable test data disk.
 # QEMU now also requires OVMF x86_64 UEFI firmware (not SeaBIOS).
-QEMU_FLAGS    := -m $(RAM)M -smp $(CPUS) -boot order=d \
+QEMU_FLAGS    := $(UEFI_QEMU_FLAGS) -m $(RAM)M -smp $(CPUS) -boot order=d \
                  -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
                  -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display $(QEMU_DISPLAY) -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
-HEADLESS_FLAGS:= -m $(RAM)M -smp $(CPUS) -boot order=d \
+HEADLESS_FLAGS:= $(UEFI_QEMU_FLAGS) -m $(RAM)M -smp $(CPUS) -boot order=d \
                  -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
                  -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display none -vga std -global VGA.vgamem_mb=$(VRAM) \
@@ -232,6 +239,12 @@ $(ISO): $(UEFI_EFI) $(KERNEL_BIN)
 	xorriso -as mkisofs -r -J -V FALCONOS_V2 -e falcon-esp.img -no-emul-boot -o $(ISO) $(ISO_DIR)
 	@echo "[OK] GRUB-free FalconOS V2 UEFI ISO $@ (native FalconBoot/1)"
 
+# OVMF nonvolatile variables are copied into build/; never alter the
+# system firmware image. Required for a genuine x86_64 UEFI boot session.
+$(OVMF_VARS): | $(BUILD)
+	@test -f "$(OVMF_CODE)" && test -f "$(OVMF_VARS_TEMPLATE)" || { echo "Missing OVMF: install ovmf"; exit 1; }
+	cp $(OVMF_VARS_TEMPLATE) $@
+
 # ---- run ----------------------------------------------------------------------
 # Run FalconOS first, then start this in a second terminal to enable
 # GitHub Releases downloads through the opt-in COM1 bridge.
@@ -255,7 +268,7 @@ market-bridge-publish:
 # over COM1 and read-only, certificate-verified HTTPS for Falco search/pages.
 # Bind the HTTPS gateway only to loopback for QEMU user-mode networking.
 # Neither requires a GitHub token for downloads.
-run-market-publish-vm: $(ISO) $(BUILD)/falcon-safe.raw
+run-market-publish-vm: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock --enable-publish & \
 	  bridge_pid=$!; \
 	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
@@ -264,7 +277,7 @@ run-market-publish-vm: $(ISO) $(BUILD)/falcon-safe.raw
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 # Starts QEMU + both HTTPS-backed services, and cleans them on exit.
-run-market: $(ISO) $(BUILD)/falcon-safe.raw
+run-market: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock & \
 	  bridge_pid=$!; \
 	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
@@ -275,7 +288,7 @@ run-market: $(ISO) $(BUILD)/falcon-safe.raw
 # Run the completely native-rendered Falco (no Chromium, no browser-pixel bridge).
 # Guest uses own layout engine; Python stdlib host is only for verified HTTPS.
 .PHONY: run-falco-native
-run-falco-native: $(ISO) $(BUILD)/falcon-safe.raw
+run-falco-native: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock & \
 	  market_pid=$!; \
 	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
@@ -287,11 +300,12 @@ run-falco-native: $(ISO) $(BUILD)/falcon-safe.raw
 
 run: run-disk
 
-run-cdrom: $(ISO)
+run-cdrom: $(ISO) $(OVMF_VARS)
 	$(QEMU) -cdrom $< $(QEMU_FLAGS)
 
-run-fb: $(KERNEL)
-	$(QEMU) -kernel $< $(QEMU_FLAGS)
+run-fb: $(ISO) $(OVMF_VARS)
+	@echo "FalconBoot is UEFI-only; booting the ISO (not legacy -kernel)"
+	$(QEMU) -cdrom $(ISO) $(QEMU_FLAGS)
 
 run-headless: run-disk-headless
 
@@ -299,14 +313,14 @@ run-headless: run-disk-headless
 $(BUILD)/falcon-safe.raw: | $(BUILD)
 	python3 tools/make_safe_disk.py --image $@ --size $(DISK_CAPACITY)
 
-run-disk: $(ISO) $(BUILD)/falcon-safe.raw
+run-disk: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 	$(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
-run-disk-headless: $(ISO) $(BUILD)/falcon-safe.raw
+run-disk-headless: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 	$(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(HEADLESS_FLAGS)
 
 # Writes stay in QEMU’s overlay only — discarded when QEMU exits (“USB çıkarılınca kalmadan”).
-run-disk-ephemeral: $(ISO) $(BUILD)/falcon-safe.raw
+run-disk-ephemeral: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 	$(QEMU) -snapshot -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 everything: iso run-disk
@@ -322,5 +336,5 @@ $(BUILD) $(BUILD)/kernel $(BUILD)/boot $(BUILD)/linux:
 
 clean:
 	@rm -rf $(BUILD)/kernel $(BUILD)/linux $(BUILD)/boot $(ISO_DIR)
-	@rm -f $(KERNEL) $(ISO)
+	@rm -f $(KERNEL) $(ISO) $(KERNEL_BIN) $(UEFI_EFI) $(BUILD)/falcon-*.obj $(OVMF_VARS)
 	@echo "[OK] Build outputs cleaned; persistent disk images preserved"
