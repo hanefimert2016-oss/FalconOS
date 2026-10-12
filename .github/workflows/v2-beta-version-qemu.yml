@@ -20,6 +20,7 @@ on:
       - Makefile
       - tests/calendar_math_test.c
       - tests/test_v2_release_identity.py
+      - tests/test_aeroflow_shell.py
       - tools/vnc_falco_codedium_e2e.py
       - .github/workflows/v2-beta-version-qemu.yml
   workflow_dispatch:
