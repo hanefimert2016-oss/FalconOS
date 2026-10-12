@@ -5079,61 +5079,67 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
  * actual interpreter output, app source and Close button. */
 static void render_fapp_runner(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;
-    gfx_round_rect(wx+17,wy+13,ww-34,77,17,0x12372Cu);
-    gfx_round_rect(wx+31,wy+25,45,45,13,0x64E4ADu);
-    gfx_text_lg_centered(wx+54,wy+31,"A",0x103228u);
-    gfx_text_lg(wx+89,wy+18,fapp_running_title,0xF5FBF9u);
-    gfx_text(wx+89,wy+59,"FalconOS executable application | FAPP/1",0xB2E8D6u);
-    gfx_round_rect(wx+17,wy+104,ww-34,wh-169,16,0x121E2Au);
-    i32 output_top=wy+157;
+    const i32 ix=wx+19,iw=ww-38;
+    aero_panel(ix,wy+13,iw,83,17);
+    gfx_round_rect(ix+13,wy+26,48,48,15,0x1DAE82u);
+    gfx_text_lg_centered(ix+37,wy+33,"A",0xFFFFFFu);
+    market_trim(ix+78,wy+25,fapp_running_title,(iw-100)/16,aero_text());
+    gfx_text(ix+78,wy+59,"FAPP/1  /  REVIEWED COMMANDS",aero_dim());
+    i32 body_h=wh-169;
+    if(body_h<122)body_h=122;
+    aero_card(ix,wy+105,iw,body_h,15,false);
+    i32 output_top=wy+158;
     if(fapp_gui_custom){
-        gfx_text_lg(wx+37,wy+118,
-            fapp_gui_heading[0]?fapp_gui_heading:fapp_running_title,0xEAFDF6u);
+        market_trim(wx+38,wy+121,
+                    fapp_gui_heading[0]?fapp_gui_heading:fapp_running_title,
+                    (ww-80)/16,aero_text());
         if(fapp_gui_description[0])
-            gfx_text(wx+38,wy+166,fapp_gui_description,0xB7DCD0u);
-        i32 top=wy+210;
-        i32 button_width=(ww-104)/2;
-        if(button_width>300)button_width=300;
+            market_trim(wx+38,wy+166,fapp_gui_description,(ww-80)/8,aero_dim());
+        const i32 top=wy+207;
+        i32 bw=(ww-104)/2;
+        if(bw>306)bw=306;
+        if(bw<80)bw=80;
+        i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+        bool click=wm_click_enabled();
         for(i32 i=0;i<fapp_button_count;i++){
-            i32 bx=wx+38+(i%2)*(button_width+18);
-            i32 by=top+(i/2)*59;
-            bool selected=i==fapp_button_selected;
-            gfx_round_rect(bx,by,button_width,45,12,
-                selected?0x81F0BAu:0x244E45u);
-            gfx_text(bx+19,by+14,fapp_buttons[i].caption,
-                selected?0x0B2A22u:0xF1FFF8u);
-            if(wm_click_enabled()){
-                i32 mx,my;bool down;mouse_get(&mx,&my,&down);
-                (void)down;
-                if(mx>=bx&&mx<bx+button_width&&my>=by&&my<by+45){
-                    (void)mouse_consume_click();
-                    fapp_button_selected=i;
-                    fapp_gui_run_action(i);
-                }
+            const i32 bx=wx+38+(i%2)*(bw+18);
+            const i32 by=top+(i/2)*59;
+            const bool active=i==fapp_button_selected;
+            aero_card(bx,by,bw,45,12,active);
+            gfx_round_rect(bx+10,by+11,23,23,8,
+                           active?aero_accent():0x217E76u);
+            gfx_text_centered(bx+21,by+14,">",active?aero_accent_ink():0xFFFFFFu);
+            market_trim(bx+42,by+14,fapp_buttons[i].caption,
+                        (bw-52)/8,aero_text());
+            if(click&&mx>=bx&&mx<bx+bw&&my>=by&&my<by+45){
+                (void)mouse_consume_click();click=false;
+                fapp_button_selected=i;
+                fapp_gui_run_action(i);
             }
         }
-        output_top=top+((fapp_button_count+1)/2)*59+43;
+        output_top=top+((fapp_button_count+1)/2)*59+38;
     }else{
-        gfx_rect_a(wx+27,wy+136,ww-54,1,0xA8D9C8u,72);
-        gfx_text(wx+36,wy+116,
-             fapp_running_valid?"APP OUTPUT / verified allowlist":"No active app",
-             0x7DE9B8u);
+        gfx_text(wx+38,wy+122,fapp_running_valid?
+            "APP OUTPUT / VERIFIED FAPP/1":"No active application",
+            aero_accent());
     }
-    if(output_top+35<wy+wh-75)
-        gfx_text(wx+37,output_top-24,"PROGRAM OUTPUT",0x7DE9B8u);
+    if(output_top+35<wy+wh-72)
+        gfx_text(wx+38,output_top-23,T("RESULTS","SONUCLAR"),aero_accent());
     i32 y=output_top;
-    for(i32 i=0;i<TERM_LINES&&y+22<wy+wh-77;i++){
+    for(i32 i=0;i<TERM_LINES&&y+23<wy+wh-72;i++){
         const char *line=fapp_running_output_frozen?
                          fapp_running_output[i]:term_buf[i];
         if(line[0]){
-            gfx_text(wx+36,y,line,0xE8F4F0u);
-            y+=25;
+            gfx_round_rect(wx+32,y-3,ww-64,23,6,aero_soft());
+            market_trim(wx+42,y+2,line,(ww-85)/8,aero_text());
+            y+=26;
         }
     }
-    gfx_text(wx+25,wy+wh-49,fapp_running_source,0x4C6780u);
-    gfx_text(wx+25,wy+wh-26,
-        "FalconOS native FAPP/1 | Tab-less focus: arrows, Enter | X to close",
-        PAL_TEXT_DIM);
+    gfx_rect(wx+24,wy+wh-57,ww-48,1,aero_line());
+    market_trim(wx+26,wy+wh-49,fapp_running_source,(ww-56)/8,aero_dim());
+    gfx_text(wx+26,wy+wh-26,
+        T("Arrows select  /  Enter run  /  Close window to exit",
+          "Oklar sec  /  Enter calistir  /  Pencereyi kapat"),aero_dim());
 #ifdef FALCON_QEMU_UI_GALLERY
     outb(0xE9,'f');outb(0xE9,'W');
     if(fapp_gui_custom){outb(0xE9,'f');outb(0xE9,'G');}
