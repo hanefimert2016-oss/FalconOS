@@ -6,6 +6,11 @@ on:
       - kernel/apps.c
       - kernel/main.c
       - kernel/version.h
+      - kernel/calendar_math.c
+      - kernel/calendar_math.h
+      - kernel/settings.c
+      - boot/grub.cfg
+      - tests/calendar_math_test.c
       - tests/test_v2_release_identity.py
       - tools/vnc_falco_codedium_e2e.py
       - .github/workflows/v2-beta-version-qemu.yml
@@ -26,13 +31,19 @@ jobs:
           /tmp/falcon-v2-venv/bin/pip install --quiet pillow vncdotool
       - name: Run all Python regression tests including V2 version checks
         run: /tmp/falcon-v2-venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Verify actual Gregorian calendar arithmetic on host
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/calendar_math_test.c kernel/calendar_math.c -o /tmp/v2-cal-test
+          /tmp/v2-cal-test
       - name: Build native bootable V2 ISO
         run: |
           PATH="/tmp/falcon-v2-venv/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY'
           grub-file --is-x86-multiboot2 build/falcon.elf
           strings build/falcon.elf | grep -F 'FalconOS 2.0 Beta'
           strings build/falcon.elf | grep -F 'V2 BETA'
-      - name: Launch V2 in real QEMU and photograph About + Terminal
+          grep -F 'FalconOS 2.0 Beta' boot/grub.cfg
+          ! grep -F 'FalconOS 1' boot/grub.cfg
+      - name: Launch V2 in real QEMU and photograph About, Terminal and RTC Calendar
         run: timeout 480s /tmp/falcon-v2-venv/bin/python tools/vnc_falco_codedium_e2e.py
       - name: Upload actual unedited QEMU screenshots and logs
         if: always()
@@ -41,6 +52,7 @@ jobs:
           name: FalconOS-V2-Beta-About-Terminal-Real-QEMU
           path: |
             build/FalconOS-V2-Beta-*.png
+            build/FalconOS-V2-Gregorian-Calendar-*.png
             build/FalconOS-Review-Desktop.png
             build/falco-codedium-review-result.json
             build/falco-codedium-review-guest.log
