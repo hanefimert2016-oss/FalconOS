@@ -1,15 +1,15 @@
-/* FalconOS — x86_64 kernel link script (loaded at 1 MiB by GRUB)
- *
- * The kernel is linked as a 64-bit ELF, but the multiboot2 boot stub is
- * 32-bit and lives in `.multiboot`.  GRUB scans the first 32 KiB of the
- * file for the magic, so we keep `.multiboot` first.
+/* FalconOS V2 Beta — FalconBoot/1 native UEFI fixed-address ELF.
+ * FalconBoot loads the flat kernel image to 32 MiB (inside QEMU OVMF RAM).
+ * The old multiboot stub remains uninvoked for migration compatibility;
+ * no GRUB image, GRUB config or GRUB stage participates in UEFI boot.
+ * Changing this physical base MUST update KBASE in the UEFI loader.
  */
 ENTRY(_start)
 OUTPUT_FORMAT(elf64-x86-64)
 
 SECTIONS
 {
-    . = 1M;
+    . = 32M;
 
     .multiboot ALIGN(8) :
     {
