@@ -69,6 +69,29 @@ def main():
                 k(c,"f2");wait(b"LP",off,60)
                 pause(.9)
                 snap(c,"FalconOS-V2-AeroFlow-Launcher")
+                # Compare the ACTUAL native launcher surface in three real
+                # OS palettes, without post-processing the QEMU images.
+                from PIL import Image, ImageChops
+                liquid=Image.open(B/"FalconOS-V2-AeroFlow-Launcher.png").convert("RGB")
+                for index in (3,4,0): # Nordic, Rose Gold, then Light
+                    mark=LOG.stat().st_size
+                    k(c,"f10");wait(("A"+str(index)).encode(),mark,40)
+                    pause(.45)
+                snap(c,"FalconOS-V2-AeroFlow-Light")
+                light=Image.open(B/"FalconOS-V2-AeroFlow-Light.png").convert("RGB")
+                mark=LOG.stat().st_size
+                k(c,"f10");wait(b"A1",mark,40);pause(.9)
+                snap(c,"FalconOS-V2-AeroFlow-Dark")
+                dark=Image.open(B/"FalconOS-V2-AeroFlow-Dark.png").convert("RGB")
+                pw=min(liquid.width-46,1000)
+                ph=min(max(liquid.height-136,440),728)
+                lx=(liquid.width-pw)//2;ly=(liquid.height-ph)//2
+                roi=(lx+29,ly+119,lx+196,ly+161)
+                if ImageChops.difference(liquid.crop(roi),light.crop(roi)).getbbox() is None or ImageChops.difference(light.crop(roi),dark.crop(roi)).getbbox() is None:
+                    raise AssertionError("AeroFlow native sidebar palette stayed unchanged across Liquid/Light/Dark")
+                STATE["checks"].append("Native AeroFlow launcher sidebar changes in actual Liquid / Light / Dark QEMU framebuffer pixels")
+                mark=LOG.stat().st_size
+                k(c,"f10");wait(b"A2",mark,40) # restore default Liquid
                 t(c,"Falco");pause(.7)
                 snap(c,"FalconOS-V2-AeroFlow-Search")
                 off=LOG.stat().st_size;k(c,"enter")
