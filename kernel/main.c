@@ -639,6 +639,15 @@ void long_start(u64 magic, u64 info_ptr)
         while ((k = kbd_poll()) != -1) {
             /* OBS-style global hotkeys still work when Falco is focused. */
             if(capture_studio_hotkey(k)) continue;
+#ifdef FALCON_QEMU_AEROFLOW_TEST
+            /* Test-only native palette cycle. The shipping OS switches
+             * themes through Settings; F10 is NOT a secret user shortcut. */
+            if(k==KEY_F10){
+                SET.theme=(theme_t)(((u32)SET.theme+1u)%THEME_COUNT);
+                outb(0xE9,'A');outb(0xE9,(u8)('0'+SET.theme));
+                continue;
+            }
+#endif
             /* Power menu absorbs all keys while open (Esc / arrows / Enter). */
             if (power_menu_is_open()) { power_menu_handle_key(k); continue; }
             /* Help drawer absorbs everything except F-keys so the user
