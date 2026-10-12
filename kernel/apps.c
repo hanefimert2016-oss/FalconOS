@@ -3256,15 +3256,31 @@ static void render_calendar(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     i32 cx=wx+ww/2,grid_x=wx+24,grid_w=ww-48;
     gfx_round_rect(cx-138,wy+58,276,42,12,PAL_PANEL_HI);
     gfx_text_lg_centered(cx,wy+65,heading,PAL_TEXT);
-    gfx_text(wx+34,wy+73,"<",PAL_ACCENT);
-    gfx_text(wx+ww-45,wy+73,">",PAL_ACCENT);
+    /* Clickable native month navigation, not just decorative glyphs. */
+    gfx_round_rect(wx+26,wy+59,78,37,10,PAL_PANEL_HI);
+    gfx_round_outline(wx+26,wy+59,78,37,10,PAL_HAIRLINE);
+    gfx_text_centered(wx+65,wy+70,"< PREV",PAL_ACCENT);
+    gfx_round_rect(wx+ww-106,wy+59,78,37,10,PAL_PANEL_HI);
+    gfx_round_outline(wx+ww-106,wy+59,78,37,10,PAL_HAIRLINE);
+    gfx_text_centered(wx+ww-67,wy+70,"NEXT >",PAL_ACCENT);
+    if(wm_click_enabled() && mouse_peek_click()){
+        i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+        if(my>=wy+59 && my<wy+96){
+            if(mx>=wx+26 && mx<wx+104 && calendar_view_offset>-24){
+                (void)mouse_consume_click();calendar_view_offset--;
+            }else if(mx>=wx+ww-106 && mx<wx+ww-28 &&
+                     calendar_view_offset<24){
+                (void)mouse_consume_click();calendar_view_offset++;
+            }
+        }
+    }
 
     static const char *week_en[7]={"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
     static const char *week_tr[7]={"Pzt","Sal","Car","Per","Cum","Cmt","Paz"};
     i32 cell_w=grid_w/7;
     i32 cell_h=(wh-193)/6;
     if(cell_h>66)cell_h=66;
-    if(cell_h<26)cell_h=26;
+    if(cell_h<18)cell_h=18;
     for(i32 col=0;col<7;col++){
         i32 dx=grid_x+col*cell_w;
         gfx_text_centered(dx+cell_w/2,wy+119,
