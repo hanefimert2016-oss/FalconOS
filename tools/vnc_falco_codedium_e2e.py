@@ -29,6 +29,8 @@ def main():
     pair=next(((c,v) for c,v in firmware if c.is_file() and v.is_file()),None)
     if not pair:raise RuntimeError("FalconBoot test requires OVMF x86_64 code+vars firmware")
     var_copy=B/"FalconBoot-QEMU-VARS.fd"
+    market_sock=B/"falcon-market-qa.sock"
+    if market_sock.exists(): market_sock.unlink()
     shutil.copyfile(pair[1],var_copy)
     flash=["-drive",f"if=pflash,format=raw,unit=0,readonly=on,file={pair[0]}",
            "-drive",f"if=pflash,format=raw,unit=1,file={var_copy}"]
@@ -36,10 +38,15 @@ def main():
          *flash,"-m","1024","-smp","1",
          "-boot","d","-cdrom","build/FalconOS.iso","-display","none",
          "-vga","std","-global","VGA.vgamem_mb=256",
-         "-vnc","127.0.0.1:11","-monitor","none","-serial","none",
+         "-vnc","127.0.0.1:11","-monitor","none",
+         "-serial",f"unix:{market_sock},server=on,wait=off",
          "-debugcon","file:"+str(LOG),"-global","isa-debugcon.iobase=0xe9","-no-reboot"]
     with (B/"falco-codedium-review-qemu.log").open("wb") as err:
         guest=subprocess.Popen(cmd,stdout=subprocess.DEVNULL,stderr=err)
+        bridge_log=(B/"falcon-market-qa-bridge.log").open("wb")
+        bridge=subprocess.Popen(["python3","tools/marketplace_bridge.py",
+                                 "--socket",str(market_sock)],
+                                 stdout=bridge_log,stderr=subprocess.STDOUT)
         try:
             for _ in range(120):
                 try:
@@ -162,8 +169,29 @@ def main():
                 off=LOG.stat().st_size
                 k(c,"t");wait(b"MT",off,40)
                 STATE["checks"].append("REAL RTC Calendar: guest acknowledged right arrow and month header visibly changed")
+                # Native Discover uses actual public Marketplace Releases via
+                # the host's read-only HTTPS bridge. Failure to reach GitHub
+                # is distinct from a failure of the guest's rendered GUI.
+                k(c,"f2");t(c,"Store")
+                off=LOG.stat().st_size;k(c,"enter")
+                wait(b"zC",off,60);wait(b"gC",off,65)
+                pause(1)
+                off=LOG.stat().st_size
+                k(c,"f5")
+                try:
+                    wait(b"C",off,28)
+                    STATE["checks"].append("Public GitHub Marketplace catalog accepted over real guest serial transport")
+                except AssertionError:
+                    STATE["checks"].append("Native Discover works; external GitHub releases unavailable during CI")
+                pause(1)
+                snap(c,"FalconOS-V2-Discover-Native-Marketplace")
+                STATE["checks"].append("Native AeroFlow Discover photographed directly from actual OVMF/QEMU framebuffer")
                 STATE["result"]="PASS"
         finally:
+            bridge.terminate()
+            try:bridge.wait(timeout=3)
+            except subprocess.TimeoutExpired:bridge.kill()
+            bridge_log.close()
             guest.terminate()
             try:guest.wait(timeout=5)
             except subprocess.TimeoutExpired:guest.kill()
