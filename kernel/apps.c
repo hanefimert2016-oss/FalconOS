@@ -3232,9 +3232,25 @@ static void render_notes(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 /* --- Calendar: real RTC dates, Gregorian months, keyboard navigation ---- */
 static i32 calendar_view_offset=0; /* +/-24 months from current RTC month */
 static void calendar_input_key(i32 key){
-    if(key==KEY_LEFT && calendar_view_offset>-24)calendar_view_offset--;
-    else if(key==KEY_RIGHT && calendar_view_offset<24)calendar_view_offset++;
-    else if(key=='t'||key=='T'||key==KEY_HOME)calendar_view_offset=0;
+    bool moved=false;
+    if(key==KEY_LEFT && calendar_view_offset>-24){
+        calendar_view_offset--;moved=true;
+    }else if(key==KEY_RIGHT && calendar_view_offset<24){
+        calendar_view_offset++;moved=true;
+    }else if(key=='t'||key=='T'||key==KEY_HOME){
+        calendar_view_offset=0;moved=true;
+    }
+#ifdef FALCON_QEMU_UI_GALLERY
+    /* A keypress alone is not proof that the application processed it.
+     * CI waits for this marker AND a subsequent complete framebuffer. */
+    if(moved){
+        outb(0xE9,'M');
+        outb(0xE9,(u8)(calendar_view_offset>0?'N':
+                        calendar_view_offset<0?'P':'T'));
+    }
+#else
+    (void)moved;
+#endif
 }
 static void render_calendar(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;
