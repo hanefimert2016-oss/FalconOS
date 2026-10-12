@@ -7,6 +7,7 @@
  * No per-frame heap allocation, GPU or browser dependency.
  */
 #include "falcon.h"
+#include "aeroflow.h"
 #define DRAW_COLS 4
 #define DRAW_ROWS 3
 #define DRAW_PAGE (DRAW_COLS*DRAW_ROWS)
@@ -114,84 +115,136 @@ void launchpad_input(i32 key){
 void launchpad_render(u32 frame){
     (void)frame;
     if(!is_open)return;
-    i32 W=(i32)FB.width,H=(i32)FB.height;
-    gfx_rect_a(0,30,W,H-30,0x101C37,130);
-    i32 panel_w= W-72;
-    if(panel_w>930)panel_w=930;
-    i32 panel_h=H-180;
-    if(panel_h>710)panel_h=710;
-    if(panel_h<420)panel_h=420;
-    i32 x=(W-panel_w)/2,y=(H-panel_h)/2-10;
-    if(y<40)y=40;
-    gfx_round_rect_a(x+7,y+14,panel_w,panel_h,28,0x020818,84);
-    gfx_round_rect(x,y,panel_w,panel_h,28,0xF8FAFF);
-    gfx_round_outline(x,y,panel_w,panel_h,28,0xD4E1F2);
-    gfx_round_rect(x+24,y+20,48,48,17,0x2662DF);
-    gfx_text_lg_centered(x+48,y+25,"F",0xFFFFFF);
-    gfx_text_lg(x+88,y+24,"Apps",0x192945);
-    gfx_text(x+89,y+57,"Your FalconOS workspace",0x65758D);
-    i32 search_y=y+90;
-    gfx_round_rect(x+26,search_y,panel_w-52,48,19,0xECF3FF);
-    gfx_round_outline(x+26,search_y,panel_w-52,48,19,0xC9DAF5);
-    gfx_circle_outline(x+50,search_y+22,8,0x4977BC);
-    gfx_line(x+56,search_y+28,x+62,search_y+34,0x4977BC);
-    gfx_text(x+77,search_y+17,search_length?search_term:
-        "Search installed apps...",search_length?0x132E54:0x8495AA);
-    if(((pit_ms()-opened_at)/450u)&1u)
-        gfx_rect(x+80+gfx_text_width(search_term),search_y+13,2,21,0x396CD8);
-    const char *tabs[]={"Essentials","System","All apps"};
-    i32 tabs_y=search_y+66;
-    for(i32 i=0;i<3;i++){
-        i32 tx=x+27+i*148;
-        gfx_round_rect(tx,tabs_y,138,36,15,i==section_id?0x286BE5:0xE9EEF8);
-        gfx_text_centered(tx+69,tabs_y+11,tabs[i],i==section_id?0xFFFFFF:0x61748F);
-    }
-    i32 start=page*DRAW_PAGE,end=start+DRAW_PAGE;
-    if(end>visible_count)end=visible_count;
-    i32 grid_top=tabs_y+62;
-    i32 tile_w=(panel_w-64-3*14)/4;
-    i32 tile_h=(panel_h-(grid_top-y)-80)/3;
-    if(tile_h>136)tile_h=136;
-    if(tile_h<78)tile_h=78;
+    const i32 W=(i32)FB.width,H=(i32)FB.height;
+    gfx_rect_a(0,30,W,H-30,0x09162Bu,aero_dark()?157:107);
+    i32 panel_w=W-46;
+    if(panel_w>1000)panel_w=1000;
+    i32 panel_h=H-136;
+    if(panel_h>728)panel_h=728;
+    if(panel_h<440)panel_h=440;
+    const i32 x=(W-panel_w)/2,y=(H-panel_h)/2;
+    aero_panel(x,y,panel_w,panel_h,25);
+
+    const i32 side_w=207;
+    gfx_round_rect(x+10,y+10,side_w,panel_h-20,19,aero_soft());
+    gfx_rect(x+side_w+13,y+27,1,panel_h-54,aero_line());
+    gfx_round_rect(x+29,y+27,43,43,14,aero_accent());
+    gfx_text_lg_centered(x+50,y+33,"F",aero_accent_ink());
+    gfx_text(x+84,y+31,"FalconOS",aero_text());
+    gfx_text(x+84,y+52,"V2  /  AeroFlow",aero_dim());
+
+    const char *tab_labels[3]={
+        T("Favorites","Favoriler"),T("System","Sistem"),
+        T("All apps","Tum uygulamalar")
+    };
+    const char *tab_hints[3]={"01","02","03"};
+    const i32 nav_y=y+119;
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool click=mouse_peek_click();
-    if(click&&hit(mx,my,x+20,tabs_y,3*148,38)){
-        i32 tab=(mx-x-27)/148;
-        if(tab>=0&&tab<3){
-            section_id=tab;selected=0;refresh();
-            (void)mouse_consume_click();
-            click=false;
-        }
+    if(click&&!hit(mx,my,x,y,panel_w,panel_h)){
+        (void)mouse_consume_click();launchpad_close();return;
     }
+    for(i32 i=0;i<3;i++){
+        i32 ny=nav_y+i*54;
+        bool hot=hit(mx,my,x+24,ny,178,45);
+        if(hot&&click){
+            (void)mouse_consume_click();click=false;
+            section_id=i;selected=0;refresh();
+        }
+        aero_card(x+24,ny,178,45,13,section_id==i);
+        gfx_text(x+36,ny+14,tab_hints[i],section_id==i?aero_accent():aero_dim());
+        gfx_text(x+65,ny+14,tab_labels[i],aero_text());
+        if(section_id==i)gfx_rect(x+25,ny+13,3,19,aero_accent());
+    }
+    gfx_rect(x+31,y+315,164,1,aero_line());
+    gfx_text(x+34,y+330,T("SHORTCUTS","KISAYOLLAR"),aero_dim());
+    gfx_text(x+34,y+361,T("Tab  -  switch section","Tab  -  kategori"),aero_dim());
+    gfx_text(x+34,y+387,T("F3   -  pin selected","F3   -  sabitle"),aero_dim());
+    gfx_text(x+34,y+413,T("Enter - open app","Enter - uygulamayi ac"),aero_dim());
+
+    const i32 foot=y+panel_h-80;
+    gfx_round_rect(x+24,foot,178,56,14,aero_tile());
+    gfx_circle(x+48,foot+28,15,aero_accent());
+    gfx_text_centered(x+48,foot+20,"F",aero_accent_ink());
+    gfx_text(x+74,foot+14,SET.owner[0]?SET.owner:"Falcon",aero_text());
+    gfx_text(x+74,foot+36,T("Local workspace","Yerel oturum"),aero_dim());
+
+    const i32 rx=x+235;
+    const i32 rw=panel_w-257;
+    gfx_round_rect(rx,y+24,rw,51,15,aero_soft());
+    gfx_round_outline(rx,y+24,rw,51,15,aero_accent());
+    gfx_circle_outline(rx+25,y+49,8,aero_dim());
+    gfx_line(rx+31,y+55,rx+37,y+61,aero_dim());
+    gfx_text(rx+49,y+42,search_length?search_term:
+        T("Search applications...","Uygulama ara..."),
+        search_length?aero_text():aero_dim());
+    if((pit_ms()-opened_at)/475u%2u && search_length<25)
+        gfx_rect(rx+51+gfx_text_width(search_term),y+39,2,23,aero_accent());
+    const char *heading=search_length?
+        T("Search results","Arama sonuclari"):
+        (section_id==0?T("Your favorites","Favori uygulamalar"):
+         section_id==1?T("System tools","Sistem araclari"):
+                       T("All applications","Tum uygulamalar"));
+    gfx_text_lg(rx+2,y+97,heading,aero_text());
+    gfx_text(rx+3,y+128,T("Native apps and installed packages",
+                           "Yerel uygulamalar ve kurulu paketler"),aero_dim());
+    const i32 cols=4;
+    const i32 gap=12;
+    const i32 tile_w=(rw-6-(cols-1)*gap)/cols;
+    i32 tile_h=(panel_h-250)/3;
+    if(tile_h>144)tile_h=144;
+    if(tile_h<78)tile_h=78;
+    const i32 grid_y=y+160;
+    const i32 start=page*DRAW_PAGE;
+    i32 end=start+DRAW_PAGE;
+    if(end>visible_count)end=visible_count;
     for(i32 k=start;k<end;k++){
-        i32 slot=k-start,col=slot%4,row=slot/4;
-        i32 tx=x+32+col*(tile_w+14),ty=grid_top+row*(tile_h+10);
-        bool hover=hit(mx,my,tx,ty,tile_w,tile_h);
-        bool focus=k==selected;
-        gfx_round_rect(tx,ty,tile_w,tile_h,18,
-            focus||hover?0xE4EDFF:0xF0F4FB);
-        if(focus||hover)gfx_round_outline(tx,ty,tile_w,tile_h,18,0x94B9FB);
-        i32 id=visible[k];
-        u32 tint=apps_tint(id);
-        i32 cx=tx+tile_w/2;
-        gfx_round_rect(cx-26,ty+9,52,52,17,tint);
+        const i32 slot=k-start,col=slot%cols,row=slot/cols;
+        const i32 tx=rx+col*(tile_w+gap),ty=grid_y+row*(tile_h+10);
+        const bool hover=hit(mx,my,tx,ty,tile_w,tile_h);
+        const bool focus=k==selected;
+        aero_card(tx,ty,tile_w,tile_h,16,hover||focus);
+        const i32 id=visible[k],cx=tx+tile_w/2;
+        gfx_round_rect(cx-25,ty+11,50,49,15,apps_tint(id));
         apps_draw_icon(id,cx,ty+35);
-        const char *name=apps_display_name(id);
-        gfx_text_centered(cx,ty+73,name,0x1B3151);
+        gfx_text_centered(cx,ty+69,apps_display_name(id),aero_text());
+        if(tile_h>102){
+            const char *sub=apps_subtitle(id);
+            if(sub)gfx_text_centered(cx,ty+94,sub,aero_dim());
+        }
         if(desktop_pin_is_pinned(id))
-            gfx_circle(cx+29,ty+15,4,0x24B785);
+            gfx_circle(cx+30,ty+15,5,0x16B88Fu);
         if(hover&&click){
             (void)mouse_consume_click();
-            apps_open(id);launchpad_close();
-            return;
+            apps_open(id);launchpad_close();return;
         }
     }
-    if(!visible_count)gfx_text_centered(x+panel_w/2,grid_top+80,
-        "No app found. Try another search.",0x5E7394);
-    gfx_rect(x+27,y+panel_h-51,panel_w-54,1,0xDFE7F4);
-    char count[12];k_itoa((u32)visible_count,count,10);
-    gfx_text(x+31,y+panel_h-33,count,0x285EBD);
-    gfx_text(x+56,y+panel_h-33,
-        "apps    Tab categories   Arrows navigate   Enter open   Esc close",
-        0x697C99);
+    if(!visible_count)
+        gfx_text_centered(rx+rw/2,grid_y+90,
+            T("No matching apps","Eslesen uygulama yok"),aero_dim());
+    gfx_rect(rx,foot-12,rw,1,aero_line());
+    char numbers[32],num[12];
+    i32 pages=(visible_count+DRAW_PAGE-1)/DRAW_PAGE;
+    if(pages<1)pages=1;
+    k_strcpy(numbers,T("Page ","Sayfa "));
+    k_itoa((u32)(page+1),num,10);k_strcat(numbers,num);
+    k_strcat(numbers," / ");k_itoa((u32)pages,num,10);k_strcat(numbers,num);
+    gfx_text(rx+4,foot+12,numbers,aero_text());
+    gfx_text(rx+4,foot+38,
+        T("Arrows navigate  /  Enter open  /  F2 close",
+          "Oklar: gezin  /  Enter: ac  /  F2: kapat"),aero_dim());
+    const i32 bw=77;
+    const i32 right=rx+rw-bw,prev=right-bw-10;
+    const bool can_prev=page>0,can_next=page+1<pages;
+    aero_chip(prev,foot+7,bw,36,"<",can_prev&&hit(mx,my,prev,foot+7,bw,36));
+    aero_chip(right,foot+7,bw,36,">",can_next&&hit(mx,my,right,foot+7,bw,36));
+    if(click&&hit(mx,my,prev,foot+7,bw,36)&&can_prev){
+        (void)mouse_consume_click();selected=(page-1)*DRAW_PAGE;refresh();
+    }else if(click&&hit(mx,my,right,foot+7,bw,36)&&can_next){
+        (void)mouse_consume_click();selected=(page+1)*DRAW_PAGE;refresh();
+    }
+#ifdef FALCON_QEMU_UI_GALLERY
+    /* Visual QA marker: real full launcher UI was painted by the guest. */
+    outb(0xE9,'L');outb(0xE9,'P');
+#endif
 }
