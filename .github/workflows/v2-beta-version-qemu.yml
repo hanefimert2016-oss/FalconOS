@@ -1,0 +1,56 @@
+name: FalconOS V2 Beta release branding verified in real QEMU
+on:
+  push:
+    branches: [v2-beta]
+    paths:
+      - kernel/apps.c
+      - kernel/main.c
+      - kernel/version.h
+      - tests/test_v2_release_identity.py
+      - tools/vnc_falco_codedium_e2e.py
+      - .github/workflows/v2-beta-version-qemu.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  v2-beta-branding:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ISO compiler, QEMU, VNC and real screenshot dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 fonts-dejavu-core python3-venv binutils
+          python3 -m venv /tmp/falcon-v2-venv
+          /tmp/falcon-v2-venv/bin/pip install --quiet pillow vncdotool
+      - name: Run all Python regression tests including V2 version checks
+        run: /tmp/falcon-v2-venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Build native bootable V2 ISO
+        run: |
+          PATH="/tmp/falcon-v2-venv/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY'
+          grub-file --is-x86-multiboot2 build/falcon.elf
+          strings build/falcon.elf | grep -F 'FalconOS 2.0 Beta'
+          strings build/falcon.elf | grep -F 'V2 BETA'
+      - name: Launch V2 in real QEMU and photograph About + Terminal
+        run: timeout 480s /tmp/falcon-v2-venv/bin/python tools/vnc_falco_codedium_e2e.py
+      - name: Upload actual unedited QEMU screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-V2-Beta-About-Terminal-Real-QEMU
+          path: |
+            build/FalconOS-V2-Beta-*.png
+            build/FalconOS-Review-Desktop.png
+            build/falco-codedium-review-result.json
+            build/falco-codedium-review-guest.log
+            build/falco-codedium-review-qemu.log
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Upload verified V2 Beta bootable ISO
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-V2-Beta-Version-Fixed-ISO
+          path: build/FalconOS.iso
+          retention-days: 30
