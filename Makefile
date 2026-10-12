@@ -298,7 +298,11 @@ run-falco-native: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 	  trap 'kill $market_pid $https_pid $native_pid 2>/dev/null || true' EXIT; \
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
-run: run-disk
+run: run-market
+
+# Explicit offline VM mode: do not start HTTPS or read-only Marketplace bridge.
+.PHONY: run-offline
+run-offline: run-disk
 
 run-cdrom: $(ISO) $(OVMF_VARS)
 	$(QEMU) -cdrom $< $(QEMU_FLAGS)
