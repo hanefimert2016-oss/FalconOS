@@ -4,7 +4,7 @@
 bool market_line_allowed(const char *line, i32 size) {
     static const char *allowed[] = {
         "echo", "date", "uname", "uptime", "whoami", "pwd", "ls",
-        "help", "cal", "hwinfo", "free", "df", "clear", NULL
+        "help", "cal", "hwinfo", "free", "df", "clear", "doctor",\n        "isostudio", "storagecenter", "themecreator", "codedium", NULL
     };
     if (size <= 0 || size > 180) return false;
     for (i32 i = 0; i < size; i++) {
