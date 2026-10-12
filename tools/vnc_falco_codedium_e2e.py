@@ -88,10 +88,23 @@ def main():
                 wait(b"zK",off,60);wait(b"gK",off,65)
                 pause(1)
                 snap(c,"FalconOS-V2-Gregorian-Calendar-Today-Real-QEMU")
-                k(c,"right");pause(.8)
+                from PIL import Image, ImageChops
+                initial=Image.open(B/"FalconOS-V2-Gregorian-Calendar-Today-Real-QEMU.png").convert("RGB")
+                off=LOG.stat().st_size
+                k(c,"right")
+                wait(b"MN",off,40) # guest month state increment acknowledged
+                wait(b"gK",off,65) # a complete native Calendar framebuffer
+                pause(1.2)
                 snap(c,"FalconOS-V2-Gregorian-Calendar-Next-Month-Real-QEMU")
-                k(c,"t");pause(.6)
-                STATE["checks"].append("RTC Calendar launched and navigated to the following month using a real PS/2 key")
+                following=Image.open(B/"FalconOS-V2-Gregorian-Calendar-Next-Month-Real-QEMU.png").convert("RGB")
+                month_title_box=(555,276,780,335) # only the actual native month title
+                delta=ImageChops.difference(initial.crop(month_title_box),
+                                            following.crop(month_title_box))
+                if delta.getbbox() is None:
+                    raise AssertionError("Calendar did not render next month: identical month title pixels")
+                off=LOG.stat().st_size
+                k(c,"t");wait(b"MT",off,40)
+                STATE["checks"].append("REAL RTC Calendar: guest acknowledged right arrow and month header visibly changed")
                 STATE["result"]="PASS"
         finally:
             guest.terminate()
