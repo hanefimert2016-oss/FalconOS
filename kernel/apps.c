@@ -23,6 +23,7 @@
 #include "shfs.h"
 #include "falco_theme.h"
 #include "version.h"
+#include "calendar_math.h"
 
 static i32 active_app = -1;
 static u32 open_at_ms = 0;     /* used for slide-in animation */
@@ -3174,41 +3175,70 @@ static void render_notes(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     }
 }
 
-/* --- Calendar ------------------------------------------------------------ */
-static void render_calendar(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
-    (void)frame; (void)wh;
-    section(wx, wy, T("Calendar", "Takvim"),
-            T("Month grid driven by uptime", "Aydınlık ızgarası (uptime ile)"));
-
-    /* fake "today" derived from uptime hours, so it changes if you wait */
-    u32 H, M, S; pit_uptime(&H, &M, &S);
-    (void)M; (void)S;
-    i32 today = (i32)(H % 28) + 1;
-
-    /* month grid: 4 rows x 7 cols = 28 days */
-    i32 cw = (ww - 60) / 7;
-    i32 ch = (wh - 90) / 4;
-    if (ch > 60) ch = 60;
-    static const char *DOW[] = { "S","M","T","W","T","F","S" };
-    for (i32 c = 0; c < 7; c++) {
-        i32 x = wx + 30 + c * cw;
-        gfx_text_centered(x + cw / 2, wy + 60, DOW[c], PAL_TEXT_DIM);
-    }
-    for (i32 d = 0; d < 28; d++) {
-        i32 r = d / 7, c = d % 7;
-        i32 x = wx + 30 + c * cw;
-        i32 y = wy + 84 + r * ch;
-        bool isToday = ((d + 1) == today);
-        gfx_round_rect_a(x + 2, y + 2, cw - 4, ch - 4, 8,
-                         isToday ? PAL_ACCENT : PAL_PANEL_DEEP, 255);
-        gfx_round_outline(x + 2, y + 2, cw - 4, ch - 4, 8, PAL_HAIRLINE);
-        char buf[4]; k_itoa(d + 1, buf, 10);
-        gfx_text_centered(x + cw / 2, y + ch / 2 - 8, buf,
-                          isToday ? 0xFFFFFF : PAL_TEXT);
-    }
+/* --- Calendar: real RTC dates, Gregorian months, keyboard navigation ---- */
+static i32 calendar_view_offset=0; /* +/-24 months from current RTC month */
+static void calendar_input_key(i32 key){
+    if(key==KEY_LEFT && calendar_view_offset>-24)calendar_view_offset--;
+    else if(key==KEY_RIGHT && calendar_view_offset<24)calendar_view_offset++;
+    else if(key=='t'||key=='T'||key==KEY_HOME)calendar_view_offset=0;
 }
+static void render_calendar(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
+    (void)frame;
+    section(wx,wy,T("Calendar","Takvim"),
+            T("RTC calendar | arrow keys: months | T: today",
+              "Gercek takvim | oklar: aylar | T: bugun"));
+    rtc_time_t now;
+    rtc_local(&now); /* timezone comes from Settings, not PIT uptime */
+    u32 year,month;
+    calendar_shift_month(now.year,now.month,calendar_view_offset,&year,&month);
+    u32 days=calendar_month_days(year,month);
+    u32 first=calendar_weekday_monday(year,month,1u);
+    char yearbuf[16],heading[48];
+    k_itoa(year,yearbuf,10);
+    k_strcpy(heading,loc_month_short((u8)month));
+    k_strcat(heading," ");
+    k_strcat(heading,yearbuf);
 
+    i32 cx=wx+ww/2,grid_x=wx+24,grid_w=ww-48;
+    gfx_round_rect(cx-138,wy+58,276,42,12,PAL_PANEL_HI);
+    gfx_text_lg_centered(cx,wy+65,heading,PAL_TEXT);
+    gfx_text(wx+34,wy+73,"<",PAL_ACCENT);
+    gfx_text(wx+ww-45,wy+73,">",PAL_ACCENT);
+
+    static const char *week_en[7]={"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
+    static const char *week_tr[7]={"Pzt","Sal","Car","Per","Cum","Cmt","Paz"};
+    i32 cell_w=grid_w/7;
+    i32 cell_h=(wh-193)/6;
+    if(cell_h>66)cell_h=66;
+    if(cell_h<26)cell_h=26;
+    for(i32 col=0;col<7;col++){
+        i32 dx=grid_x+col*cell_w;
+        gfx_text_centered(dx+cell_w/2,wy+119,
+             SET.lang==LANG_TR?week_tr[col]:week_en[col],
+             col>=5?PAL_ACCENT:PAL_TEXT_DIM);
+    }
+    for(i32 slot=0;slot<42;slot++){
+        i32 day=slot-(i32)first+1;
+        i32 row=slot/7,col=slot%7;
+        i32 dx=grid_x+col*cell_w;
+        i32 dy=wy+142+row*cell_h;
+        bool valid=day>=1 && (u32)day<=days;
+        bool today=valid && (u32)day==now.day && year==now.year &&
+                    month==now.month;
+        gfx_round_rect(dx+2,dy+2,cell_w-5,cell_h-5,10,
+                       today?PAL_ACCENT_DIM:PAL_PANEL_DEEP);
+        if(today)gfx_round_outline(dx+2,dy+2,cell_w-5,cell_h-5,10,PAL_ACCENT);
+        if(valid){
+            char num[8];k_itoa((u32)day,num,10);
+            gfx_text_centered(dx+cell_w/2,dy+(cell_h-16)/2,num,
+                today?PAL_ACCENT:(col>=5?PAL_TEXT_DIM:PAL_TEXT));
+        }
+    }
+    if(wh>=615)gfx_text(wx+30,wy+wh-38,
+        T("Real RTC clock | local timezone from Settings | no simulated dates",
+          "Gercek RTC | Ayarlar saat dilimi | sahte tarih yok"),
+        PAL_TEXT_FAINT);
+}
 /* --- Gallery (Lumen palette) -------------------------------------------- */
 static void render_gallery(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 {
@@ -4938,7 +4968,7 @@ static app_def_t APPS[] = {
     { "Notes",      "free-form pad",       0xFFB547, render_notes,    notes_input_key,  icon_notes    },
     { "Clock",      "PIT analog dial",     0x16B5A8, render_clock,    NULL,             icon_clock    },
     { "Stats",      "system telemetry",    0xE53935, render_stats,    NULL,             icon_stats    },
-    { "Calendar",   "month view",          0x3070FF, render_calendar, NULL,             icon_calendar },
+    { "Calendar",   "real RTC month view", 0x3070FF, render_calendar, calendar_input_key, icon_calendar },
     { "Gallery",    "palette swatches",    0xC084FC, render_gallery,  NULL,             icon_gallery  },
     { "Video",      "software player",     0x16B5A8, render_video,    video_input_key,  icon_video    },
     { "Falco",      "native web search",   0x2A66F5, render_falco,    falco_input_key,  icon_falco    },
@@ -4960,7 +4990,7 @@ static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
  */
 static const i32 LAUNCH_FAVORITES[] = {1,14,13,20,6,7,3,5,2,8};
 static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,18,20,5};
-static const i32 LAUNCH_ALL[] = {1,14,13,20,6,7,3,5,2,8,9,4,17,18};
+static const i32 LAUNCH_ALL[] = {1,14,13,20,6,7,3,5,2,8,9,4,17,18,10};
 i32 apps_launcher_count(i32 group) {
     if(group==0) return (i32)(sizeof LAUNCH_FAVORITES/sizeof *LAUNCH_FAVORITES);
     if(group==1) return (i32)(sizeof LAUNCH_SYSTEM/sizeof *LAUNCH_SYSTEM);
