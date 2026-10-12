@@ -97,7 +97,11 @@ def main():
                 pause(1.2)
                 snap(c,"FalconOS-V2-Gregorian-Calendar-Next-Month-Real-QEMU")
                 following=Image.open(B/"FalconOS-V2-Gregorian-Calendar-Next-Month-Real-QEMU.png").convert("RGB")
-                month_title_box=(555,276,780,335) # only the actual native month title
+                # The native framebuffer is 2560x1440, not the 1280x720
+                # screenshot-thumbnail coordinate system. Keep the ROI
+                # proportional across supported display resolutions.
+                month_title_box=(initial.width*35//100,initial.height*29//100,
+                                 initial.width*47//100,initial.height*35//100)
                 delta=ImageChops.difference(initial.crop(month_title_box),
                                             following.crop(month_title_box))
                 if delta.getbbox() is None:
