@@ -4324,31 +4324,17 @@ static i32 market_selected_row(void){
 
 static void market_launch(i32 i)
 {
-    const char *script = market_script(i);
-    if (!script) return;
-    outb(0xE9, 'R'); /* QEMU integration event: installed script launched */
-    term_init();
-    term_push("Marketplace: running verified FAPP/1 script");
-    while (*script) {
-        char line[184];
-        i32 n = 0;
-        while (script[n] && script[n] != '\n' && n < 182) n++;
-        if (script[n] && script[n] != '\n') {
-            term_push("Marketplace: invalid script line"); break;
-        }
-        for (i32 j = 0; j < n; j++) line[j] = script[j];
-        line[n] = 0;
-        if (n && line[0] != '#') {
-            if (!market_line_allowed(line, n)) {
-                term_push("Marketplace: unsafe command rejected");
-                break;
-            }
-            sh_run_line(line);
-        }
-        script += n;
-        if (*script == '\n') script++;
-    }
-    apps_open(5); /* real Terminal output, no arbitrary ELF execution */
+    /* Discover now opens the exact installed and validated FAPP package in
+     * its own native application window, the same path as Files double-click.
+     * Never bypass manifest / allowlist checks with ad-hoc shell execution. */
+    if(!market_installed(i))return;
+    char path[SHFS_PATH];
+    if(!market_download_path(i,path))return;
+    if(!shfs_lookup(path))return; /* the package must be truly installed */
+    files_launch_pkg(path);
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'R');
+#endif
 }
 /* File association for FalconOS .app.pkg documents: the entire package
  * must be validated BEFORE any line executes. This is NOT Windows EXE,
