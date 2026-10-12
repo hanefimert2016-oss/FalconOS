@@ -180,6 +180,11 @@ static void download_path(char dest[SHFS_PATH],const char *id){
     for(u32 i=0;extension[i];i++)dest[out++]=extension[i];
     dest[out]=0;
 }
+bool market_download_path(i32 i,char dest[SHFS_PATH]){
+    if(!dest||i<0||i>=N_APP)return false;
+    download_path(dest,APP[i].id);
+    return true;
+}
 static void create_download_copy(const char *id,const char *p,u32 len){
     if(!id||!market_validate_app_pkg(p,len))return;
     (void)shfs_mkdir_abs("/home/falcon/Downloads");
