@@ -268,11 +268,20 @@ def send_acknowledged(sock, line):
     send(sock, line)
     sock.settimeout(12)
     try:
-        answer = read_line(sock)
+        # F5 can enqueue a second LIST while the previous catalog is being
+        # sent. That is a redundant refresh, not a failed CAT/CHUNK ACK.
+        # Finish the in-flight verified transfer first. Read-only requests
+        # are not executed or mixed into the acknowledged transfer.
+        for _ in range(24):
+            answer = read_line(sock)
+            if answer == "ACK":
+                return
+            if answer == "LIST":
+                continue
+            raise ValueError("guest rejected packet: " + answer[:100])
+        raise ValueError("no ACK after queued refresh requests")
     finally:
         sock.settimeout(None)  # idle guest may stay open indefinitely
-    if answer != "ACK":
-        raise ValueError("guest rejected packet: " + answer[:100])
 
 def serve(sock, publisher=None):
     cache = {}
