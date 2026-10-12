@@ -79,6 +79,7 @@ jobs:
             build/falco-codedium-review-result.json
             build/falco-codedium-review-guest.log
             build/falco-codedium-review-qemu.log
+            build/falcon-market-qa-bridge.log
           if-no-files-found: warn
           retention-days: 30
       - name: Upload verified V2 Beta bootable ISO
