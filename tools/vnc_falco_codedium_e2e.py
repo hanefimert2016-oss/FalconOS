@@ -175,14 +175,19 @@ def main():
                 k(c,"f2");t(c,"Store")
                 off=LOG.stat().st_size;k(c,"enter")
                 wait(b"zC",off,60);wait(b"gC",off,65)
-                pause(1)
-                off=LOG.stat().st_size
-                k(c,"f5")
+                # apps_open(Store) already requests LIST once. Never fire a
+                # duplicate F5 while the first CAT/ACK handshake is active.
                 try:
-                    wait(b"mA",off,45)
+                    wait(b"mA",off,32)
                     STATE["checks"].append("Public Marketplace catalog populated with real release entries over guest serial transport")
                 except AssertionError:
-                    STATE["checks"].append("Native Discover rendered; external GitHub release catalog not populated during CI")
+                    retry=LOG.stat().st_size
+                    k(c,"f5")
+                    try:
+                        wait(b"mA",retry,38)
+                        STATE["checks"].append("Public Marketplace release entries populated after one explicit refresh")
+                    except AssertionError:
+                        STATE["checks"].append("Native Discover rendered; external GitHub release catalog not populated during CI")
                 pause(1)
                 snap(c,"FalconOS-V2-Discover-Native-Marketplace")
                 STATE["checks"].append("Native AeroFlow Discover photographed directly from actual OVMF/QEMU framebuffer")
