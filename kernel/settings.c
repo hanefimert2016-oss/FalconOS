@@ -105,7 +105,13 @@ u32 PAL(u8 role)
     if ((u32)t >= THEME_COUNT) t = THEME_LIGHT;
     /* All themes honor the selected user accent, including Liquid and Rose.
      * Otherwise changing Accent has no effect in the default theme. */
-    if (role == 9) return ACCENTS[SET.accent];
+    if (role == 9) {
+        /* Stored settings can contain an invalid accent enum: never read
+         * outside ACCENTS[] on a corrupt or migrated disk record. */
+        u32 idx = (u32)SET.accent;
+        if (idx >= ACC_COUNT) idx = ACC_BLUE;
+        return ACCENTS[idx];
+    }
     return THEMES[t].c[role];
 }
 
