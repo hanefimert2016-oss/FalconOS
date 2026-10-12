@@ -524,6 +524,7 @@ void market_refresh(void) {
 }
 i32 market_count(void) { return N_APP; }
 const char *market_name(i32 i) { return i>=0 && i<N_APP ? APP[i].name : ""; }
+const char *market_id(i32 i) { return i>=0 && i<N_APP ? APP[i].id : ""; }
 const char *market_version(i32 i) { return i>=0 && i<N_APP ? APP[i].version : ""; }
 const char *market_status(void) { return status_text; }
 static shfs_ent_t *package_file(i32 i) {
