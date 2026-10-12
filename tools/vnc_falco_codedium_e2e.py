@@ -24,7 +24,8 @@ def main():
     v.LOG=LOG
     if LOG.exists():LOG.unlink()
     firmware=[(Path("/usr/share/OVMF/OVMF_CODE_4M.fd"),Path("/usr/share/OVMF/OVMF_VARS_4M.fd")),
-              (Path("/usr/share/OVMF/OVMF_CODE.fd"),Path("/usr/share/OVMF/OVMF_VARS.fd"))]
+              (Path("/usr/share/OVMF/OVMF_CODE.fd"),Path("/usr/share/OVMF/OVMF_VARS.fd")),
+              (Path("/usr/share/edk2/x64/OVMF_CODE.4m.fd"),Path("/usr/share/edk2/x64/OVMF_VARS.4m.fd"))]
     pair=next(((c,v) for c,v in firmware if c.is_file() and v.is_file()),None)
     if not pair:raise RuntimeError("FalconBoot test requires OVMF x86_64 code+vars firmware")
     var_copy=B/"FalconBoot-QEMU-VARS.fd"
