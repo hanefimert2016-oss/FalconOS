@@ -179,10 +179,10 @@ def main():
                 off=LOG.stat().st_size
                 k(c,"f5")
                 try:
-                    wait(b"C",off,28)
-                    STATE["checks"].append("Public GitHub Marketplace catalog accepted over real guest serial transport")
+                    wait(b"mA",off,45)
+                    STATE["checks"].append("Public Marketplace catalog populated with real release entries over guest serial transport")
                 except AssertionError:
-                    STATE["checks"].append("Native Discover works; external GitHub releases unavailable during CI")
+                    STATE["checks"].append("Native Discover rendered; external GitHub release catalog not populated during CI")
                 pause(1)
                 snap(c,"FalconOS-V2-Discover-Native-Marketplace")
                 STATE["checks"].append("Native AeroFlow Discover photographed directly from actual OVMF/QEMU framebuffer")
