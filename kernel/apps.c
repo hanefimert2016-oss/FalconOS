@@ -1336,6 +1336,28 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         }
         return 0;
     }
+    /* Permission-reviewed FAPP GUI actions: these names are mapped to
+     * existing native FalconOS windows, never host executables. */
+    if (k_strcmp(cmd, "codedium") == 0) {
+        apps_open(18);
+        sh_copy_bounded(out,cap,"Native Codedium editor opened.");
+        return 0;
+    }
+    if (k_strcmp(cmd, "themecreator") == 0) {
+        apps_open(3);
+        sh_copy_bounded(out,cap,"FalconOS Settings opened. Use Appearance / Themes.");
+        return 0;
+    }
+    if (k_strcmp(cmd, "storagecenter") == 0) {
+        apps_open(1);
+        sh_copy_bounded(out,cap,"Native Files opened. See df for storage details.");
+        return 0;
+    }
+    if (k_strcmp(cmd, "isostudio") == 0) {
+        sh_copy_bounded(out,cap,
+            "ISO editor unavailable in this beta. No ISO was created.");
+        return 1;
+    }
     if (k_strcmp(cmd, "man") == 0) {
         if (argc < 2) { k_strcpy(out, "man: usage: man <command>"); return 1; }
         if (k_strcmp(argv[1], "prg") == 0 || k_strcmp(argv[1], "pkg") == 0) {
