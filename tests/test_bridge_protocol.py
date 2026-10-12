@@ -21,10 +21,10 @@ class ProtocolTest(unittest.TestCase):
     def test_uefi_firmware_noise_resynchronizes_before_valid_list(self):
         left,right=socket.socketpair()
         try:
-            right.sendall(b"OVMF console\\r\\n" + b"X"*240 +
-                          b"\\n" + b"\\x00bad-line\\n" + b"LIST\\n")
+            right.sendall(b"OVMF console\r\n" + b"X"*240 +
+                          b"\n" + b"\x00bad-line\n" + b"LIST\n")
             self.assertEqual(bridge.read_line(left),"LIST")
-            right.sendall(b"GET|device-doctor\\n")
+            right.sendall(b"GET|device-doctor\n")
             self.assertEqual(bridge.read_line(left),"GET|device-doctor")
         finally:
             left.close();right.close()
