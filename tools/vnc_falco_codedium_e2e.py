@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Photograph the actual native FalconOS desktop, Falco and Codedium in QEMU."""
-import json,socket,subprocess,time,traceback
+import json,socket,subprocess,time,traceback,shutil
 from pathlib import Path
 from vncdotool import api
 from vnc_real_input_audit import k,t,pause,shot
@@ -23,7 +23,16 @@ def snap(c,label):
 def main():
     v.LOG=LOG
     if LOG.exists():LOG.unlink()
-    cmd=["qemu-system-x86_64","-accel","tcg","-m","1024","-smp","1",
+    firmware=[(Path("/usr/share/OVMF/OVMF_CODE_4M.fd"),Path("/usr/share/OVMF/OVMF_VARS_4M.fd")),
+              (Path("/usr/share/OVMF/OVMF_CODE.fd"),Path("/usr/share/OVMF/OVMF_VARS.fd"))]
+    pair=next(((c,v) for c,v in firmware if c.is_file() and v.is_file()),None)
+    if not pair:raise RuntimeError("FalconBoot test requires OVMF x86_64 code+vars firmware")
+    var_copy=B/"FalconBoot-QEMU-VARS.fd"
+    shutil.copyfile(pair[1],var_copy)
+    flash=["-drive",f"if=pflash,format=raw,unit=0,readonly=on,file={pair[0]}",
+           "-drive",f"if=pflash,format=raw,unit=1,file={var_copy}"]
+    cmd=["qemu-system-x86_64","-machine","q35","-accel","tcg",
+         *flash,"-m","1024","-smp","1",
          "-boot","d","-cdrom","build/FalconOS.iso","-display","none",
          "-vga","std","-global","VGA.vgamem_mb=256",
          "-vnc","127.0.0.1:11","-monitor","none","-serial","none",
@@ -39,7 +48,13 @@ def main():
                     pause(.25)
             else:raise TimeoutError("No VNC server for QEMU")
             with api.connect("127.0.0.1::5911",timeout=25) as c:
-                wait(b"L",seconds=90)
+                wait(b"FALCONBOOT/1 MENU DRAWN",seconds=90)
+                snap(c,"FalconOS-V2-FalconBoot-UEFI-Loader")
+                STATE["checks"].append("Genuine first-party FalconBoot/1 UEFI loader painted its own GOP framebuffer")
+                start_kernel=len(LOG.read_bytes())
+                wait(b"FALCONBOOT/1 HANDOFF",start_kernel,90)
+                kernel_on=len(LOG.read_bytes())
+                wait(b"L",kernel_on,95)
                 for marker in (b"T",b"A",b"K",b"D",b"U"):
                     off=LOG.stat().st_size;k(c,"enter");wait(marker,off)
                 t(c,"falcon")
