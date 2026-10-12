@@ -5,6 +5,7 @@
  * All drawing is deterministic CPU framebuffer code; no GPU required.
  */
 #include "falcon.h"
+#include "aeroflow.h"
 #define SHELF_SLOTS 7
 /* Files, Falco, Browser, Codedium, Discover, Notes and Settings. */
 static const i32 SHELF_APPS[SHELF_SLOTS]={1,13,14,18,2,7,3};
@@ -23,147 +24,181 @@ void mode_personal_input(i32 key){
     if(key==KEY_RIGHT&&shelf_cursor<SHELF_SLOTS-1)shelf_cursor++;
     if(key==KEY_ENTER||key==' ')use_app(SHELF_APPS[shelf_cursor]);
 }
+/* AeroFlow desktop header; real activity and clock only. */
 static void backdrop(void){
-    /* Organic light bands give structure without expensive full-screen blur. */
-    i32 w=(i32)FB.width,h=(i32)FB.height;
-    /* Simple layered broad tints: full-frame supersampled circles at 50fps
-     * stalled keyboard processing under QEMU TCG (no GPU acceleration). */
-    /* Aurora accents: low-cost layered geometry, responsive at HD/2K and
-     * safe for QEMU software framebuffer without expensive screen blur. */
-    gfx_round_rect_a(w-510,145,428,135,34,0x7BA9FFu,27);
-    gfx_round_rect_a(w-378,159,260,101,31,0x9DD9FFu,24);
-    gfx_round_rect_a(58,h-274,340,84,28,0x4ECFCBu,23);
-    gfx_round_rect_a(84,h-251,212,40,20,0x80B4FFu,14);
-    gfx_round_rect_a(28,55,w-56,104,26,surface(),is_dark()?178:196);
-    gfx_round_outline(28,55,w-56,104,26,is_dark()?0x3E5074u:0xE4ECF7u);
-    gfx_round_rect(52,77,54,54,19,0x2867E6u);
-    gfx_text_lg_centered(79,85,"F",0xFFFFFFu);
-    gfx_text_lg(129,77,T("Welcome to FalconOS","FalconOS'a hos geldin"),ink());
+    const i32 w=(i32)FB.width,h=(i32)FB.height;
+    /* Soft ambient planes echo our angular Falcon wing logomark. */
+    gfx_round_rect_a(w-535,210,432,98,28,PAL_ACCENT,18);
+    gfx_round_rect_a(w-425,223,322,60,20,PAL_GLASS,31);
+    gfx_round_rect_a(50,h-269,365,68,22,PAL_ACCENT,17);
+    aero_panel(31,53,w-62,113,24);
+    gfx_round_rect(53,76,61,61,20,aero_accent());
+    gfx_text_lg_centered(83,86,"F",aero_accent_ink());
+    gfx_text_lg(132,72,"FalconOS",aero_text());
+    gfx_text(133,111,T("Your creative workspace / V2 Beta",
+                        "Uretim alanin / V2 Beta"),aero_dim());
+    gfx_rect(130,134,190,3,aero_accent());
     if(apps_window_count()>0){
-        char n[12];k_itoa(apps_window_count(),n,10);
-        gfx_text(131,118,T("WINDOWS OPEN / Alt+Tab to switch",
-                          "ACIK PENCERELER / Alt+Tab ile gec"),muted());
-        gfx_round_rect_a(425,110,38,26,10,0xE5EFFFu,255);
-        gfx_text_centered(444,116,n,0x2857A7u);
-    }else{
-        gfx_text(131,118,T("Your space to create, explore and build",
-             "Kesfet, uret ve kendi calisma alanini olustur"),muted());
+        char buf[12];k_itoa((u32)apps_window_count(),buf,10);
+        gfx_text(w/2-132,91,T("Open windows","Acik pencereler"),aero_dim());
+        gfx_round_rect(w/2+5,85,40,32,12,aero_soft());
+        gfx_text_centered(w/2+25,93,buf,aero_text());
+    }else if(w>1360){
+        gfx_text_centered(w/2+115,93,
+            T("DESIGNED TO EXPLORE  /  BUILT TO CREATE",
+              "KESFETMEK ICIN TASARLANDI / URETMEK ICIN"),aero_dim());
     }
     rtc_time_t now;rtc_local(&now);
-    char time[16],minute[8];k_itoa(now.hour,time,10);
-    if(now.hour<10){k_strcpy(minute,time);k_strcpy(time,"0");k_strcat(time,minute);}
-    k_strcat(time,":");k_itoa(now.min,minute,10);
-    if(now.min<10)k_strcat(time,"0");
-    k_strcat(time,minute);
-    gfx_text_lg(w-159,79,time,ink());
-    gfx_text(w-161,122,net_connected()?"Network ready":"Network offline",
-             net_connected()?0x0EA579u:muted());
+    char clock[18],tmp[12];k_itoa(now.hour,tmp,10);
+    k_strcpy(clock,now.hour<10?"0":"");k_strcat(clock,tmp);k_strcat(clock,":");
+    k_itoa(now.min,tmp,10);if(now.min<10)k_strcat(clock,"0");
+    k_strcat(clock,tmp);
+    gfx_text_lg(w-185,81,clock,aero_text());
+    gfx_circle(w-177,129,5,net_connected()?0x22BA93u:0xE7A453u);
+    gfx_text(w-164,121,net_connected()?
+        T("Network","Ag bagli"):T("Offline","Cevrimdisi"),aero_dim());
+}
+/* Real calendar and runtime status widgets. No placeholder weather/CPU. */
+static void real_status_widgets(void){
+    const i32 W=(i32)FB.width,H=(i32)FB.height;
+    if(W<1660)return; /* keep smaller monitors uncluttered */
+    const i32 x=32, y=214, w=296;
+    rtc_time_t now;rtc_local(&now);
+    aero_panel(x,y,w,206,22);
+    gfx_text(x+22,y+18,T("TODAY","BUGUN"),aero_dim());
+    char d[14],date[42],yr[16];
+    k_itoa(now.day,d,10);k_itoa(now.year,yr,10);
+    k_strcpy(date,d);k_strcat(date," ");k_strcat(date,loc_month_short(now.month));
+    k_strcat(date," ");k_strcat(date,yr);
+    gfx_text_lg(x+22,y+45,date,aero_text());
+    gfx_rect(x+22,y+84,w-44,2,aero_accent());
+    gfx_text(x+22,y+104,T("Calendar follows your timezone.",
+                          "Takvim yerel saati kullanir."),aero_dim());
+    aero_chip(x+22,y+147,w-44,39,
+              T("Open calendar >","Takvimi ac >"),false);
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    if(mouse_peek_click()&&within(mx,my,x+22,y+147,w-44,39)){
+        (void)mouse_consume_click();use_app(10);return;
+    }
+    aero_panel(x,y+221,w,164,22);
+    gfx_text(x+22,y+240,T("SYSTEM STATUS","SISTEM DURUMU"),aero_dim());
+    gfx_circle(x+28,y+280,6,net_connected()?0x20B890u:0xE7A453u);
+    gfx_text(x+44,y+272,net_connected()?
+        T("Network connected","Ag bagli"):
+        T("Network not connected","Ag bagli degil"),aero_text());
+    gfx_rect(x+22,y+312,w-44,1,aero_line());
+    char ram[40],n[16];k_itoa((u32)(RAM_TOTAL_BYTES/(1024u*1024u)),n,10);
+    k_strcpy(ram,"RAM: ");k_strcat(ram,n);k_strcat(ram," MiB");
+    gfx_text(x+22,y+327,ram,aero_text());
+    gfx_text(x+22,y+352,T("Real firmware memory map","Gercek bellek haritasi"),aero_dim());
 }
 static void quick_cards(void){
     if(!SET.widgets_shown||apps_active()>=0||launchpad_is_open())return;
-    i32 W=(i32)FB.width,H=(i32)FB.height;
-    i32 content=W-96;
-    if(content>1060)content=1060;
-    i32 x=(W-content)/2;
-    i32 y=H/2-178;
-    if(y<184)y=184;
-    gfx_text_lg(x,y-52,T("Pick up where you left off","Calismaya devam et"),ink());
-    gfx_text(x,y-14,"YOUR WORKSPACE   /   REAL NATIVE APPS",muted());
+    const i32 W=(i32)FB.width,H=(i32)FB.height;
+    real_status_widgets();
+    i32 content=W-88;
+    if(content>1050)content=1050;
+    const i32 x=(W-content)/2;
+    i32 y=H/2-153;
+    if(y<206)y=206;
+    gfx_text_lg(x,y-54,T("Your workspace","Calisma alanin"),aero_text());
+    gfx_text(x,y-16,T("FAST ACCESS  /  NATIVE FALCONOS APPS",
+                      "HIZLI ERISIM  /  YEREL FALCONOS UYGULAMALARI"),aero_dim());
     const char *titles[6]={"Files","Falco","Codedium","Discover","Notes","Settings"};
-    const char *sub[6]={"Your files","Search + HTTPS","Build .app.pkg","Verified apps","Write & save","Make it yours"};
+    const char *sub[6]={"Local files","Web tools","Build packages",
+                        "App catalogue","Text editor","Personalize"};
     const i32 ids[6]={1,13,18,2,7,3};
-    const u32 colors[6]={0xF3AD37u,0x3184F6u,0x5369E9u,0x1DB88Fu,0xE9C04Bu,0x7868E9u};
-    i32 cw=(content-5*12)/6;
+    const i32 gap=13;
+    const i32 tw=(content-gap*5)/6;
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool click=mouse_peek_click();
     for(i32 i=0;i<6;i++){
-        i32 bx=x+i*(cw+12);
-        bool hov=within(mx,my,bx,y+19,cw,165);
-        gfx_round_rect_a(bx+3,y+25,cw,165,22,0x0C2248u,29);
-        gfx_round_rect(bx,y+19,cw,165,22,surface());
-        gfx_round_outline(bx,y+19,cw,165,22,
-             hov?0x719FEFu:(is_dark()?0x506080u:0xD6E2F3u));
-        gfx_round_rect(bx+18,y+38,56,56,18,colors[i]);
-        apps_draw_icon(ids[i],bx+46,y+66);
-        gfx_text(bx+19,y+116,titles[i],ink());
-        gfx_text(bx+19,y+143,sub[i],muted());
-        if(hov&&click){
+        const i32 bx=x+i*(tw+gap);
+        const bool hover=within(mx,my,bx,y+15,tw,161);
+        aero_panel(bx,y+15,tw,161,20);
+        if(hover){
+            gfx_round_outline(bx,y+15,tw,161,20,aero_accent());
+            gfx_rect(bx+23,y+17,tw-46,2,aero_accent());
+        }
+        gfx_round_rect(bx+19,y+31,58,58,18,apps_tint(ids[i]));
+        apps_draw_icon(ids[i],bx+48,y+60);
+        gfx_text(bx+19,y+104,titles[i],aero_text());
+        gfx_text(bx+19,y+133,sub[i],aero_dim());
+        if(hover&&click){
             (void)mouse_consume_click();use_app(ids[i]);return;
         }
     }
-    i32 by=y+218;
-    gfx_round_rect(x,by,content,74,22,surface());
-    gfx_round_outline(x,by,content,74,22,is_dark()?0x506080u:0xD9E5F5u);
-    gfx_circle(x+34,by+36,12,net_connected()?0x26B98Au:0xEAAE50u);
-    gfx_text(x+62,by+18,"System & network",ink());
-    gfx_text(x+62,by+42,net_connected()?
-       "Network ready. Falco uses native TLS (text-only pages).":
-       "Offline. Configure RTL8139 + DHCP for Falco and Discover.",muted());
-    gfx_round_rect(x+content-145,by+19,123,36,14,0xE6EEFFu);
-    gfx_text_centered(x+content-83,by+30,"Settings",0x2758AEu);
-    if(click&&within(mx,my,x+content-151,by+10,140,55)){
-        (void)mouse_consume_click();apps_open(3);
-    }
+    const i32 by=y+212;
+    aero_panel(x,by,content,90,22);
+    gfx_round_rect(x+20,by+21,45,45,15,
+                   net_connected()?0x147D6Bu:0xA86B25u);
+    gfx_circle(x+42,by+43,9,0xFFFFFFu);
+    gfx_text(x+82,by+20,T("System is ready","Sistem hazir"),aero_text());
+    gfx_text(x+82,by+48,net_connected()?
+        T("Ethernet is connected. HTTPS features depend on their backend.",
+          "Ethernet bagli. HTTPS ozellikleri arka servise baglidir."):
+        T("Offline mode. Open Settings for connection and hardware details.",
+          "Cevrimdisi. Baglanti bilgileri icin Ayarlar'i ac."),aero_dim());
+    const i32 bx=x+content-154;
+    aero_chip(bx,by+25,133,39,T("Settings >","Ayarlar >"),true);
+    if(click&&within(mx,my,bx,by+25,133,39))
+        {(void)mouse_consume_click();use_app(3);}
 }
+/* Floating launcher/taskbar: keeps the existing OS-level input pipeline. */
 static void shelf(void){
-    i32 W=(i32)FB.width,H=(i32)FB.height;
+    const i32 W=(i32)FB.width,H=(i32)FB.height;
     i32 tile=50+SET.dock_size*3;
     if(tile>70)tile=70;
-    if(tile<50)tile=50;
-    i32 gap=9;
-    i32 mainw=76+SHELF_SLOTS*(tile+gap)+20;
-    i32 w=mainw+170;
-    if(w>W-22)w=W-22;
-    i32 x=(W-w)/2,y=H-94;
-    if(y<340)y=340;
-    gfx_round_rect_a(x+4,y+9,w,74,26,0x07172Fu,72);
-    gfx_round_rect_a(x,y,w,74,26,surface(),242);
-    gfx_round_rect_a(x+18,y+2,w-36,2,1,PAL_ACCENT,72);
-    gfx_round_outline(x,y,w,74,26,is_dark()?0x627595u:0xD5E2F4u);
+    if(tile<46)tile=46;
+    const i32 gap=9;
+    const i32 ideal=76+SHELF_SLOTS*(tile+gap)+184;
+    i32 w=ideal;
+    if(w>W-24)w=W-24;
+    const i32 x=(W-w)/2,y=H-97;
+    aero_panel(x,y,w,76,23);
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
-    bool can_click=!launchpad_is_open();
-    bool click=can_click&&mouse_peek_click();
-    bool launcher=within(mx,my,x+12,y+11,53,53);
-    gfx_round_rect(x+13,y+13,48,48,17,launcher?0x4088FFu:0x2869E8u);
-    gfx_text_lg_centered(x+37,y+20,"F",0xFFFFFFu);
-    if(launcher&&click){
-        (void)mouse_consume_click();
-        launchpad_open();click=false;
+    bool click=!launchpad_is_open()&&mouse_peek_click();
+    const bool hot=within(mx,my,x+11,y+11,54,54);
+    gfx_round_rect(x+13,y+13,48,48,15,hot?PAL_ACCENT_DIM:aero_accent());
+    gfx_round_outline(x+13,y+13,48,48,15,aero_accent());
+    gfx_text_lg_centered(x+37,y+20,"F",hot?aero_accent():aero_accent_ink());
+    if(hot&&click){
+        (void)mouse_consume_click();launchpad_open();click=false;
     }
     for(i32 i=0;i<SHELF_SLOTS;i++){
-        i32 bx=x+77+i*(tile+gap);
-        if(bx+tile>x+w-168)break;
-        bool hovered=within(mx,my,bx,y+11,tile,53);
-        i32 id=SHELF_APPS[i];
-        bool running=(apps_is_open(id)||apps_minimized()==id);
-        if(hovered||running||i==shelf_cursor)
-            gfx_round_rect_a(bx,y+11,tile,52,16,
-                hovered?0xBFD8FCu:0xDDE9FAu,190);
+        const i32 bx=x+77+i*(tile+gap);
+        if(bx+tile>x+w-176)break;
+        const i32 id=SHELF_APPS[i];
+        const bool hover=within(mx,my,bx,y+10,tile,54);
+        const bool running=apps_is_open(id)||apps_minimized()==id;
+        if(hover||running||i==shelf_cursor)
+            aero_card(bx,y+10,tile,53,15,hover||apps_active()==id);
         apps_draw_icon(id,bx+tile/2,y+37);
-        if(running){
-            gfx_round_rect(bx+tile/2-10,y+64,20,4,2,0x246FE7u);
-            if(apps_active()==id)gfx_round_rect(bx+tile/2-14,y+64,28,4,2,PAL_ACCENT);
-        }
-        if(hovered&&click){
+        if(running)
+            gfx_round_rect(bx+tile/2-11,y+65,22,4,2,
+                apps_active()==id?aero_accent():aero_dim());
+        if(hover&&click){
             (void)mouse_consume_click();use_app(id);click=false;
         }
     }
-    i32 tray=x+w-170;
-    gfx_rect(tray,y+18,1,37,is_dark()?0x697B9Cu:0xDCE6F4u);
-    gfx_circle(tray+26,y+33,6,net_connected()?0x24B68Au:0xB7BECEu);
+    const i32 tray=x+w-169;
+    gfx_rect(tray,y+17,1,42,aero_line());
+    gfx_circle(tray+20,y+37,6,
+        net_connected()?0x22B88Du:0xD49A43u);
     rtc_time_t now;rtc_local(&now);
-    char hh[8],mm[8],clock[20];k_itoa(now.hour,hh,10);
-    k_itoa(now.min,mm,10);
+    char clock[20],hh[8],mm[8];k_itoa(now.hour,hh,10);k_itoa(now.min,mm,10);
     k_strcpy(clock,now.hour<10?"0":"");k_strcat(clock,hh);k_strcat(clock,":");
     if(now.min<10)k_strcat(clock,"0");k_strcat(clock,mm);
-    gfx_text(tray+44,y+31,clock,ink());
-    if(apps_window_count()>0){
-        char n[12];k_itoa(apps_window_count(),n,10);
-        gfx_round_rect_a(tray+114,y+8,38,22,8,0xDCEBFFu,245);
-        gfx_text_centered(tray+133,y+13,n,0x225DC2u);
+    gfx_text(tray+41,y+20,clock,aero_text());
+    char date[24],num[8];k_itoa(now.day,num,10);k_strcpy(date,num);
+    k_strcat(date," ");k_strcat(date,loc_month_short(now.month));
+    gfx_text(tray+41,y+44,date,aero_dim());
+    if(capture_studio_recording()){
+        gfx_circle(tray+137,y+24,5,COL_ERR);
+        gfx_text(tray+119,y+39,"REC",COL_ERR);
     }
-    if(click&&within(mx,my,tray,y+6,161,63)){
-        (void)mouse_consume_click();apps_open(3);click=false;
+    if(click&&within(mx,my,tray,y+8,163,58)){
+        (void)mouse_consume_click();use_app(10);
     }
 }
 void mode_personal_render(u32 frame){
