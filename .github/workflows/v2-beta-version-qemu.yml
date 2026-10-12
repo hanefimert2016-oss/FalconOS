@@ -1,4 +1,4 @@
-name: FalconOS V2 Beta release branding verified in real QEMU
+name: FalconBoot native UEFI GRUB-free QEMU verification
 on:
   push:
     branches: [v2-beta]
@@ -9,7 +9,11 @@ on:
       - kernel/calendar_math.c
       - kernel/calendar_math.h
       - kernel/settings.c
-      - boot/grub.cfg
+      - boot/falcon_uefi/loader.c
+      - boot/falcon_uefi/uefi.h
+      - boot/falcon_uefi/handoff.S
+      - linker.ld
+      - Makefile
       - tests/calendar_math_test.c
       - tests/test_v2_release_identity.py
       - tools/vnc_falco_codedium_e2e.py
@@ -26,7 +30,7 @@ jobs:
       - name: Install ISO compiler, QEMU, VNC and real screenshot dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools qemu-system-x86 fonts-dejavu-core python3-venv binutils
+          sudo apt-get install -y nasm xorriso mtools qemu-system-x86 ovmf clang lld fonts-dejavu-core python3-venv binutils
           python3 -m venv /tmp/falcon-v2-venv
           /tmp/falcon-v2-venv/bin/pip install --quiet pillow vncdotool
       - name: Run all Python regression tests including V2 version checks
@@ -38,19 +42,22 @@ jobs:
       - name: Build native bootable V2 ISO
         run: |
           PATH="/tmp/falcon-v2-venv/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY'
-          grub-file --is-x86-multiboot2 build/falcon.elf
+          file build/BOOTX64.EFI | grep -E 'PE32\\+ executable.*EFI'
+          test -s build/FALCON-KERNEL.BIN
+          test -s build/FalconOS.iso
           strings build/falcon.elf | grep -F 'FalconOS 2.0 Beta'
           strings build/falcon.elf | grep -F 'V2 BETA'
-          grep -F 'FalconOS 2.0 Beta' boot/grub.cfg
-          ! grep -F 'FalconOS 1' boot/grub.cfg
+          ! test -e boot/grub.cfg
+          ! grep -q 'grub-mkrescue' Makefile
       - name: Launch V2 in real QEMU and photograph About, Terminal and RTC Calendar
         run: timeout 480s /tmp/falcon-v2-venv/bin/python tools/vnc_falco_codedium_e2e.py
       - name: Upload actual unedited QEMU screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: FalconOS-V2-Beta-About-Terminal-Real-QEMU
+          name: FalconBoot-UEFI-QEMU-Loader-And-Desktop-Real-PNG
           path: |
+            build/FalconOS-V2-FalconBoot-UEFI-Loader.png
             build/FalconOS-V2-Beta-*.png
             build/FalconOS-V2-Gregorian-Calendar-*.png
             build/FalconOS-Review-Desktop.png
@@ -63,6 +70,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: FalconOS-V2-Beta-Version-Fixed-ISO
+          name: FalconOS-V2-Native-FalconBoot-GRUB-Free-ISO
           path: build/FalconOS.iso
           retention-days: 30
