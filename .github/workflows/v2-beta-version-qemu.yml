@@ -4,6 +4,10 @@ on:
     branches: [v2-beta]
     paths:
       - kernel/apps.c
+      - kernel/marketplace.c
+      - kernel/fapp_policy.c
+      - kernel/falcon.h
+      - tools/marketplace_bridge.py
       - kernel/launchpad.c
       - kernel/personal.c
       - kernel/aeroflow.h
@@ -67,6 +71,7 @@ jobs:
             build/FalconOS-V2-Beta-*.png
             build/FalconOS-V2-Gregorian-Calendar-*.png
             build/FalconOS-Review-Desktop.png
+            build/FalconOS-V2-Discover-*.png
             build/FalconOS-V2-AeroFlow-Launcher.png
             build/FalconOS-V2-AeroFlow-Light.png
             build/FalconOS-V2-AeroFlow-Dark.png
