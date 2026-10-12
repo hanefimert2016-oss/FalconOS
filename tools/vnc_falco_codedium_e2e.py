@@ -65,6 +65,21 @@ def main():
                 pause(1.3)
                 snap(c,"FalconOS-Review-Codedium")
                 STATE["checks"].append("Real Codedium editor rendered in QEMU")
+                # Actual V2 About window is opened through Launchpad and drawn
+                # by the real guest framebuffer (not a post-processed mockup).
+                k(c,"f2");t(c,"About")
+                off=LOG.stat().st_size;k(c,"enter")
+                wait(b"zR",off,60);wait(b"gR",off,65)
+                pause(1.2)
+                snap(c,"FalconOS-V2-Beta-About-Real-QEMU")
+                STATE["checks"].append("Real FalconOS V2 Beta About window rendered inside QEMU")
+                k(c,"f2");t(c,"Terminal")
+                off=LOG.stat().st_size;k(c,"enter")
+                wait(b"zF",off,60);wait(b"gF",off,65)
+                t(c,"ver");k(c,"enter");pause(.8)
+                t(c,"uname");k(c,"enter");pause(1.1)
+                snap(c,"FalconOS-V2-Beta-Terminal-Real-QEMU")
+                STATE["checks"].append("Native Terminal accepted ver and uname commands in QEMU")
                 STATE["result"]="PASS"
         finally:
             guest.terminate()
