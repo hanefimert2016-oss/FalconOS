@@ -1311,22 +1311,22 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
     }
     if (k_strcmp(cmd, "help") == 0) {
         sh_copy_bounded(out,cap,
-            "FalconOS V2 Beta | help man doctor ver uname date cal\\n"
-            "Files: ls cd pwd cat cp mv rm mkdir touch grep find\\n"
-            "Apps: open falco search prg pkg\\n"
-            "System: hwinfo lsblk df free uptime update check\\n"
+            "FalconOS V2 Beta | help man doctor ver uname date cal\n"
+            "Files: ls cd pwd cat cp mv rm mkdir touch grep find\n"
+            "Apps: open falco search prg pkg\n"
+            "System: hwinfo lsblk df free uptime update check\n"
             "Tip: man <command> | F2 Apps | F12 Power");
         return 0;
     }
     if (k_strcmp(cmd, "doctor") == 0) {
         /* Only report measured runtime facts; never claim native TLS,
          * production disk safety or userspace process isolation. */
-        sh_copy_bounded(out,cap,FALCON_RELEASE_LABEL " | QEMU test build\\n");
+        sh_copy_bounded(out,cap,FALCON_RELEASE_LABEL " | QEMU test build\n");
         const char *facts[4] = {
-            net_present()?"NET: RTL8139 detected\\n":"NET: NIC unavailable\\n",
-            diskdb_present()?"STORAGE: FalconFS test volume\\n":"STORAGE: RAM-only session\\n",
-            "TLS: native trust not release-certified\\n",
-            "ISOLATION: no ring3 app sandbox\\n"
+            net_present()?"NET: RTL8139 detected\n":"NET: NIC unavailable\n",
+            diskdb_present()?"STORAGE: FalconFS test volume\n":"STORAGE: RAM-only session\n",
+            "TLS: native trust not release-certified\n",
+            "ISOLATION: no ring3 app sandbox\n"
         };
         for(i32 i=0;i<4;i++){
             i32 n=k_strlen(out),j=0;
