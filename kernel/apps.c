@@ -1269,6 +1269,15 @@ static i32 sh_tokenise(const char *cmd, char out[][64], i32 max)
     return n;
 }
 
+/* Bounded shell output: command handlers may be called by compound
+ * expressions with a much smaller output buffer than the main Terminal. */
+static void sh_copy_bounded(char *dst,i32 cap,const char *src){
+    if(!dst||cap<=0)return;
+    i32 i=0;
+    while(src[i] && i<cap-1){dst[i]=src[i];i++;}
+    dst[i]=0;
+}
+
 /* Run a single command (already tokenised). Output goes to `out` (cap
  * `cap`). Returns exit status (0 == success). */
 static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
@@ -1301,14 +1310,29 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 0;
     }
     if (k_strcmp(cmd, "help") == 0) {
-        k_strcpy(out,
-            "pwd cd ls cat head tail wc sort uniq grep tr cut tee find rm "
-            "touch cp mv mkdir rmdir basename dirname more less xxd file "
-            "echo printf yes seq expr test [ env set unset alias export "
-            "history ps top kill df du free mount lsblk uname hwinfo lscpu ver version whoami id vm dns ping http https xfile hwcheck jfs "
-            "groups who w users hostname uptime cal date reboot shutdown "
-            "which type prg pkg open chrome falco heroic video search "
-            "update man | > >>");
+        sh_copy_bounded(out,cap,
+            "FalconOS V2 Beta | help man doctor ver uname date cal\\n"
+            "Files: ls cd pwd cat cp mv rm mkdir touch grep find\\n"
+            "Apps: open falco search prg pkg\\n"
+            "System: hwinfo lsblk df free uptime update check\\n"
+            "Tip: man <command> | F2 Apps | F12 Power");
+        return 0;
+    }
+    if (k_strcmp(cmd, "doctor") == 0) {
+        /* Only report measured runtime facts; never claim native TLS,
+         * production disk safety or userspace process isolation. */
+        sh_copy_bounded(out,cap,FALCON_RELEASE_LABEL " | QEMU test build\\n");
+        const char *facts[4] = {
+            net_present()?"NET: RTL8139 detected\\n":"NET: NIC unavailable\\n",
+            diskdb_present()?"STORAGE: FalconFS test volume\\n":"STORAGE: RAM-only session\\n",
+            "TLS: native trust not release-certified\\n",
+            "ISOLATION: no ring3 app sandbox\\n"
+        };
+        for(i32 i=0;i<4;i++){
+            i32 n=k_strlen(out),j=0;
+            while(facts[i][j] && n<cap-1)out[n++]=facts[i][j++];
+            out[n]=0;
+        }
         return 0;
     }
     if (k_strcmp(cmd, "man") == 0) {
@@ -1327,6 +1351,11 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         }
         if (k_strcmp(argv[1], "search") == 0) {
             k_strcpy(out, "search <query>: open Falco and run indexed search.");
+            return 0;
+        }
+        if (k_strcmp(argv[1], "doctor") == 0) {
+            sh_copy_bounded(out,cap,
+                "doctor: runtime NET/STORAGE/TLS/isolation report; no hardware writes.");
             return 0;
         }
         if (k_strcmp(argv[1], "update") == 0) {
@@ -2339,7 +2368,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "[","sleep","history","hostname","id","groups","who","w","users",
             "uptime","cal","ps","top","jobs","kill","df","du","free","mount",
             "lsblk","reboot","shutdown","poweroff","halt","which","type","hwinfo",
-            "uname","whoami","date","clear","help","true","false","exit",
+            "uname","whoami","doctor","date","clear","help","true","false","exit",
             "man","open","xdg-open","prg","pkg","chrome","falco","heroic",
             "video","search","update","upgrade","ver","version","lscpu",NULL
         };
