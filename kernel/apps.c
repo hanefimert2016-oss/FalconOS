@@ -4289,6 +4289,50 @@ static i32 market_view[MARKET_VIEW_CAP],market_view_count,market_category;
 static char market_query[40];
 static i32 market_query_len;
 static bool market_search_mode;
+#define MARKET_FILTERS 7
+static const char *market_kind_label(i32 type){
+    static const char *names[]={"Utilities","System","Developer","Productivity","Design"};
+    return names[type<0||type>4?0:type];
+}
+static i32 market_kind(i32 i){
+    const char *id=market_id(i);
+    if(k_strcmp(id,"storage-center")==0||
+       k_strcmp(id,"system-info")==0||
+       k_strcmp(id,"device-doctor")==0||
+       k_strcmp(id,"iso-studio")==0)return 1;
+    if(k_strcmp(id,"codedium-studio")==0||
+       k_strcmp(id,"code-lab")==0||
+       k_strcmp(id,"developer-kit")==0)return 2;
+    if(k_strcmp(id,"calendar-desk")==0||
+       k_strcmp(id,"workspace-hub")==0||
+       k_strcmp(id,"focus-desk")==0)return 3;
+    if(k_strcmp(id,"theme-creator")==0||
+       k_strcmp(id,"design-studio")==0)return 4;
+    return 0;
+}
+static const char *market_summary_known(i32 i){
+    const char *id=market_id(i);
+    if(k_strcmp(id,"device-doctor")==0)return "Live hardware, memory, storage and system checks";
+    if(k_strcmp(id,"calendar-desk")==0)return "Real calendar, local time and session uptime";
+    if(k_strcmp(id,"code-lab")==0)return "Open native Codedium and inspect workspace";
+    if(k_strcmp(id,"workspace-hub")==0)return "Read-only file and work session shortcuts";
+    if(k_strcmp(id,"design-studio")==0)return "Open FalconOS theme designer and OS details";
+    if(k_strcmp(id,"system-info")==0)return "System configuration and runtime information";
+    if(k_strcmp(id,"storage-center")==0)return "Native read-only storage diagnostics";
+    if(k_strcmp(id,"theme-creator")==0)return "Native FalconOS personalization tools";
+    if(k_strcmp(id,"codedium-studio")==0)return "Native app development tools";
+    if(k_strcmp(id,"iso-studio")==0)return "FalconOS image tools";
+    return "Reviewed FAPP/1 app, bounded allowlisted commands";
+}
+static void market_trim(i32 x,i32 y,const char *s,i32 chars,u32 color){
+    char text[92];i32 n=0;
+    if(chars>87)chars=87;
+    if(chars<0)chars=0;
+    while(s&&s[n]&&n<chars){text[n]=s[n];n++;}
+    if(s&&s[n]&&n>3){text[n-3]='.';text[n-2]='.';text[n-1]='.';}
+    text[n]=0;
+    gfx_text(x,y,text,color);
+}
 static bool market_match(const char *haystack,const char *needle){
     if(!needle[0])return true;
     for(i32 i=0;haystack[i];i++){
@@ -4309,6 +4353,7 @@ static void market_update_view(void){
     for(i32 i=0;i<market_count()&&market_view_count<MARKET_VIEW_CAP;i++){
         if(market_category==1&&!market_installed(i))continue;
         if(market_category==2&&!market_has_update(i))continue;
+        if(market_category>=3 && market_kind(i)!=market_category-3)continue;
         if(!market_match(market_name(i),market_query))continue;
         market_view[market_view_count++]=i;
     }
@@ -4532,7 +4577,7 @@ static void market_input_key(i32 key)
     if(key==KEY_ESC){market_publish_armed=false;return;}
     if(key==KEY_F4){market_search_mode=!market_search_mode;return;}
     if(key==KEY_F8){
-        market_category=(market_category+1)%3;
+        market_category=(market_category+1)%MARKET_FILTERS;
         market_update_view();return;
     }
     if(key==KEY_F9){
@@ -4576,108 +4621,170 @@ static void market_input_key(i32 key)
 }
 static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 {
-    if(market_first_frame){
-        outb(0xE9,'M');
-        market_first_frame=false;
-    }
     (void)frame;
-    gfx_round_rect_a(wx+18,wy+8,ww-36,75,19,PAL_PANEL_DEEP,255);
-    gfx_round_rect(wx+30,wy+19,40,40,13,0x20AA83u);
-    gfx_text_lg_centered(wx+50,wy+26,"+",0xFFFFFFu);
-    gfx_text_lg(wx+83,wy+14,T("Discover","Keşfet"),PAL_TEXT);
-    gfx_text(wx+85,wy+49,T("Verified GitHub .app.pkg packages","GitHub doğrulamalı .app.pkg paketleri"),PAL_TEXT_DIM);
-    gfx_text(wx+24,wy+91,"F5 refresh | F4 search | P selected | F11 add .pkg | F10 confirm",PAL_TEXT_DIM);
-    gfx_text(wx+24,wy+111,
-        market_publish_armed?
-            (market_publish_armed_cursor<0?
-              "Add Desktop/code.app.pkg to GitHub? F10 confirm / Esc cancel":
-              "Publish installed app to GitHub? F10 confirm / Esc cancel"):
-            market_status(),PAL_ACCENT);
+    if(market_first_frame){outb(0xE9,'M');market_first_frame=false;}
+    const i32 inset=20,rx=wx+inset,content=ww-2*inset;
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool clicked=wm_click_enabled();
-    if(clicked&&mx>=wx+24&&mx<=wx+ww-24&&
-       my>=wy+87&&my<=wy+107){
-        market_refresh();(void)mouse_consume_click();clicked=false;
+    /* Top hero. UI reports real catalog state, not invented ratings or
+     * install totals. This is not a native .exe / unrestricted app store. */
+    aero_panel(rx,wy+8,content,87,17);
+    gfx_round_rect(rx+16,wy+24,51,51,15,0x1AA68Eu);
+    gfx_text_lg_centered(rx+41,wy+32,"+",0xFFFFFFu);
+    gfx_text_lg(rx+82,wy+20,T("Discover","Kesfet"),aero_text());
+    gfx_text(rx+84,wy+55,
+        T("Curated FalconOS applications","FalconOS icin guvenli uygulamalar"),
+        aero_dim());
+    const i32 total=market_count();
+    i32 installed=0,updates=0;
+    for(i32 i=0;i<total;i++){
+        if(market_installed(i))installed++;
+        if(market_has_update(i))updates++;
     }
-    /* Search acts on real release titles and installed package names. */
-    gfx_round_rect_a(wx+24,wy+138,ww-48,34,10,PAL_PANEL_DEEP,255);
-    gfx_round_outline(wx+24,wy+138,ww-48,34,10,
-                      market_search_mode?PAL_ACCENT:PAL_HAIRLINE);
-    gfx_circle_outline(wx+41,wy+154,6,PAL_ACCENT);
-    gfx_text(wx+57,wy+148,
-        market_query_len?market_query:(market_search_mode?
-            "Type app name...":"F4  Search apps"),
-        market_query_len?PAL_TEXT:PAL_TEXT_DIM);
-    /* Do not let the search hit-area steal category-filter clicks. */
-    i32 cat_x=wx+ww-158;
-    i32 add_x=cat_x-139;
-    gfx_round_rect(add_x,wy+144,130,23,8,PAL_ACCENT_DIM);
-    gfx_text(add_x+10,wy+149,"+ ADD .APP.PKG",PAL_ACCENT);
-    if(clicked&&mx>=add_x&&mx<add_x+130&&my>=wy+144&&my<wy+167){
-        market_publish_armed=true;
-        market_publish_armed_cursor=-1;
-        (void)mouse_consume_click();clicked=false;
-    }
-    if(clicked&&mx>=wx+24&&mx<add_x-4&&my>=wy+138&&my<wy+172){
+    char meter[30],tmp[12];
+    k_itoa((u32)total,meter,10);k_strcat(meter," APPS");
+    gfx_text(rx+content-160,wy+23,meter,aero_text());
+    k_itoa((u32)installed,tmp,10);
+    gfx_text(rx+content-160,wy+46,tmp,aero_accent());
+    gfx_text(rx+content-143,wy+46,T(" installed"," kurulu"),aero_dim());
+
+    const i32 search_y=wy+107;
+    aero_card(rx,search_y,content,44,13,market_search_mode);
+    gfx_circle_outline(rx+19,search_y+21,7,aero_accent());
+    gfx_line(rx+24,search_y+26,rx+29,search_y+31,aero_accent());
+    const char *hint=market_query_len?market_query:
+        T("Search verified apps (F4)","Uygulama ara (F4)");
+    market_trim(rx+38,search_y+13,hint,(content-230)/8,
+                market_query_len?aero_text():aero_dim());
+    const i32 add_x=rx+content-174;
+    aero_chip(add_x,search_y+5,163,34,
+        T("+ Publish  F11","+ Yayinla F11"),false);
+    if(clicked&&mx>=rx&&mx<add_x-6&&my>=search_y&&my<search_y+44){
         market_search_mode=true;(void)mouse_consume_click();clicked=false;
     }
-    static const char *catname[]={"All apps","Installed","Updates"};
-    gfx_round_rect(cat_x,wy+144,129,23,8,PAL_ACCENT_DIM);
-    gfx_text(cat_x+9,wy+149,catname[market_category],PAL_ACCENT);
-    if(clicked&&mx>=cat_x&&mx<cat_x+129&&my>=wy+144&&my<wy+167){
-        market_category=(market_category+1)%3;
+    if(clicked&&mx>=add_x&&mx<add_x+163&&my>=search_y&&my<search_y+44){
+        market_publish_armed=true;market_publish_armed_cursor=-1;
         (void)mouse_consume_click();clicked=false;
     }
-    market_update_view();
-    i32 count=market_view_count;
-    i32 total=market_count();
-    if(!total){
-        gfx_round_rect_a(wx+24,wy+189,ww-48,90,14,PAL_PANEL_DEEP,255);
-        gfx_text(wx+42,wy+225,
-            T("No releases. Start make run-market and press F5.",
-              "Katalog boş. make run-market başlat, ardından F5 bas."),
-            PAL_TEXT_DIM);
-    }else if(!count){
-        gfx_round_rect_a(wx+24,wy+189,ww-48,90,14,PAL_PANEL_DEEP,255);
-        gfx_text(wx+42,wy+225,"No matching releases or installed packages.",PAL_TEXT_DIM);
+
+    const char *filters[]={"All","Installed","Updates","System","Dev","Work","Design"};
+    const i32 tab_y=wy+161,gap=7,tab_w=(content-(MARKET_FILTERS-1)*gap)/MARKET_FILTERS;
+    for(i32 i=0;i<MARKET_FILTERS;i++){
+        i32 tx=rx+i*(tab_w+gap);
+        aero_chip(tx,tab_y,tab_w,32,filters[i],market_category==i);
+        if(clicked&&mx>=tx&&mx<tx+tab_w&&my>=tab_y&&my<tab_y+32){
+            market_category=i;(void)mouse_consume_click();clicked=false;
+        }
     }
-    i32 visible=(wh-240)/39;
+    market_update_view();
+    const i32 list_y=wy+207;
+    i32 list_h=wh-295;
+    if(list_h<89)list_h=89;
+    const bool wide=ww>=870;
+    const i32 list_w=wide?(content*56)/100:content;
+    const i32 count=market_view_count;
+    const i32 row_h=60;
+    i32 visible=list_h/row_h;
     if(visible<1)visible=1;
-    i32 selected=market_selected_row();
-    i32 first=selected-visible/2;
+    i32 current=market_selected_row();
+    i32 first=current-visible/2;
     if(first<0)first=0;
     if(first>count-visible)first=count-visible;
     if(first<0)first=0;
+    if(!count){
+        aero_card(rx,list_y,list_w,94,14,false);
+        gfx_text(rx+17,list_y+18,total?
+            T("No matching applications","Eslesen uygulama yok"):
+            T("Catalog unavailable or not synced","Katalog bagli degil"),aero_text());
+        market_trim(rx+17,list_y+49,
+            total?"Change the category or clear search (F9).":
+                  "Connect QEMU Marketplace bridge, then refresh (F5).",
+            (list_w-28)/8,aero_dim());
+    }
     for(i32 row=first;row<count&&row<first+visible;row++){
-        i32 i=market_view[row];
-        i32 y=wy+188+(row-first)*39;
-        bool active=(i==market_cursor);
-        gfx_round_rect_a(wx+24,y,ww-48,35,10,
-            active?PAL_ACCENT_DIM:PAL_PANEL_DEEP,255);
-        gfx_round_outline(wx+24,y,ww-48,35,10,
-            active?PAL_ACCENT:PAL_HAIRLINE);
-        gfx_circle(wx+41,y+18,7,active?PAL_ACCENT:COL_OK);
-        gfx_text(wx+58,y+11,market_name(i),PAL_TEXT);
-        gfx_text(wx+ww/2,y+11,market_version(i),PAL_TEXT_DIM);
-        bool installed=market_installed(i);
-        bool update=installed&&market_has_update(i);
-        gfx_text(wx+ww-135,y+11,update?"UPDATE":(installed?"RUN":"INSTALL"),
-            update?COL_WARN:(installed?COL_OK:PAL_ACCENT));
-        if(clicked&&mx>=wx+24&&mx<wx+ww-24&&my>=y&&my<y+35){
+        const i32 i=market_view[row],y=list_y+(row-first)*row_h;
+        const bool selected=market_cursor==i;
+        const bool hovered=clicked&&mx>=rx&&mx<rx+list_w&&
+                           my>=y&&my<y+row_h-5;
+        aero_card(rx,y,list_w,row_h-6,13,selected);
+        const i32 tint=(market_kind(i)==1?0x238DC6u:
+                       market_kind(i)==2?0x756BE8u:
+                       market_kind(i)==3?0xE7A84Bu:
+                       market_kind(i)==4?0xC478C5u:0x23AA81u);
+        gfx_round_rect(rx+11,y+9,38,36,11,tint);
+        gfx_text_centered(rx+30,y+17,"F",0xFFFFFFu);
+        market_trim(rx+59,y+8,market_name(i),
+                    (list_w-(wide?174:147))/8,aero_text());
+        market_trim(rx+59,y+30,market_kind_label(market_kind(i)),
+                    (list_w-(wide?174:147))/8,aero_dim());
+        const char *action=market_has_update(i)?"UPDATE":
+                           market_installed(i)?"OPEN":"GET";
+        i32 bx=rx+list_w-86;
+        aero_chip(bx,y+12,74,31,action,selected);
+        if(hovered){
             market_cursor=i;
-            if(update)market_download(i);
-            else if(installed)market_launch(i);
-            else market_download(i);
+            if(mx>=bx&&mx<bx+74) {
+                if(market_has_update(i)||!market_installed(i))market_download(i);
+                else market_launch(i);
+            }
             (void)mouse_consume_click();clicked=false;
         }
     }
-    char nums[12];k_itoa(count,nums,10);
-    gfx_text(wx+24,wy+wh-48,nums,PAL_ACCENT);
-    gfx_text(wx+49,wy+wh-48,"visible releases",PAL_TEXT_DIM);
-    gfx_text(wx+24,wy+wh-25,
-        market_publish_status(),PAL_TEXT_FAINT);
+    if(wide){
+        const i32 dx=rx+list_w+14,dw=content-list_w-14;
+        aero_panel(dx,list_y,dw,list_h>280?list_h:280,17);
+        const i32 pick=market_cursor;
+        if(pick>=0 && pick<total){
+            const i32 kind=market_kind(pick);
+            u32 color=kind==1?0x238DC6u:kind==2?0x756BE8u:
+                      kind==3?0xE7A84Bu:kind==4?0xC478C5u:0x23AA81u;
+            gfx_round_rect(dx+23,list_y+21,57,56,17,color);
+            gfx_text_lg_centered(dx+51,list_y+32,"F",0xFFFFFFu);
+            market_trim(dx+23,list_y+94,market_name(pick),(dw-42)/9,aero_text());
+            gfx_text(dx+23,list_y+126,market_kind_label(kind),aero_accent());
+            gfx_rect(dx+22,list_y+155,dw-44,1,aero_line());
+            gfx_text(dx+23,list_y+170,T("ABOUT THIS APP","UYGULAMA HAKKINDA"),aero_dim());
+            market_trim(dx+23,list_y+194,market_summary_known(pick),
+                        (dw-45)/8,aero_text());
+            gfx_text(dx+23,list_y+223,T("Version","Surum"),aero_dim());
+            market_trim(dx+92,list_y+223,market_version(pick),14,aero_text());
+            if(list_h>=365) {
+                gfx_text(dx+23,list_y+259,"FAPP/1  |  SHA-256",aero_accent());
+                gfx_text(dx+23,list_y+284,
+                    T("Verified package. Limited command policy.",
+                      "Dogrulanan paket. Sinirli komutlar."),aero_dim());
+            }
+            const i32 by=list_y+(list_h>320?list_h-61:297);
+            const bool ready=market_installed(pick);
+            const char *btn=market_has_update(pick)?
+                T("Update selected","Secileni guncelle"):
+                ready?T("Open application","Uygulamayi ac"):
+                      T("Install application","Uygulamayi yukle");
+            aero_chip(dx+22,by,dw-44,40,btn,true);
+            if(clicked&&mx>=dx+22&&mx<dx+dw-22&&my>=by&&my<by+40){
+                if(market_has_update(pick)||!ready)market_download(pick);
+                else market_launch(pick);
+                (void)mouse_consume_click();clicked=false;
+            }
+        }else{
+            gfx_text(dx+24,list_y+29,T("SELECT AN APP","UYGULAMA SEC"),aero_dim());
+        }
+    }
+    gfx_rect(rx,wy+wh-71,content,1,aero_line());
+    const char *status=market_publish_armed?
+       (market_publish_armed_cursor<0?
+        "Publish Desktop/code.app.pkg? F10 confirm / Esc cancel":
+        "Publish installed package? F10 confirm / Esc cancel"):
+        market_status();
+    market_trim(rx,wy+wh-58,status,(content-15)/8,aero_dim());
+    gfx_text(rx,wy+wh-31,
+        T("F5 Refresh   F4 Search   F8 Filter   Enter Install/Open   F9 Clear",
+          "F5 Yenile   F4 Ara   F8 Filtre   Enter Yukle/Ac   F9 Temizle"),
+        aero_dim());
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'m');outb(0xE9,'V');
+#endif
 }
-
 /* ---- Codedium: native editable FAPP/1 source, file save and script preview --- */
 #define CODE_CAP 4096
 static char code_text[CODE_CAP];
