@@ -231,16 +231,38 @@ def send(sock, message):
         time.sleep(0.004)  # 16550 RX FIFO = 16 bytes; guest polls ~50 FPS
 
 def read_line(sock):
+    """Resynchronize on known FAPP protocol commands after UEFI serial noise.
+
+    OVMF may print firmware diagnostics on COM1 before FalconOS starts.
+    These bytes must NEVER terminate the read-only Marketplace service,
+    nor be interpreted as package commands. Drop malformed/oversized
+    frames until a full valid line boundary is reached.
+    """
     data = bytearray()
+    invalid = False
     while True:
         chunk = sock.recv(1)
         if not chunk:
             raise ConnectionError("guest disconnected")
         if chunk == b"\n":
-            return data.decode("ascii", errors="replace").strip("\r")
-        if len(data) >= 160:
-            raise ValueError("command too long")
-        data.extend(chunk)
+            if not invalid and data:
+                try:
+                    command = data.decode("ascii").strip("\r")
+                except UnicodeDecodeError:
+                    command = ""
+                if command in ("LIST", "ACK", "UPEND") or command.startswith(
+                        ("GET|", "UP|", "DAT|")):
+                    return command
+            data.clear()
+            invalid = False
+            continue
+        value = chunk[0]
+        if value == 13:
+            continue
+        if not (32 <= value <= 126) or len(data) >= 160:
+            invalid = True
+        if not invalid:
+            data.extend(chunk)
 
 def send_acknowledged(sock, line):
     send(sock, line)
