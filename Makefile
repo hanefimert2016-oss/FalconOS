@@ -231,8 +231,8 @@ $(UEFI_EFI): $(KERNEL_BIN) boot/falcon_uefi/loader.c boot/falcon_uefi/uefi.h boo
 $(ISO): $(UEFI_EFI) $(KERNEL_BIN)
 	@rm -rf $(ISO_DIR)
 	@mkdir -p $(ISO_DIR)
-	@truncate -s 50331648 $(ISO_DIR)/falcon-esp.img
-	mformat -i $(ISO_DIR)/falcon-esp.img -h 64 -t 96 -s 16 -v FALCONV2 ::
+	@truncate -s 25165824 $(ISO_DIR)/falcon-esp.img
+	mformat -i $(ISO_DIR)/falcon-esp.img -h 64 -t 48 -s 16 -v FALCONV2 ::
 	mmd -i $(ISO_DIR)/falcon-esp.img ::/EFI ::/EFI/BOOT ::/FALCONOS
 	mcopy -i $(ISO_DIR)/falcon-esp.img $(UEFI_EFI) ::/EFI/BOOT/BOOTX64.EFI
 	mcopy -i $(ISO_DIR)/falcon-esp.img $(KERNEL_BIN) ::/FALCONOS/KERNEL.BIN
