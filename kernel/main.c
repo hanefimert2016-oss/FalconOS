@@ -21,6 +21,7 @@
  * ============================================================================= */
 #include "falcon.h"
 #include "shfs.h"  /* RAM filesystem and persistent FalconFS mount/sync API */
+#include "version.h"
 
 #define MB2_MAGIC_BOOT      0x36D76289u
 #define MB2_TAG_END         0
@@ -82,8 +83,13 @@ static void draw_menu_bar(void){
     gfx_round_rect(13,4,22,22,8,0x3479E9u);
     gfx_text_centered(24,7,"F",0xFFFFFFu);
     gfx_text(45,7,"FalconOS",PAL_TEXT);
-    gfx_circle(151,15,3,0x2AAB91u);
-    gfx_text(161,7,T("Workspace","Masaüstü"),PAL_TEXT_DIM);
+    /* Always expose the actual release channel on the V2 desktop, not only
+     * inside About/Terminal; badge uses runtime theme and user accent. */
+    gfx_round_rect(127,4,82,22,9,PAL_ACCENT_DIM);
+    gfx_round_outline(127,4,82,22,9,PAL_ACCENT);
+    gfx_text_centered(168,8,FALCON_RELEASE_BADGE,PAL_ACCENT);
+    gfx_circle(226,15,3,0x2AAB91u);
+    gfx_text(236,7,T("Workspace","Masaüstü"),PAL_TEXT_DIM);
     const char *hint=T("F2 Apps  |  F1 Help  |  F12 Power",
                        "F2 Uygulamalar  |  F1 Yardım  |  F12 Güç");
     i32 hw=gfx_text_width(hint)+34;
