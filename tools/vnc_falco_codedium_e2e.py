@@ -77,9 +77,10 @@ def main():
                 off=LOG.stat().st_size;k(c,"enter")
                 wait(b"zF",off,60);wait(b"gF",off,65)
                 t(c,"ver");k(c,"enter");pause(.8)
-                t(c,"uname");k(c,"enter");pause(1.1)
+                t(c,"uname");k(c,"enter");pause(.7)
+                t(c,"doctor");k(c,"enter");pause(.9)
                 snap(c,"FalconOS-V2-Beta-Terminal-Real-QEMU")
-                STATE["checks"].append("Native Terminal accepted ver and uname commands in QEMU")
+                STATE["checks"].append("Native Terminal accepted ver, uname and honest doctor runtime diagnostics in QEMU")
                 # V2 Calendar is a real RTC-based application, present in
                 # Launchpad's All catalogue, not a demo counter of uptime.
                 k(c,"f2");t(c,"Calendar")
