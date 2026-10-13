@@ -78,6 +78,7 @@ jobs:
             build/FalconOS-V2-Gregorian-Calendar-*.png
             build/FalconOS-Review-Desktop.png
             build/FalconOS-V2-Discover-*.png
+            build/FalconOS-V2-Native-System-Updater*.png
             build/FalconOS-V2-AeroFlow-Launcher.png
             build/FalconOS-V2-AeroFlow-Light.png
             build/FalconOS-V2-AeroFlow-Dark.png
