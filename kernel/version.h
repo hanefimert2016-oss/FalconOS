@@ -8,6 +8,8 @@
 #ifdef FALCON_OS_UPDATE_VERSION
 #define FALCON_RELEASE_LABEL         "FalconOS 2.0.1 Beta"
 #define FALCON_RELEASE_SEMVER        "2.0.1-beta"
+#define FALCON_RELEASE_BADGE         "V2 BETA"
+#define FALCON_RELEASE_CHANNEL       "v2-beta"
 #else
 #define FALCON_RELEASE_LABEL         "FalconOS 2.0 Beta"
 #define FALCON_RELEASE_BADGE         "V2 BETA"
