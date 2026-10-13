@@ -12,6 +12,11 @@ on:
       - kernel/launchpad.c
       - kernel/personal.c
       - kernel/aeroflow.h
+      - kernel/os_update.c
+      - kernel/version.h
+      - tools/falcon_os_update_bridge.py
+      - tests/test_os_update_bridge.py
+      - tests/test_qemu_boot_priority.py
       - kernel/gfx.c
       - kernel/main.c
       - kernel/version.h
