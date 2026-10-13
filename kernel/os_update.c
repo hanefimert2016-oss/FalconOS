@@ -131,6 +131,8 @@ bool os_update_installing(void){return installing;}
 bool os_update_auto_stage(void){return auto_stage;}
 void os_update_toggle_auto(void){
     auto_stage=!auto_stage;
+    SET.update_auto_install=auto_stage;
+    (void)diskdb_save();
     status(auto_stage?"Automatic install ON":"Automatic install OFF",
         "Checks happen automatically. Auto-install is opt-in. Restart is manual.");
     if(auto_stage&&has_update&&!staged)os_update_apply();
