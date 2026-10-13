@@ -22,8 +22,9 @@ int main(void){
     assert(!strstr(buf,"SECRET_COMMENT"));
     assert(!strstr(buf,"SECRET_SVG"));
     char narrow[9];
-    assert(falco_html_extract("<h1>1234567890123456789</h1>",narrow,9)>=0);
-    assert(narrow[8]=='\0');
+    int short_len=falco_html_extract("<h1>1234567890123456789</h1>",narrow,9);
+    assert(short_len>=0 && short_len<9);
+    assert(narrow[short_len]=='\0');
     assert(falco_html_extract(NULL,buf,sizeof buf)==0);
     assert(falco_html_extract(html,NULL,sizeof buf)==0);
     puts("PASS: Falco SemanticText/2 entity, paragraph, inert script and bounds tests");
