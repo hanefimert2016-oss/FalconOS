@@ -381,6 +381,22 @@ bool market_line_allowed(const char *line, i32 size);
 /* .app.pkg runs only FAPP/1 scripts using existing allowlisted commands. */
 bool market_validate_app_pkg(const char *bytes,u32 length);
 
+/* Native System Updater: read-only host HTTPS bridge on COM2.
+ * Staging only replaces the QEMU guest's virtual ISO, not ATA partitions. */
+void os_update_init(void);
+void os_update_poll(void);
+void os_update_check(void);
+void os_update_apply(void);
+void os_update_toggle_auto(void);
+const char *os_update_status(void);
+const char *os_update_details(void);
+const char *os_update_version(void);
+bool os_update_available(void);
+bool os_update_staged(void);
+bool os_update_checking(void);
+bool os_update_installing(void);
+bool os_update_auto_stage(void);
+
 /* ---- application framework (Personal kernel) ------------------------------ */
 i32          apps_count(void);
 /* Filtered launcher catalog; IDs remain the real app registry indexes. */
