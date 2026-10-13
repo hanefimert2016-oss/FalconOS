@@ -75,6 +75,7 @@ void os_update_init(void){
     outb(UPDATE_PORT+0,1);outb(UPDATE_PORT+1,0);
     outb(UPDATE_PORT+3,3);outb(UPDATE_PORT+2,0xC7);
     outb(UPDATE_PORT+4,3);
+    auto_stage=SET.update_auto_install;
     last_check=launch_ms=pit_ms();
     status("System Updates","Checking automatically after desktop opens. Manual check: C.");
 }
