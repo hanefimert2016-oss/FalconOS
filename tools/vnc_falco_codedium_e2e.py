@@ -185,6 +185,17 @@ def main():
                 wait(b"uQ",off,35)
                 pause(.7)
                 snap(c,"FalconOS-V2-Native-System-Updater-Manual-Check")
+                # Real keyboard interaction, not a mockup: switch release
+                # enrollment to Alpha, check, then return to Beta.
+                off=LOG.stat().st_size
+                k(c,"3");wait(b"uQ",off,35)
+                pause(.6)
+                snap(c,"FalconOS-V2-Alpha-Channel-Real-QEMU")
+                off=LOG.stat().st_size
+                k(c,"2");wait(b"uQ",off,35)
+                pause(.6)
+                snap(c,"FalconOS-V2-Beta-Channel-Real-QEMU")
+                STATE["checks"].append("Native Stable/Beta/Alpha release enrollment changed using real PS/2 input")
                 STATE["checks"].append("Dedicated OS updater GUI opened, manual check dispatched from guest COM2")
                 # Native Discover uses actual public Marketplace Releases via
                 # the host's read-only HTTPS bridge. Failure to reach GitHub
