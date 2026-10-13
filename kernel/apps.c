@@ -1369,7 +1369,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "FalconOS V2 Beta | help man doctor ver uname date cal\n"
             "Files: ls cd pwd cat cp mv rm mkdir touch grep find\n"
             "Apps: open falco search prg pkg\n"
-            "System: hwinfo lsblk df free uptime update check\n"
+            "System: lspci hwcheck hwinfo lsblk df free update check\n"
             "Tip: man <command> | F2 Apps | F12 Power");
         return 0;
     }
@@ -1793,6 +1793,34 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         }
         k_strcpy(out,"xfile: stat | fsck | fill | rm | inspect | elfcheck");
         return 1;
+    }
+    if(k_strcmp(cmd,"lspci")==0){
+        if(cap<150){
+            sh_copy_bounded(out,cap,"lspci: output buffer too small");
+            return 1;
+        }
+        u32 total=pci_inventory_count(),limit=total;
+        if(limit>20u)limit=20u;
+        k_strcpy(out,"PCI inventory: read-only enumeration, NOT functional drivers\n");
+        for(u32 i=0;i<limit;i++){
+            if(k_strlen(out)>cap-115)break;
+            u32 id=pci_inventory_field(i,0),cls=pci_inventory_field(i,1);
+            u32 bdf=pci_inventory_field(i,2);
+            char n[16];
+            k_itoa((bdf>>16)&255u,n,16);k_strcat(out,n);k_strcat(out,":");
+            k_itoa((bdf>>8)&31u,n,16);k_strcat(out,n);k_strcat(out,".");
+            k_itoa(bdf&7u,n,10);k_strcat(out,n);k_strcat(out," ");
+            k_itoa(id&65535u,n,16);k_strcat(out,n);k_strcat(out,":");
+            k_itoa(id>>16,n,16);k_strcat(out,n);k_strcat(out," ");
+            u32 group=cls>>16;
+            const char *class_name=group==1?"Storage":group==2?"Network":
+                group==3?"Display":group==6?"Bridge":
+                group==12?"Bus/USB":"Other";
+            k_strcat(out,class_name);k_strcat(out," (class ");
+            k_itoa(cls,n,16);k_strcat(out,n);k_strcat(out,")\n");
+        }
+        if(total>limit)k_strcat(out,"More devices detected; list truncated.\n");
+        return 0;
     }
     if(k_strcmp(cmd,"hwcheck")==0){
         char digits[16];
@@ -2449,7 +2477,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             "less","xxd","hexdump","file","printf","yes","seq","expr","test",
             "[","sleep","history","hostname","id","groups","who","w","users",
             "uptime","cal","ps","top","jobs","kill","df","du","free","mount",
-            "lsblk","reboot","shutdown","poweroff","halt","which","type","hwinfo",
+            "lsblk","lspci","hwcheck","reboot","shutdown","poweroff","halt","which","type","hwinfo",
             "uname","whoami","doctor","date","clear","help","true","false","exit",
             "man","open","xdg-open","prg","pkg","chrome","falco","heroic",
             "video","search","update","upgrade","ver","version","lscpu",NULL
