@@ -621,6 +621,7 @@ void long_start(u64 magic, u64 info_ptr)
     u32 last = g_ticks;
     for (;;) {
         market_poll(); /* bounded COM1 input: no blocking network I/O */
+        os_update_poll(); /* bounded COM2 replies, timed automatic checks */
         if (g_panic) { render_panic_overlay(); gfx_present();
                        for (;;) __asm__ volatile ("hlt"); }
 
