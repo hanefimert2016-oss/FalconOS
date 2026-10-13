@@ -13,6 +13,10 @@ on:
       - kernel/personal.c
       - kernel/aeroflow.h
       - kernel/os_update.c
+      - kernel/falco_html_text.c
+      - kernel/falco_html_text.h
+      - linux/pci_extended.c
+      - tests/falco_html_test.c
       - kernel/version.h
       - tools/falcon_os_update_bridge.py
       - tests/test_os_update_bridge.py
@@ -54,6 +58,10 @@ jobs:
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/calendar_math_test.c kernel/calendar_math.c -o /tmp/v2-cal-test
           /tmp/v2-cal-test
+      - name: Validate Falco semantic HTML parser with native host compiler
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/falco_html_test.c kernel/falco_html_text.c -o /tmp/falco-html-test
+          /tmp/falco-html-test
       - name: Build native bootable V2 ISO
         run: |
           PATH="/tmp/falcon-v2-venv/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY -DFALCON_QEMU_AEROFLOW_TEST'
