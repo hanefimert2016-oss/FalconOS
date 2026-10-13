@@ -130,6 +130,7 @@ static bool validate_and_import(const u8 *buf)
     k_memset(&SET,0,sizeof SET);
     k_memcpy(&SET,payload,h->length);
     if(h->length==old_size)SET.wallpaper_style=0;
+    if(h->length<sizeof(settings_t))SET.update_auto_install=false;
     if(SET.wallpaper_style>3u)SET.wallpaper_style=0;
     return true;
 }
