@@ -112,6 +112,24 @@ def command_hmp(monitor,iso):
 def send(sock,reply):
     sock.sendall((reply+"\n").encode("ascii"))
 
+def activate_on_next_boot(staging,target):
+    """Persist QEMU's selected boot ISO without touching real disks.
+
+    The original build/FalconOS.iso remains the recovery image. Only a
+    verified file inside build/os-updates may become active. The relative
+    symlink is atomically replaced to survive VM shutdown/relaunch.
+    """
+    staging=Path(staging).resolve()
+    target=Path(target).resolve()
+    if target.parent!=staging or not target.is_file():
+        raise ValueError("refusing OS media outside controlled update storage")
+    new=staging/(".active-"+str(os.getpid())+".tmp")
+    try:
+        new.symlink_to(target.name)
+        os.replace(new,staging/"active.iso")
+    finally:
+        if new.is_symlink():new.unlink()
+
 def command_loop(sock,monitor,staging):
     choice=None;have=None;data=bytearray()
     while True:
@@ -143,6 +161,7 @@ def command_loop(sock,monitor,staging):
                 if not target.exists() or hashlib.sha256(target.read_bytes()).hexdigest()!=choice["sha256"]:
                     download_verified(choice,target)
                 command_hmp(monitor,target.resolve())
+                activate_on_next_boot(staging,target)
                 have=version
                 send(sock,"STAGED|"+have)
             elif command:
