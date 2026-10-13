@@ -13,7 +13,7 @@ int main(void){
     int n=falco_html_extract(html,buf,sizeof buf);
     assert(n>0 && n<(int)sizeof buf);
     assert(strstr(buf,"Falco & FalconOS"));
-    assert(strstr(buf,"Turk\xC3\xA7e <b> \"secure\""));
+    assert(strstr(buf,"Turk\xC3\xA7" "e <b> \"secure\""));
     assert(strstr(buf,"* First"));
     assert(strstr(buf,"* Second"));
     assert(strstr(buf,"Last \xE2\x86\x92 line"));
