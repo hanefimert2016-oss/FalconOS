@@ -289,7 +289,9 @@ run-market: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
 	  web_pid=$!; \
 	  trap 'kill $bridge_pid $update_pid $web_pid 2>/dev/null || true' EXIT; \
-	  $(QEMU) -drive file=$(ISO),if=ide,index=2,media=cdrom,id=falcon_os_cd -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
+	  boot_iso=$(ISO); \
+	  if test -f $(BUILD)/os-updates/active.iso; then boot_iso=$(BUILD)/os-updates/active.iso; fi; \
+	  $(QEMU) -drive file=$boot_iso,if=ide,index=2,media=cdrom,id=falcon_os_cd -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 # Run the completely native-rendered Falco (no Chromium, no browser-pixel bridge).
 # Guest uses own layout engine; Python stdlib host is only for verified HTTPS.
@@ -303,6 +305,12 @@ run-falco-native: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 	  native_pid=$!; \
 	  trap 'kill $market_pid $https_pid $native_pid 2>/dev/null || true' EXIT; \
 	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
+
+# Explicit recovery path after an OS update; original ISO stays unchanged.
+.PHONY: rollback-os-update
+rollback-os-update:
+	@rm -f $(BUILD)/os-updates/active.iso
+	@echo "Next make run will boot original build/FalconOS.iso."
 
 run: run-market
 
