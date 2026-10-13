@@ -488,7 +488,7 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
     bool app_pkg=false;
     if(!is_dir){
         u32 size=(u32)k_strlen(path);
-        app_pkg=size>=8u&&k_strcmp(path+size-8u,".app.pkg")==0;
+        app_pkg=size>=8u&&(k_strcmp(path+size-8u,".app.pkg")==0 || k_strcmp(path+size-8u,".app.kkg")==0);
     }
     gfx_round_rect(c->x+9,y+7,24,20,6,
         is_dir?0xF3BC5Du:(app_pkg?0x26A78Cu:0x548FEBu));
