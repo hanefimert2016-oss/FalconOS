@@ -748,41 +748,79 @@ static void render_about(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
     (void)frame;
 }
 
-/* --- Sistem Güncellemeleri (offline channel UI) ---------------------------- */
-static void render_updates(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
-    (void)frame;
-    section(wx, wy,
-            T("System updates", "Sistem güncellemeleri"),
-            T("prg catalogue + Terminal bridge", "prg katalogu + Terminal köprüsü"));
-
-    char buf[192], num[14];
-    k_strcpy(buf, T("Installed packages: ", "Kurulu paket sayısı: "));
-    k_itoa((u32)prg_installed_count(), num, 10); k_strcat(buf, num);
-    k_strcat(buf, T(" / ", " / "));
-    k_itoa((u32)prg_count(), num, 10); k_strcat(buf, num);
-    gfx_text(wx + 24, wy + 60, buf, PAL_TEXT);
-
-    k_strcpy(buf, T("FalconFS: ", "FalconFS: "));
-    k_strcat(buf, diskdb_present()
-                    ? T("superblock on ATA.", "ATA üzerinde süper blok.")
-                    : T("no superblock (güvenli oturum or no disk).",
-                        "süper blok yok (güvenli oturum veya disk yok)."));
-    gfx_text(wx + 24, wy + 88, buf, PAL_TEXT_DIM);
-
-    gfx_text(wx + 24, wy + 124,
-             T("Kernel updates require a new tested ISO; not installed here.",
-               "Cekirdek guncellemesi yeni testli ISO gerektirir."),
-             PAL_TEXT_DIM);
-    gfx_text(wx + 24, wy + 152,
-             T("update check / apply: offline package catalogue only",
-               "update check / apply: sadece cevrimdisi paket katalogu"),
-             PAL_TEXT_FAINT);
-
-    (void)ww; (void)wh;
+/* ---- FalconOS System Updates: separate core app, NOT Marketplace -------- */
+static void updates_input_key(i32 key){
+    if(key=='c'||key=='C'||key==KEY_F5)os_update_check();
+    else if(key=='i'||key=='I'||key==KEY_ENTER)os_update_apply();
+    else if(key=='a'||key=='A')os_update_toggle_auto();
 }
+static void render_updates(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame){
+    (void)frame;
+    const i32 pad=22,w=ww-2*pad,x=wx+pad;
+    aero_panel(x,wy+15,w,102,18);
+    gfx_round_rect(x+17,wy+31,60,60,18,0x218DC3u);
+    gfx_text_lg_centered(x+47,wy+45,"U",0xFFFFFFu);
+    gfx_text_lg(x+97,wy+28,T("System Updates","Sistem Guncellemeleri"),aero_text());
+    gfx_text(x+97,wy+67,
+        T("Built into FalconOS, not a Marketplace app",
+          "FalconOS'a gomulu, Marketplace'ten bagimsiz"),aero_dim());
 
-static void updates_input_key(i32 key) { (void)key; }
+    aero_panel(x,wy+132,w,162,18);
+    gfx_text(x+21,wy+152,T("INSTALLED SYSTEM","YUKLU SISTEM"),aero_dim());
+    gfx_text_lg(x+21,wy+178,FALCON_RELEASE_LABEL,aero_text());
+    gfx_text(x+23,wy+218,FALCON_RELEASE_SEMVER,aero_accent());
+    gfx_text(x+23,wy+256,
+        "Channel: Marketplace/updates  |  QEMU UEFI only",aero_dim());
+
+    const i32 sy=wy+310;
+    aero_panel(x,sy,w,wh>610?171:139,18);
+    gfx_text(x+21,sy+17,T("UPDATE STATUS","GUNCELLEME DURUMU"),aero_dim());
+    const char *state=os_update_status();
+    gfx_text_lg(x+21,sy+49,state,aero_text());
+    gfx_text(x+21,sy+87,os_update_details(),aero_dim());
+    if(os_update_available()){
+        gfx_text(x+21,sy+117,"Available: ",aero_accent());
+        gfx_text(x+114,sy+117,os_update_version(),aero_text());
+    }
+
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    const i32 by=sy+(wh>610?195:157),gap=13,btn_w=(w-2*gap)/3;
+    const char *actions[3]={
+        T("Check now","Simdi denetle"),
+        os_update_staged()?T("Restart required","Yeniden baslat"):
+        T("Install update","Guncellemeyi kur"),
+        os_update_auto_stage()?T("Auto install: ON","Otomatik: ACIK"):
+                               T("Auto install: OFF","Otomatik: KAPALI")
+    };
+    for(i32 i=0;i<3;i++){
+        i32 bx=x+i*(btn_w+gap);
+        bool disabled=(i==1&&!os_update_available())||
+                      (i==1&&os_update_installing())||
+                      (i==1&&os_update_staged());
+        aero_chip(bx,by,btn_w,47,actions[i],i==0||i==1);
+        if(disabled)
+            gfx_round_rect_a(bx,by,btn_w,47,12,PAL_PANEL_DEEP,140);
+        if(!disabled&&wm_click_enabled()&&mx>=bx&&mx<bx+btn_w&&
+           my>=by&&my<by+47){
+            (void)mouse_consume_click();
+            if(i==0)os_update_check();
+            if(i==1)os_update_apply();
+            if(i==2)os_update_toggle_auto();
+        }
+    }
+    gfx_text(x+4,by+67,
+        T("C/F5 Check    I/Enter Install    A Toggle automatic installation",
+          "C/F5 Denetle    I/Enter Kur    A Otomatik kurulum"),aero_dim());
+    gfx_text(x+4,by+94,
+        T("HTTPS verified by host, SHA-256 checked, ISO switch is atomic.",
+          "Host HTTPS, SHA-256 dogrulama, ISO gecisi atomik."),aero_dim());
+    gfx_text(x+4,by+115,
+        T("Reboot manually to activate. Original ISO remains untouched.",
+          "Etkinlestirmek icin yeniden baslat. Eski ISO korunur."),aero_dim());
+#ifdef FALCON_QEMU_UI_GALLERY
+    outb(0xE9,'u');outb(0xE9,'W');
+#endif
+}
 
 /* --- Store (prg package browser, GUI) ----------------------------------- */
 static i32 store_cursor = 0;
@@ -1382,7 +1420,8 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             return 0;
         }
         if (k_strcmp(argv[1], "update") == 0) {
-            k_strcpy(out, "update check | apply: select optional local package catalogue entries; does not update the kernel.");
+            sh_copy_bounded(out,cap,
+                "update check | install | auto | status: REAL OS ISO update on QEMU; needs host bridge.");
             return 0;
         }
         if (k_strcmp(argv[1], "video") == 0) {
@@ -1470,41 +1509,28 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         k_strcpy(out, "search forwarded to Falco");
         return 0;
     }
-    if (k_strcmp(cmd, "update") == 0 || k_strcmp(cmd, "upgrade") == 0) {
-        static const char *BUNDLE[] = {
-            "app-falco-browser",
-            "app-google-chrome",
-            "app-heroic-launcher",
-            "theme-liquid",
-            "fonts-mono-pack",
-            NULL
-        };
-        bool apply = (argc >= 2 &&
-                      (k_strcmp(argv[1], "apply") == 0 ||
-                       k_strcmp(argv[1], "upgrade") == 0 ||
-                       k_strcmp(argv[1], "install") == 0));
-        if (!apply) {
-            i32 pending = 0;
-            for (i32 i = 0; BUNDLE[i]; i++) {
-                i32 idx = sh_find_pkg_idx(BUNDLE[i]);
-                if (idx >= 0 && !prg_is_installed(idx)) pending++;
+    if (k_strcmp(cmd,"update")==0 || k_strcmp(cmd,"upgrade")==0){
+        if(argc<2 || k_strcmp(argv[1],"status")==0){
+            sh_copy_bounded(out,cap,os_update_status());return 0;
+        }
+        if(k_strcmp(argv[1],"check")==0){
+            os_update_check();
+            sh_copy_bounded(out,cap,"Checking Marketplace/updates via COM2 host bridge");return 0;
+        }
+        if(k_strcmp(argv[1],"install")==0||k_strcmp(argv[1],"apply")==0){
+            if(!os_update_available()){
+                sh_copy_bounded(out,cap,"No verified OS update available. Run update check.");
+                return 1;
             }
-            char num[16];
-            k_strcpy(out, "update check: ");
-            k_itoa((u32)pending, num, 10); k_strcat(out, num);
-            k_strcat(out, " unselected catalogue entries (offline). update apply");
-            return 0;
+            os_update_apply();
+            sh_copy_bounded(out,cap,"Verifying and staging new bootable ISO. See System Updates.");return 0;
         }
-        i32 done = 0;
-        for (i32 i = 0; BUNDLE[i]; i++) {
-            i32 idx = sh_find_pkg_idx(BUNDLE[i]);
-            if (idx >= 0 && prg_install(idx)) done++;
+        if(k_strcmp(argv[1],"auto")==0){
+            os_update_toggle_auto();
+            sh_copy_bounded(out,cap,os_update_status());return 0;
         }
-        char num[16];
-        k_strcpy(out, "update apply: ");
-        k_itoa((u32)done, num, 10); k_strcat(out, num);
-        k_strcat(out, " local catalogue entries selected; kernel ISO unchanged.");
-        return 0;
+        sh_copy_bounded(out,cap,"Usage: update check | install | status | auto");
+        return 1;
     }
     if (k_strcmp(cmd, "prg") == 0 || k_strcmp(cmd, "pkg") == 0) {
         if (argc < 2 || k_strcmp(argv[1], "help") == 0) {
