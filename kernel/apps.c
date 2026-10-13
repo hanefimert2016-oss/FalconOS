@@ -753,6 +753,9 @@ static void updates_input_key(i32 key){
     if(key=='c'||key=='C'||key==KEY_F5)os_update_check();
     else if(key=='i'||key=='I'||key==KEY_ENTER)os_update_apply();
     else if(key=='a'||key=='A')os_update_toggle_auto();
+    else if(key=='1')os_update_set_channel(0);
+    else if(key=='2')os_update_set_channel(1);
+    else if(key=='3')os_update_set_channel(2);
 }
 static void render_updates(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame){
     (void)frame;
@@ -769,8 +772,21 @@ static void render_updates(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame){
     gfx_text(x+21,wy+152,T("INSTALLED SYSTEM","YUKLU SISTEM"),aero_dim());
     gfx_text_lg(x+21,wy+178,FALCON_RELEASE_LABEL,aero_text());
     gfx_text(x+23,wy+218,FALCON_RELEASE_SEMVER,aero_accent());
-    gfx_text(x+23,wy+256,
-        "Channel: Marketplace/updates  |  QEMU UEFI only",aero_dim());
+    gfx_text(x+23,wy+253,
+        T("Release program","Guncelleme programi"),aero_dim());
+    const char *programs[]={"Stable","Beta","Alpha"};
+    i32 cmx,cmy;bool cmheld;mouse_get(&cmx,&cmy,&cmheld);(void)cmheld;
+    const i32 channel_w=(w-256)/3;
+    for(i32 i=0;i<3 && channel_w>=64;i++){
+        i32 bx=x+222+i*(channel_w+8);
+        aero_chip(bx,wy+242,channel_w,35,programs[i],
+                  (i32)os_update_channel()==i);
+        if(wm_click_enabled()&&cmx>=bx&&cmx<bx+channel_w&&
+           cmy>=wy+242&&cmy<wy+277){
+            (void)mouse_consume_click();
+            os_update_set_channel((u8)i);
+        }
+    }
 
     const i32 sy=wy+310;
     aero_panel(x,sy,w,wh>610?171:139,18);
@@ -809,8 +825,8 @@ static void render_updates(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame){
         }
     }
     gfx_text(x+4,by+67,
-        T("C/F5 Check    I/Enter Install    A Toggle automatic installation",
-          "C/F5 Denetle    I/Enter Kur    A Otomatik kurulum"),aero_dim());
+        T("1 Stable  2 Beta  3 Alpha  |  C Check  I Install  A Auto",
+          "1 Stable  2 Beta  3 Alpha  |  C Denetle  I Kur  A Otomatik"),aero_dim());
     gfx_text(x+4,by+94,
         T("HTTPS verified by host, SHA-256 checked, ISO switch is atomic.",
           "Host HTTPS, SHA-256 dogrulama, ISO gecisi atomik."),aero_dim());
@@ -1421,7 +1437,7 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         }
         if (k_strcmp(argv[1], "update") == 0) {
             sh_copy_bounded(out,cap,
-                "update check | install | auto | status: REAL OS ISO update on QEMU; needs host bridge.");
+                "update check | install | auto | status | channel stable/beta/alpha; QEMU host bridge.");
             return 0;
         }
         if (k_strcmp(argv[1], "video") == 0) {
@@ -1525,11 +1541,28 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             os_update_apply();
             sh_copy_bounded(out,cap,"Verifying and staging new bootable ISO. See System Updates.");return 0;
         }
+        if(k_strcmp(argv[1],"channel")==0){
+            if(argc<3){
+                sh_copy_bounded(out,cap,os_update_channel_name());
+                return 0;
+            }
+            u8 selection=255;
+            if(k_strcmp(argv[2],"stable")==0)selection=0;
+            if(k_strcmp(argv[2],"beta")==0)selection=1;
+            if(k_strcmp(argv[2],"alpha")==0)selection=2;
+            if(selection>2){
+                sh_copy_bounded(out,cap,"Use: update channel stable | beta | alpha");
+                return 1;
+            }
+            os_update_set_channel(selection);
+            sh_copy_bounded(out,cap,os_update_channel_name());
+            return 0;
+        }
         if(k_strcmp(argv[1],"auto")==0){
             os_update_toggle_auto();
             sh_copy_bounded(out,cap,os_update_status());return 0;
         }
-        sh_copy_bounded(out,cap,"Usage: update check | install | status | auto");
+        sh_copy_bounded(out,cap,"Usage: update check | install | status | auto | channel [stable|beta|alpha]");
         return 1;
     }
     if (k_strcmp(cmd, "prg") == 0 || k_strcmp(cmd, "pkg") == 0) {
