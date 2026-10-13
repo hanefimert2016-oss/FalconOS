@@ -593,6 +593,7 @@ void long_start(u64 magic, u64 info_ptr)
     (void)xfs_mount();         /* separate 32-KiB large-object COW volume */
     (void)jfs_mount();         /* independent bounded append-only JFS2 journal */
     market_init();            /* restore downloaded apps after PFS replay */
+    os_update_init();         /* independent COM2 OS update manager */
     apps_pkg_sync_receipts_from_state();
 
     /* Drain any keys/clicks queued during the installer so the lockscreen
