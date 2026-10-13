@@ -16,6 +16,26 @@ typedef struct {
 } pci_capability_t;
 static pci_capability_t nvme,usb3,gpu;
 static u32 found_nvme,found_usb3,found_gpu;
+/* Read-only PCI configuration space inventory. This is actual bus discovery,
+ * not a declaration that arbitrary controllers have functional drivers. */
+#define PCI_INVENTORY_LIMIT 48u
+typedef struct {
+    u32 id,cls,bdf,bar0,revision;
+} pci_inventory_entry_t;
+static pci_inventory_entry_t inventory[PCI_INVENTORY_LIMIT];
+static u32 inventory_used;
+u32 pci_inventory_count(void){return inventory_used;}
+u32 pci_inventory_field(u32 index,u32 field){
+    if(index>=inventory_used)return 0;
+    const pci_inventory_entry_t *e=&inventory[index];
+    if(field==0)return e->id; /* Device<<16 | Vendor */
+    if(field==1)return e->cls; /* Base class / subclass / prog IF */
+    if(field==2)return e->bdf; /* bus<<16 | device<<8 | function */
+    if(field==3)return e->bar0; /* read only, never enable bus mastering */
+    if(field==4)return e->revision;
+    return 0;
+}
+
 static u32 in32(u16 port){
     u32 v;
     __asm__ volatile("inl %1,%0":"=a"(v):"Nd"(port));
@@ -59,6 +79,7 @@ void pci_extended_probe(void){
     k_memset(&usb3,0,sizeof usb3);
     k_memset(&gpu,0,sizeof gpu);
     found_nvme=found_usb3=found_gpu=0;
+    inventory_used=0;
     for(u32 bus=0;bus<256;bus++)for(u32 dev=0;dev<32;dev++){
         u32 head=config(bus,dev,0,0x0C);
         for(u32 fn=0;fn<8;fn++){
@@ -67,6 +88,14 @@ void pci_extended_probe(void){
             if((identity&65535u)==65535u || identity==0)continue;
             u32 cls=config(bus,dev,fn,8);
             u32 category=cls>>8;
+            if(inventory_used<PCI_INVENTORY_LIMIT){
+                pci_inventory_entry_t *entry=&inventory[inventory_used++];
+                entry->id=identity;
+                entry->cls=category;
+                entry->bdf=(bus<<16)|(dev<<8)|fn;
+                entry->revision=cls&255u;
+                entry->bar0=config(bus,dev,fn,0x10);
+            }
             pci_capability_t *target=NULL;
             if(category==0x010802u){
                 if(found_nvme++==0)target=&nvme;
