@@ -3249,7 +3249,13 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
         k_itoa(ar + aw, tmp, 10); k_strcat(dbuf, tmp);
         if (art) { k_strcat(dbuf, " retry "); k_itoa(art, tmp, 10); k_strcat(dbuf, tmp); }
         if (af)  { k_strcat(dbuf, " FAIL ");  k_itoa(af,  tmp, 10); k_strcat(dbuf, tmp); }
-
+        if(k_strlen(dbuf)<78){
+            k_strcat(dbuf,"  PCI:");
+            k_itoa(pci_inventory_count(),tmp,10);
+            k_strcat(dbuf,tmp);
+        }
+        /* Detected NVMe/xHCI/GPU is not equivalent to a working driver.
+         * 'lspci' shows actual PCI IDs with explicit probe-only wording. */
         u32 status_color = COL_OK;
         if (kd || md || art) status_color = COL_WARN;
         if (af)              status_color = COL_ERR;
