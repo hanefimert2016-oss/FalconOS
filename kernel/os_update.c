@@ -69,6 +69,11 @@ static void accept(const char *packet){
         checking=false;has_update=false;
         status("Up to date","No newer approved FalconOS ISO available.");
         outb(0xE9,'u');outb(0xE9,'C');
+    }else if(k_strncmp(packet,"EMPTY|",6)==0){
+        checking=false;has_update=false;next_version[0]=0;
+        status("No published build",
+            "This program has no approved ISO yet. No update installed.");
+        outb(0xE9,'u');outb(0xE9,'N');
     }else if(k_strncmp(packet,"STAGED|",7)==0){
         if(token_version(packet+7,sizeof next_version)){
             checking=false;installing=false;staged=true;
