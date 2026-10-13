@@ -388,6 +388,9 @@ void os_update_poll(void);
 void os_update_check(void);
 void os_update_apply(void);
 void os_update_toggle_auto(void);
+void os_update_set_channel(u8 channel);
+u8 os_update_channel(void);
+const char *os_update_channel_name(void);
 const char *os_update_status(void);
 const char *os_update_details(void);
 const char *os_update_version(void);
@@ -556,6 +559,7 @@ typedef struct {
     u8          prg_installed[128];
     u32         wallpaper_style; /* appended for safe legacy disk migration */
     bool        update_auto_install; /* persisted only to validated FalconFS 0xFA volume */
+    u8          update_channel;      /* 0 Stable, 1 Beta (default), 2 Alpha */
 } settings_t;
 
 extern settings_t SET;
@@ -709,6 +713,8 @@ void pci_extended_probe(void);
 u32 pci_extended_count(u32 kind);
 bool pci_extended_mmio(u32 kind);
 u32 pci_extended_info(u32 kind,u32 field);
+u32 pci_inventory_count(void);
+u32 pci_inventory_field(u32 index,u32 field);
 
 /* JFS2 bounded dynamically allocated append-only transactional journal. */
 bool jfs_mount(void);
