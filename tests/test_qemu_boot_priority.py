@@ -20,7 +20,12 @@ class QemuBootPriorityTests(unittest.TestCase):
                               if "qemu-system-" in line]
                 self.assertTrue(qemu_lines, f"{target} did not invoke QEMU")
                 for line in qemu_lines:
-                    self.assertIn("-cdrom", line)
+                    # run-market mounts a named IDE CD drive so the native
+                    # updater can replace its ISO media in QEMU.
+                    if target == "run-market":
+                        self.assertIn("media=cdrom,id=falcon_os_cd", line)
+                    else:
+                        self.assertIn("-cdrom", line)
                     self.assertIn("-boot order=d", line)
 
     def test_host_only_publisher_does_not_boot_qemu(self):
