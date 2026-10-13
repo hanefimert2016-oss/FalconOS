@@ -42,6 +42,30 @@ def manifest(data):
     ).encode("ascii")
 
 class OSUpdateSecurity(unittest.TestCase):
+    def test_stable_beta_alpha_programs_are_isolated(self):
+        self.assertIn("/os/latest.fosup",UP.manifest_url("beta"))
+        self.assertIn("/os/alpha/latest.fosup",UP.manifest_url("alpha"))
+        self.assertIn("/os/stable/latest.fosup",UP.manifest_url("stable"))
+        with self.assertRaises(ValueError):
+            UP.manifest_url("../../etc/passwd")
+        self.assertLess(UP.semver("2.0.3-alpha"),UP.semver("2.0.3-beta"))
+        self.assertLess(UP.semver("2.0.3-beta"),UP.semver("2.0.3"))
+        self.assertGreater(UP.semver("2.0.4-alpha"),UP.semver("2.0.3"))
+        self.assertFalse(UP.version_in_channel("2.0.3-alpha","beta"))
+        self.assertTrue(UP.version_in_channel("2.0.3","stable"))
+
+    def test_channel_must_match_verified_manifest(self):
+        original=manifest(sample())
+        alpha=original.replace(b"beta",b"alpha")
+        entry=UP.parse_manifest(alpha,"alpha")
+        self.assertEqual(entry["version"],"2.0.1-alpha")
+        with self.assertRaises(ValueError):
+            UP.parse_manifest(alpha,"beta")
+        with self.assertRaises(ValueError):
+            UP.parse_manifest(original,"stable")
+        stable=original.replace(b"-beta",b"")
+        self.assertEqual(UP.parse_manifest(stable,"stable")["version"],"2.0.1")
+
     def test_real_versus_installed(self):
         self.assertGreater(UP.semver("2.0.1-beta"),UP.semver("2.0.0-beta"))
         with self.assertRaises(ValueError):
