@@ -555,6 +555,7 @@ typedef struct {
      * fits comfortably inside the 2 048-byte FalconFS superblock budget. */
     u8          prg_installed[128];
     u32         wallpaper_style; /* appended for safe legacy disk migration */
+    bool        update_auto_install; /* persisted only to validated FalconFS 0xFA volume */
 } settings_t;
 
 extern settings_t SET;
