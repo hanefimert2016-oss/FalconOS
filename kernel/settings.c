@@ -35,6 +35,7 @@ void settings_init(void)
     SET.viewport_w    = 0;              /* native                        */
     SET.viewport_h    = 0;
     SET.wallpaper_style = 0;
+    SET.update_channel = 1; /* Beta: existing users keep the beta channel */
     SET.widgets_shown = true;
     SET.center_circle = false;          /* removed in v5 by user request */
     k_strcpy(SET.password, "");
@@ -60,6 +61,7 @@ void settings_init(void)
      * superblock with matching magic+version+checksum is found, SET is
      * overwritten and the installer wizard is skipped automatically.    */
     diskdb_load();
+    if(SET.update_channel>2)SET.update_channel=1;
 #ifdef FALCON_QEMU_UI_GALLERY
     outb(0xE9,'w');outb(0xE9,'B');
     outb(0xE9,(u8)('0'+(SET.wallpaper_style%4u)));
