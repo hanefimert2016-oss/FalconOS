@@ -83,6 +83,25 @@ class OSUpdateSecurity(unittest.TestCase):
                     UP.download_verified(entry,target)
             self.assertFalse(target.exists())
             self.assertFalse(any(Path(temp).iterdir()))
+    def test_atomic_persistent_boot_selection_and_rollback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp)
+            storage=base/"updates";storage.mkdir()
+            original=base/"original.iso";original.write_bytes(b"fallback")
+            target=storage/"FalconOS-2.0.2-beta.iso"
+            target.write_bytes(sample())
+            UP.activate_on_next_boot(storage,target)
+            pointer=storage/"active.iso"
+            self.assertTrue(pointer.is_symlink())
+            self.assertEqual(pointer.resolve(),target)
+            self.assertEqual(original.read_bytes(),b"fallback")
+            with self.assertRaises(ValueError):
+                UP.activate_on_next_boot(storage,original)
+            self.assertEqual(pointer.resolve(),target)
+            pointer.unlink()
+            self.assertFalse(pointer.exists())
+            self.assertEqual(target.stat().st_size,len(sample()))
+
     def test_no_direct_kernel_disk_update(self):
         code=(ROOT/"kernel/os_update.c").read_text()
         self.assertIn("#define UPDATE_PORT 0x2F8",code)
