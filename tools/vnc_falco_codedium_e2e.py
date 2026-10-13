@@ -131,6 +131,9 @@ def main():
                 t(c,"uname");k(c,"enter");pause(.7)
                 t(c,"doctor");k(c,"enter");pause(.9)
                 snap(c,"FalconOS-V2-Beta-Terminal-Real-QEMU")
+                t(c,"lspci");k(c,"enter");pause(1.3)
+                snap(c,"FalconOS-V2-PCI-Devices-Real-QEMU")
+                STATE["checks"].append("Native Terminal enumerated real PCI BDF/vendor/class devices with read-only config access")
                 STATE["checks"].append("Native Terminal accepted ver, uname and honest doctor runtime diagnostics in QEMU")
                 # V2 Calendar is a real RTC-based application, present in
                 # Launchpad's All catalogue, not a demo counter of uptime.
