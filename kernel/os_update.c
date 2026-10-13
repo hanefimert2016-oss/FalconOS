@@ -102,7 +102,10 @@ void os_update_init(void){
 }
 void os_update_check(void){
     if(installing)return;
-    if(checking||staged)return;
+    /* A manual check may refresh an in-flight automatic check. The timer
+     * only auto-dispatches when idle, so this cannot create background
+     * polling floods. Keep staged media unchanged until reboot. */
+    if(staged||installing)return;
     send("CHECK|" FALCON_RELEASE_SEMVER "|");
     send(channel==0?"stable":channel==2?"alpha":"beta");
     send("\n");
