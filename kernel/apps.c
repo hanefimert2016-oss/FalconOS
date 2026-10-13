@@ -22,6 +22,7 @@
 #include "falcon.h"
 #include "shfs.h"
 #include "falco_theme.h"
+#include "falco_html_text.h"
 #include "version.h"
 #include "calendar_math.h"
 #include "aeroflow.h"
@@ -3839,38 +3840,21 @@ static char browser_status[120]="Type an HTTPS address, then press Enter to load
 static i32 browser_scroll;
 static bool browser_loaded;
 static void browser_page_from_http(void){
-    /* Only show actual bytes authenticated by the TLS transport.
-     * Strip active markup and avoid escape/control injection into GUI. */
+    /* Verified TLS transport is separate from safe display. This pure
+     * FalconOS renderer preserves semantic blocks and decodes entities;
+     * scripts, styles, SVG and other active payloads remain inert. */
     const char *p=browser_result;
     while(*p&&!(p[0]=='\r'&&p[1]=='\n'&&p[2]=='\r'&&p[3]=='\n'))p++;
     if(!*p){k_strcpy(browser_status,"Invalid HTTP response");return;}
     p+=4;
-    i32 n=0;bool intag=false;bool space=false;
-    for(;*p&&n<3900;p++){
-        char c=*p;
-        if(c=='<'){intag=true;continue;}
-        if(intag){
-            if(c=='>'){intag=false;space=true;}
-            continue;
-        }
-        /* Keep semantic block breaks supplied by the authenticated HTML
-         * reader: merging everything to spaces makes real pages unreadable. */
-        if(c=='\n'){
-            if(n>0&&browser_text[n-1]!='\n')browser_text[n++]='\n';
-            space=false;continue;
-        }
-        if(c=='\r'||c=='\t'||c==' '){
-            space=true;continue;
-        }
-        if((u8)c<32u)continue; /* preserve UTF-8 letters; glyph renderer validates */
-        if(space&&n>0&&browser_text[n-1]!=' ')browser_text[n++]=' ';
-        space=false;
-        browser_text[n++]=c;
+    i32 n=falco_html_extract(p,browser_text,sizeof browser_text);
+    if(n<=0){
+        k_strcpy(browser_status,"No renderable HTML content received");
+        return;
     }
-    browser_text[n]=0;
     browser_loaded=true;
     browser_scroll=0;
-    k_strcpy(browser_status,"TLS checked | structured HTML reader | text-only preview");
+    k_strcpy(browser_status,"TLS checked | SemanticText/2 | HTML blocks & entities | No JS/CSS");
 }
 /* Direct HTTPS .app.pkg download. CA and redirect policy are checked by
  * the opt-in 18444 host HTTPS companion; the package is transferred through
