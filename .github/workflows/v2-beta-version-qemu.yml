@@ -84,6 +84,9 @@ jobs:
             build/FalconOS-V2-FalconBoot-UEFI-Loader.png
             build/FalconOS-V2-Beta-*.png
             build/FalconOS-V2-Gregorian-Calendar-*.png
+            build/FalconOS-V2-Alpha-Channel-Real-QEMU.png
+            build/FalconOS-V2-Beta-Channel-Real-QEMU.png
+            build/FalconOS-V2-PCI-Devices-Real-QEMU.png
             build/FalconOS-Review-Desktop.png
             build/FalconOS-V2-Discover-*.png
             build/FalconOS-V2-Native-System-Updater*.png
