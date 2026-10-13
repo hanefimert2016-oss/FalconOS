@@ -11,7 +11,9 @@ static char line[UPDATE_LINE],label[48],details[120];
 static i32 line_len;
 static u32 last_check,launch_ms;
 static bool auto_stage,has_update,staged,checking,installing,boot_started;
+static u8 channel; /* 0 Stable, 1 Beta, 2 Alpha */
 static char next_version[28];
+static void status(const char *s,const char *d);
 static void send_char(char c){
     u32 watchdog=40000;
     while(watchdog-- && !(inb(UPDATE_PORT+5)&0x20)){}
@@ -19,6 +21,19 @@ static void send_char(char c){
 }
 static void send(const char *message){
     while(*message)send_char(*message++);
+}
+const char *os_update_channel_name(void){
+    return channel==0?"Stable":channel==2?"Alpha":"Beta";
+}
+u8 os_update_channel(void){return channel;}
+void os_update_set_channel(u8 next){
+    if(next>2||installing||staged||next==channel)return;
+    channel=next;SET.update_channel=next;
+    (void)diskdb_save();
+    has_update=false;checking=false;next_version[0]=0;
+    status("Release channel changed",
+        "Stable, Beta and Alpha have different verified update feeds.");
+    os_update_check();
 }
 static bool token_version(const char *p,i32 max){
     i32 n=0;bool digit=false;
@@ -76,12 +91,16 @@ void os_update_init(void){
     outb(UPDATE_PORT+3,3);outb(UPDATE_PORT+2,0xC7);
     outb(UPDATE_PORT+4,3);
     auto_stage=SET.update_auto_install;
+    channel=SET.update_channel<=2?SET.update_channel:1;
     last_check=launch_ms=pit_ms();
     status("System Updates","Checking automatically after desktop opens. Manual check: C.");
 }
 void os_update_check(void){
     if(installing)return;
-    send("CHECK|" FALCON_RELEASE_SEMVER "\n");
+    if(checking||staged)return;
+    send("CHECK|" FALCON_RELEASE_SEMVER "|");
+    send(channel==0?"stable":channel==2?"alpha":"beta");
+    send("\n");
     checking=true;
     last_check=pit_ms();
     status("Checking for updates","Request sent to read-only QEMU update bridge.");
