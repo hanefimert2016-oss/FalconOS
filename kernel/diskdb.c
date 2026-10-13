@@ -123,7 +123,8 @@ static bool validate_and_import(const u8 *buf)
     /* Legacy saved accounts and packages MUST survive wallpaper upgrades.
      * Field was appended at the end, so old records remain byte-compatible. */
     u32 old_size=(u32)__builtin_offsetof(settings_t,wallpaper_style);
-    if(h->length != sizeof(settings_t) && h->length != old_size)return false;
+    u32 prior_size=(u32)__builtin_offsetof(settings_t,update_auto_install);
+    if(h->length != sizeof(settings_t) && h->length != prior_size && h->length != old_size)return false;
     const u8 *payload = buf + sizeof(super_hdr_t);
     if (fletcher16(payload,h->length) != h->checksum)return false;
     k_memset(&SET,0,sizeof SET);
