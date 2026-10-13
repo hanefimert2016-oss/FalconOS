@@ -131,12 +131,16 @@ UEFI_QEMU_FLAGS := -machine q35 \
 # QEMU now also requires OVMF x86_64 UEFI firmware (not SeaBIOS).
 QEMU_FLAGS    := $(UEFI_QEMU_FLAGS) -m $(RAM)M -smp $(CPUS) -boot order=d \
                  -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
+                 -serial unix:$(CURDIR)/$(BUILD)/falcon-update.sock,server=on,wait=off \
+                 -monitor unix:$(CURDIR)/$(BUILD)/falcon-update-monitor.sock,server=on,wait=off \
                  -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display $(QEMU_DISPLAY) -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
 
 HEADLESS_FLAGS:= $(UEFI_QEMU_FLAGS) -m $(RAM)M -smp $(CPUS) -boot order=d \
                  -serial unix:$(CURDIR)/$(BUILD)/falcon-market.sock,server=on,wait=off \
+                 -serial unix:$(CURDIR)/$(BUILD)/falcon-update.sock,server=on,wait=off \
+                 -monitor unix:$(CURDIR)/$(BUILD)/falcon-update-monitor.sock,server=on,wait=off \
                  -netdev user,id=net0 -device rtl8139,netdev=net0 \
                  -display none -vga std -global VGA.vgamem_mb=$(VRAM) \
                  -accel kvm -accel tcg
@@ -280,10 +284,12 @@ run-market-publish-vm: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 run-market: $(ISO) $(BUILD)/falcon-safe.raw $(OVMF_VARS)
 	@python3 tools/marketplace_bridge.py --socket $(BUILD)/falcon-market.sock & \
 	  bridge_pid=$!; \
+	  python3 tools/falcon_os_update_bridge.py --socket $(BUILD)/falcon-update.sock --monitor $(BUILD)/falcon-update-monitor.sock & \
+	  update_pid=$!; \
 	  python3 tools/falcon_https_gateway.py --bind 127.0.0.1 & \
 	  web_pid=$!; \
-	  trap 'kill $bridge_pid $web_pid 2>/dev/null || true' EXIT; \
-	  $(QEMU) -cdrom $(ISO) -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
+	  trap 'kill $bridge_pid $update_pid $web_pid 2>/dev/null || true' EXIT; \
+	  $(QEMU) -drive file=$(ISO),if=ide,index=2,media=cdrom,id=falcon_os_cd -drive $(RUN_DISK_DRIVE) $(QEMU_FLAGS)
 
 # Run the completely native-rendered Falco (no Chromium, no browser-pixel bridge).
 # Guest uses own layout engine; Python stdlib host is only for verified HTTPS.
