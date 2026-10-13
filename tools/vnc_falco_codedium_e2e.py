@@ -169,6 +169,20 @@ def main():
                 off=LOG.stat().st_size
                 k(c,"t");wait(b"MT",off,40)
                 STATE["checks"].append("REAL RTC Calendar: guest acknowledged right arrow and month header visibly changed")
+                # Separate embedded updater, not a Marketplace release.
+                # Visit it in the real QEMU guest and issue a bounded
+                # manual CHECK. The host bridge may be absent in this
+                # visual-only run; uQ proves the guest actually sent it.
+                k(c,"f2");t(c,"Sistem")
+                off=LOG.stat().st_size;k(c,"enter")
+                wait(b"zE",off,60);wait(b"gE",off,65)
+                pause(.8)
+                snap(c,"FalconOS-V2-Native-System-Updater")
+                off=LOG.stat().st_size;k(c,"c")
+                wait(b"uQ",off,35)
+                pause(.7)
+                snap(c,"FalconOS-V2-Native-System-Updater-Manual-Check")
+                STATE["checks"].append("Dedicated OS updater GUI opened, manual check dispatched from guest COM2")
                 # Native Discover uses actual public Marketplace Releases via
                 # the host's read-only HTTPS bridge. Failure to reach GitHub
                 # is distinct from a failure of the guest's rendered GUI.
