@@ -16,18 +16,35 @@ import time
 import urllib.request
 from pathlib import Path
 
-MANIFEST_URL="https://raw.githubusercontent.com/hanefimert2016-oss/FalconOS-Marketplace/updates/os/latest.fosup"
+MANIFEST_ROOT="https://raw.githubusercontent.com/hanefimert2016-oss/FalconOS-Marketplace/updates/os/"
+MANIFEST_URL=MANIFEST_ROOT+"latest.fosup"  # legacy approved Beta feed
+CHANNEL_MANIFESTS={
+    "stable":MANIFEST_ROOT+"stable/latest.fosup",
+    "beta":MANIFEST_URL,
+    "alpha":MANIFEST_ROOT+"alpha/latest.fosup",
+}
 ASSET_ROOT="https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/"
 MAX_ISO=128*1024*1024
-VERSION=re.compile(r"2\.[0-9]{1,4}\.[0-9]{1,4}-beta\Z")
+VERSION=re.compile(r"2\.[0-9]{1,4}\.[0-9]{1,4}(?:-(?:beta|alpha))?\Z")
 HEX=re.compile(r"[0-9a-f]{64}\Z")
 
 def semver(v):
     if not VERSION.fullmatch(v):raise ValueError("unsupported update version")
-    a,b,c=v.split("-")[0].split(".")
-    return tuple(map(int,(a,b,c)))
+    parts=v.split("-")
+    a,b,c=parts[0].split(".")
+    stage=parts[1] if len(parts)>1 else "stable"
+    return (int(a),int(b),int(c),{"alpha":0,"beta":1,"stable":2}[stage])
 
-def parse_manifest(raw):
+def manifest_url(channel):
+    if channel not in CHANNEL_MANIFESTS:
+        raise ValueError("unsupported update channel")
+    return CHANNEL_MANIFESTS[channel]
+
+def version_in_channel(version,channel):
+    if channel=="stable":return "-" not in version
+    return version.endswith("-"+channel)
+
+def parse_manifest(raw,channel="beta"):
     if len(raw)>1200 or not raw.isascii():raise ValueError("invalid manifest")
     lines=raw.decode("ascii").splitlines()
     if not lines or lines[0]!="FOSUP/1" or len(lines)!=6:
@@ -41,6 +58,9 @@ def parse_manifest(raw):
     if set(data)!={"version","tag","asset","sha256","bytes"}:
         raise ValueError("missing manifest field")
     semver(data["version"])
+    manifest_url(channel)  # validate fixed feed selection, no URL injection
+    if not version_in_channel(data["version"],channel):
+        raise ValueError("manifest version does not match selected release channel")
     expected=f"os-v{data['version']}"
     if data["tag"]!=expected or data["asset"]!=f"FalconOS-{data['version']}.iso":
         raise ValueError("release tag or filename mismatch")
@@ -52,10 +72,11 @@ def parse_manifest(raw):
     data["size"]=length
     return data
 
-def read_manifest():
-    request=urllib.request.Request(MANIFEST_URL,headers={"User-Agent":"FalconOS-System-Updater/1"})
+def read_manifest(channel="beta"):
+    request=urllib.request.Request(manifest_url(channel),
+                                   headers={"User-Agent":"FalconOS-System-Updater/1"})
     with urllib.request.urlopen(request,timeout=22) as r:
-        return parse_manifest(r.read(1201))
+        return parse_manifest(r.read(1201),channel)
 
 def download_verified(info,destination):
     url=ASSET_ROOT+info["tag"]+"/"+info["asset"]
@@ -145,9 +166,20 @@ def command_loop(sock,monitor,staging):
         command=data.decode("ascii");data.clear()
         try:
             if command.startswith("CHECK|"):
-                current=command[6:]
+                args=command[6:].split("|")
+                if len(args)!=2:
+                    raise ValueError("CHECK requires installed version and channel")
+                current,channel=args
                 semver(current)
-                choice=read_manifest()
+                manifest_url(channel)
+                choice=None
+                try:
+                    choice=read_manifest(channel)
+                except urllib.error.HTTPError as ex:
+                    if ex.code==404:
+                        send(sock,"EMPTY|"+channel)
+                        continue
+                    raise
                 if semver(choice["version"])>semver(current):
                     send(sock,"AVAILABLE|"+choice["version"])
                 else:
