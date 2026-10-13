@@ -4527,7 +4527,7 @@ static void fapp_gui_input(i32 key){
 static void files_launch_pkg(const char *path){
     if(!path||!path[0]){files_action_status="Select a .app.pkg file first";return;}
     u32 n=(u32)k_strlen(path);
-    if(n<8u||k_strcmp(path+n-8u,".app.pkg")!=0){
+    if(n<8u||(k_strcmp(path+n-8u,".app.pkg")!=0&&k_strcmp(path+n-8u,".app.kkg")!=0)){
         files_action_status="No runnable .app.pkg selected";return;
     }
     shfs_ent_t *file=shfs_lookup(path);
