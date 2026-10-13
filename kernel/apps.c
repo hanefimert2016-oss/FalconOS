@@ -1813,10 +1813,19 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
             k_itoa(bdf&7u,n,10);k_strcat(out,n);k_strcat(out," ");
             k_itoa(id&65535u,n,16);k_strcat(out,n);k_strcat(out,":");
             k_itoa(id>>16,n,16);k_strcat(out,n);k_strcat(out," ");
-            u32 group=cls>>16;
-            const char *class_name=group==1?"Storage":group==2?"Network":
-                group==3?"Display":group==6?"Bridge":
+            u32 group=cls>>16, vendor=id&65535u;
+            const char *class_name=cls==0x010802u?"NVMe (probe only)":
+                cls==0x010601u?"AHCI (probe only)":
+                cls==0x0C0330u?"xHCI (probe only)":
+                group==1?"Storage":group==2?"Network":
+                group==3?"Display/GPU (GOP only)":group==6?"Bridge":
                 group==12?"Bus/USB":"Other";
+            const char *maker=vendor==0x8086u?"Intel ":
+                vendor==0x10DEu?"NVIDIA ":
+                vendor==0x10ECu?"Realtek ":
+                vendor==0x1AF4u?"VirtIO ":
+                vendor==0x1234u?"QEMU ":"";
+            k_strcat(out,maker);
             k_strcat(out,class_name);k_strcat(out," (class ");
             k_itoa(cls,n,16);k_strcat(out,n);k_strcat(out,")\n");
         }
