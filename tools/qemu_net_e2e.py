@@ -77,7 +77,7 @@ def main():
             # driver marker V + its real ICMP result N from main.c.
             pos=data.find(b"FALCONBOOT/1 HANDOFF")
             guest=data[pos+len(b"FALCONBOOT/1 HANDOFF"):] if pos>=0 else b""
-            if b"VN" in guest:
+            if b"N!" in guest and b"V" in guest[:guest.find(b"N!")]:
                 payload=pcap.read_bytes() if pcap.exists() else b""
                 eth=[];offset=24
                 while offset+16<=len(payload):
@@ -102,7 +102,7 @@ def main():
                         raise RuntimeError("Guest DHCP DORA failed; "+repr(guest)+"; "+summary())
                 if b"d" in guest:
                     raise RuntimeError("Native DNS query failed; debug "+repr(guest)+"; "+summary())
-            if b"Vn" in guest or b"vn" in guest or b"vN" in guest:
+            if b"n?" in guest or b"v" in guest[:2]:
                 raise RuntimeError("Guest RTL8139 ping failed; debug "+repr(guest[-120:])+"; "+summary())
             time.sleep(.2)
         raise TimeoutError("Guest network probe timed out; debug "+repr(debug.read_bytes() if debug.exists() else b"")+"; "+summary())
