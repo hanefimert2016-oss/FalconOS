@@ -96,6 +96,7 @@ jobs:
             build/FalconOS-V2-Beta-Channel-Real-QEMU.png
             build/FalconOS-V2-PCI-Devices-Real-QEMU.png
             build/FalconOS-Review-Desktop.png
+            build/FalconOS-Falco-MiniWeb-CSS-JS-Real-QEMU.png
             build/FalconOS-V2-Discover-*.png
             build/FalconOS-V2-Native-System-Updater*.png
             build/FalconOS-V2-AeroFlow-Launcher.png
