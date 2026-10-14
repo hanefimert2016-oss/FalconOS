@@ -3976,6 +3976,34 @@ static void browser_load(void){
     outb(0xE9,'b'); /* user pressed Enter inside the real GUI */
 #endif
     browser_loaded=false;browser_miniweb=false;browser_result[0]=0;browser_text[0]=0;
+    /* Explicit offline self-test, not a spoofed HTTPS page. Opens even when
+     * there is no network card, and uses the exact same HTML/CSS/JS parser
+     * and framebuffer renderer as external, host-verified HTTPS content. */
+    if(k_strcmp(browser_address,"falco.demo")==0 ||
+       k_strcmp(browser_address,"falco://demo")==0){
+        static const char demo[]=
+            "<html><head><title>Falco MiniWeb/3</title>"
+            "<style>h1{color:#1265c4;font-size:34px}"
+            ".subtitle{color:#485e79;font-size:18px}"
+            "#result{background-color:#e3eefc;color:#173b6d;"
+            "font-size:22px;text-align:center}"
+            "button{background-color:#d2f1e3;color:#135940}</style>"
+            "</head><body style='background-color:#f5f9ff'>"
+            "<h1>Falco MiniWeb/3</h1>"
+            "<p class='subtitle'>Native CSS layout in FalconOS.</p>"
+            "<p id='result'>JavaScript is starting...</p>"
+            "<button onclick=\"document.getElementById('result').textContent='Clicked in FalconOS'\">Click to change text</button>"
+            "<script>document.getElementById('result').textContent='JavaScript DOM updated!';</script>"
+            "</body></html>";
+        browser_miniweb=falco_miniweb_parse(&browser_dom,demo);
+        browser_loaded=browser_miniweb;
+        browser_scroll=0;
+        k_strcpy(browser_status,"LOCAL falco.demo | CSS + safe JS DOM subset | offline");
+#ifdef FALCON_QEMU_UI_GALLERY
+        outb(0xE9,'w');outb(0xE9,browser_loaded?'Y':'N');
+#endif
+        return;
+    }
     if(!net_present()){
         k_strcpy(browser_status,"No RTL8139 NIC. Set Virt-Manager network model to rtl8139.");
         return;
