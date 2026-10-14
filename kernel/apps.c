@@ -425,6 +425,7 @@ static void fapp_gui_run_action(i32 index);
 static void fapp_gui_input(i32 key);
 static void files_launch_pkg(const char *path);
 static void files_open_path(const char *path);
+static bool code_open_path(const char *path);
 
 static bool files_search_mode;
 static char files_filter[40];
@@ -458,6 +459,11 @@ static bool files_matches(const char *path) {
     return false;
 }
 static void files_input_key(i32 key) {
+    if(key==KEY_F8){
+        if(code_open_path(files_selected))apps_open(18);
+        else files_action_status="Codedium: open failed (unsupported/unsaved/size)";
+        return;
+    }
     if(files_preview_active){
         if(key==KEY_BACKSPACE||key==KEY_F4){files_preview_active=false;return;}
         if(key==KEY_UP&&files_preview_scroll>0)files_preview_scroll--;
@@ -645,7 +651,7 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     char count[16];k_itoa(ctx.files,count,10);
     gfx_text(sx+4,wy+wh-26,count,PAL_ACCENT);
     gfx_text(sx+35,wy+wh-26,
-        "Enter/double click: text, BMP, PPM, WAV or verified .app.pkg",
+        "Enter: view/run  |  F4 search  |  F8 edit selected text in Codedium",
         PAL_TEXT_DIM);
     files_render_preview(wx,wy,ww,wh);
 }
@@ -5230,6 +5236,7 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 /* ---- Codedium: native editable FAPP/1 source, file save and script preview --- */
 #define CODE_CAP 4096
 static char code_text[CODE_CAP];
+static char code_document_path[SHFS_PATH]="/home/falcon/Desktop/project.fsh";
 static i32 code_len, code_cursor;
 static bool code_ready,code_dirty,code_publish_armed;
 static char code_undo[CODE_CAP], code_redo[CODE_CAP];
@@ -5272,16 +5279,47 @@ static void code_init(void)
     code_text[n] = 0;
     code_cursor = code_len = n;
 }
+static bool code_open_path(const char*path){
+    code_init();
+    if(!path||!path[0]||fv_kind(path)!=FV_TEXT){
+        code_status="Open denied: select a text source file";return false;
+    }
+    if(code_dirty){
+        code_status="Save current changes (F5) before opening another file";
+        return false;
+    }
+    shfs_ent_t*file=shfs_lookup(path);
+    if(!file||file->is_dir||file->len>=CODE_CAP){
+        code_status="Open failed: missing file or source exceeds 4KiB";
+        return false;
+    }
+    for(u32 i=0;i<file->len;i++)if(file->data[i]==0){
+        code_status="Binary content cannot be opened in Codedium";return false;
+    }
+    u32 n=(u32)k_strlen(path);
+    if(n>=sizeof code_document_path)return false;
+    k_memcpy(code_text,file->data,file->len);
+    code_text[file->len]=0;
+    code_len=(i32)file->len;code_cursor=0;
+    k_memcpy(code_document_path,path,n+1u);
+    code_undo_valid=code_redo_valid=false;
+    code_dirty=false;
+    code_status="Opened real SHFS document | F5 Save | F6 Safe Run";
+    return true;
+}
 static void code_save(void)
 {
-    shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/project.fsh", false);
+    shfs_ent_t *file = shfs_open_w_abs(code_document_path, false);
     if (!file) { code_status = "Save error: RAM file system is full"; return; }
     k_memcpy(file->data, code_text, code_len + 1);
     file->len = code_len;
     code_dirty=false;
-    code_status = codedium_project_save(code_text, code_len)
-        ? "Saved project to RAM and safe FalconOS disk"
-        : "Saved in RAM only (no safe disk selected)";
+    if(k_strcmp(code_document_path,"/home/falcon/Desktop/project.fsh")==0)
+        code_status=codedium_project_save(code_text,code_len)
+            ? "Saved project to guest filesystem and dedicated FalconOS slot"
+            : "Saved to guest RAM filesystem (no safe disk selected)";
+    else
+        code_status="Saved edited file to guest filesystem (persistence depends on mount)";
 }
 static void code_run(void)
 {
@@ -5437,7 +5475,11 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
         }
     }
     if(ww>=800){
-        gfx_text(wx+ww-240,wy+58,"Desktop/project.fsh",PAL_TEXT_DIM);
+        const char*name=code_document_path;
+        for(i32 i=0;code_document_path[i];i++)
+            if(code_document_path[i]=='/'&&code_document_path[i+1])
+                name=code_document_path+i+1;
+        gfx_text(wx+ww-240,wy+58,name,PAL_TEXT_DIM);
         gfx_circle(wx+ww-24,wy+64,5,code_dirty?COL_WARN:COL_OK);
     }
     i32 top=wy+91;
