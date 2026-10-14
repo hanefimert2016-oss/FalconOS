@@ -95,12 +95,57 @@ static void paint_loader(void){
     }
     uint32_t cx=w/2,cy=h/2;
     uint32_t z=w>=1920?5u:3u;
-    label(cx-11*6*z/2,cy-90,"FALCONOS V2",z,0xeff6ff);
-    label(cx-7*6*3/2,cy-20,"V2 BETA",3,0x70dffa);
-    label(cx-21*6*2/2,cy+60,"FALCONBOOT UEFI LOADER",2,0xb0cce7);
-    box(cx-205,cy+115,410,4,0x315e8a);
-    box(cx-205,cy+115,325,4,0x60d5f5);
-    label(cx-14*6*2/2,cy+145,"BOOTING SYSTEM",2,0xd7e7fa);
+    label(cx-11*6*z/2,cy+54,"FALCONOS V2",z,0xeff6ff);
+    label(cx-7*6*3/2,cy+110,"V2 BETA",3,0x70dffa);
+    label(cx-21*6*2/2,cy+153,"FALCONBOOT UEFI LOADER",2,0xb0cce7);
+    box(cx-205,cy+187,410,4,0x315e8a);
+    box(cx-205,cy+187,325,4,0x60d5f5);
+    label(cx-14*6*2/2,cy+207,"BOOTING SYSTEM",2,0xd7e7fa);
+}
+/* Draw a build-baked frame of the project's actual animated GLB.
+ * A bounded, uncompressed 24-bit BMP is read from the same read-only
+ * FalconBoot ESP as the kernel. Missing/corrupt images are skipped.
+ * No untrusted GLB parsing or large graphics runtime in UEFI. */
+static uint16_t bmp16(const uint8_t*b){return (uint16_t)b[0]|(uint16_t)((uint16_t)b[1]<<8);}
+static uint32_t bmp32(const uint8_t*b){return (uint32_t)b[0]|((uint32_t)b[1]<<8)|
+    ((uint32_t)b[2]<<16)|((uint32_t)b[3]<<24);}
+static void paint_dragon(HANDLE image){
+    HANDLE_PROTOCOL hp=EFI_FN(bs,16,HANDLE_PROTOCOL);
+    LOADED*li=0;FS*fs=0;FILEP*root=0,*file=0;
+    if(hp(image,&ID_LOADED,(void**)&li)||!li)return;
+    if(hp(li->device,&ID_FS,(void**)&fs)||!fs)return;
+    if(((OPEN_VOLUME)fs->open_volume)(fs,&root)||!root)return;
+    static const CHAR16 path[]=L"\\FALCONOS\\BOOT.BMP";
+    if(((OPEN_FILE)root->open)(root,&file,path,1,0)||!file)goto close_root;
+    uint64_t at=pages(0,512u*1024u,1);
+    if(!at)goto close_file;
+    uint8_t*buf=(uint8_t*)(uintptr_t)at;
+    uint64_t n=512u*1024u;
+    if(((READ_FILE)file->read)(file,&n,buf)||n<54u)goto close_file;
+    if(buf[0]!='B'||buf[1]!='M'||bmp32(buf+14)<40u||
+       bmp16(buf+26)!=1u||bmp16(buf+28)!=24u||bmp32(buf+30)!=0u)
+        goto close_file;
+    uint32_t off=bmp32(buf+10),w=bmp32(buf+18),h=bmp32(buf+22);
+    if(w<32u||w>480u||h<32u||h>360u||w>width||
+       ((uint64_t)(((w*3u)+3u)&~3u)*h)+off>n)goto close_file;
+    uint32_t stride=(w*3u+3u)&~3u;
+    uint32_t x0=(width-w)/2u,y0=(height>760u?height/2u-320u:35u);
+    uint32_t*fb=(uint32_t*)(uintptr_t)framebuffer;
+    for(uint32_t y=0;y<h&&y0+y<height;y++){
+        const uint8_t*src=buf+off+(uint64_t)(h-1u-y)*stride;
+        for(uint32_t x=0;x<w;x++){
+            uint8_t b=src[x*3u],g=src[x*3u+1u],r=src[x*3u+2u];
+            /* Black background is transparent over the boot gradient. */
+            if(r<12u&&g<12u&&b<12u)continue;
+            fb[((uint64_t)(y0+y)*pitch)/4u+x0+x]=
+                ((uint32_t)r<<16)|((uint32_t)g<<8)|b;
+        }
+    }
+    trace("FALCONBOOT/1 GLB BMP SHOWN\\n");
+close_file:
+    ((CLOSE_FILE)file->close)(file);
+close_root:
+    ((CLOSE_FILE)root->close)(root);
 }
 static int select_video(void){
     LOCATE_PROTOCOL locate=EFI_FN(bs,37,LOCATE_PROTOCOL);
@@ -196,6 +241,7 @@ STATUS EfiMain(HANDLE image,ST*system){
     if(!select_video()){trace("FALCONBOOT/1 FAIL GOP\n");return 1;}
     trace("FALCONBOOT/1 GOP\n");
     paint_loader();
+    paint_dragon(image);
     if(!load_image(image)){trace("FALCONBOOT/1 FAIL KERNEL ADDRESS/READ\n");return 2;}
     trace("FALCONBOOT/1 KERNEL\n");
     info_addr=pages(0,BOOTINFO_LEN,1);
