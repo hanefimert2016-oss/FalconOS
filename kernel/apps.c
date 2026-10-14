@@ -503,9 +503,11 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
     fv_kind_t kind=is_dir?FV_UNKNOWN:fv_kind(path);
     gfx_round_rect(c->x+9,y+7,24,20,6,
         is_dir?0xF3BC5Du:(kind==FV_PACKAGE?0x26A78Cu:
-        kind==FV_BITMAP?0xA565D9u:kind==FV_TEXT?0x548FEBu:0x748396u));
+        (kind==FV_BITMAP||kind==FV_PPM)?0xA565D9u:
+        kind==FV_WAVE?0x19A680u:kind==FV_TEXT?0x548FEBu:0x748396u));
     gfx_text_centered(c->x+21,y+10,is_dir?"D":
-        (kind==FV_PACKAGE?"A":kind==FV_BITMAP?"I":kind==FV_TEXT?"T":"F"),0xFFFFFFu);
+        (kind==FV_PACKAGE?"A":(kind==FV_BITMAP||kind==FV_PPM)?"I":
+        kind==FV_WAVE?"M":kind==FV_TEXT?"T":"F"),0xFFFFFFu);
     if(c->clicked&&!c->consumed&&c->mx>=c->x&&c->mx<c->x+c->w &&
        c->my>=y&&c->my<y+34){
         u32 now=pit_ms();
@@ -535,8 +537,12 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
     }
     c->row++;
 }
-/* Files media/text preview: only validated, local SHFS bytes.  Actual
- * BMP pixels are decoded by file_viewer.c; no fabricated media samples. */
+/* Reuse native media decoder and waveform painter in the Files viewer. */
+static void media_draw_image(const shfs_ent_t*file,fv_kind_t kind,
+                             i32 left,i32 top,i32 width,i32 height);
+static void media_draw_wave(const shfs_ent_t*file,
+                            i32 left,i32 top,i32 width,i32 height);
+/* Files media/text preview: length-checked SHFS bytes; no fake content. */
 static void files_render_preview(i32 wx,i32 wy,i32 ww,i32 wh){
     if(!files_preview_active)return;
     shfs_ent_t *ent=shfs_lookup(files_preview_path);
@@ -559,24 +565,12 @@ static void files_render_preview(i32 wx,i32 wy,i32 ww,i32 wh){
     }
     gfx_rect(x+15,y+44,w-30,1,PAL_HAIRLINE);
     fv_kind_t kind=fv_kind(files_preview_path);
-    if(kind==FV_BITMAP){
-        fv_bitmap_t bmp={0};
-        if(!fv_bmp_open(ent->data,ent->len,&bmp)){
-            gfx_text(x+19,y+66,"Invalid BMP / unsupported bitmap compression",COL_WARN);
-            return;
-        }
-        i32 scale_w=(w-42)/(i32)bmp.width,scale_h=(h-82)/(i32)bmp.height;
-        i32 scale=scale_w<scale_h?scale_w:scale_h;
-        if(scale>12)scale=12;
-        if(scale<1){
-            gfx_text(x+19,y+66,"Image too large for this viewport",COL_WARN);
-            return;
-        }
-        i32 px=x+(w-(i32)bmp.width*scale)/2,py=y+55;
-        for(u32 yy=0;yy<bmp.height;yy++)
-            for(u32 xx=0;xx<bmp.width;xx++)
-                gfx_rect(px+(i32)xx*scale,py+(i32)yy*scale,scale,scale,
-                         fv_bmp_pixel(ent->data,&bmp,xx,yy));
+    if(kind==FV_BITMAP||kind==FV_PPM){
+        media_draw_image(ent,kind,x+12,y+49,w-24,h-54);
+        return;
+    }
+    if(kind==FV_WAVE){
+        media_draw_wave(ent,x+12,y+49,w-24,h-54);
         return;
     }
     i32 line=0,row=0,maxrows=(h-76)/19;
@@ -650,7 +644,8 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_rect(sx,wy+wh-36,ww-2*margin,1,PAL_HAIRLINE);
     char count[16];k_itoa(ctx.files,count,10);
     gfx_text(sx+4,wy+wh-26,count,PAL_ACCENT);
-    gfx_text(sx+35,wy+wh-26,"files | Enter/double click: read text, view BMP, run verified app.pkg",
+    gfx_text(sx+35,wy+wh-26,
+        "Enter/double click: text, BMP, PPM, WAV or verified .app.pkg",
         PAL_TEXT_DIM);
     files_render_preview(wx,wy,ww,wh);
 }
@@ -1308,8 +1303,9 @@ static i32 sh_find_app_idx(const char *name)
         return sh_find_app_idx("Browser");
     if (sh_streq_ci(name, "heroic-launcher") || sh_streq_ci(name, "heroiclauncher"))
         return sh_find_app_idx("Heroic");
-    if (sh_streq_ci(name, "media") || sh_streq_ci(name, "video-player"))
-        return sh_find_app_idx("Video");
+    if (sh_streq_ci(name, "media") || sh_streq_ci(name, "video-player") ||
+        sh_streq_ci(name, "video"))
+        return sh_find_app_idx("Media");
     if (sh_streq_ci(name, "falco") || sh_streq_ci(name, "falco-browser") ||
         sh_streq_ci(name, "browser"))
         return sh_find_app_idx("Falco");
@@ -4903,7 +4899,7 @@ static void files_open_path(const char *path){
     if(kind==FV_PACKAGE){files_preview_active=false;files_launch_pkg(path);return;}
     shfs_ent_t *f=shfs_lookup(path);
     if(!f||f->is_dir){files_action_status="Not a readable file";return;}
-    if(kind!=FV_TEXT&&kind!=FV_BITMAP){
+    if(kind!=FV_TEXT&&kind!=FV_BITMAP&&kind!=FV_PPM&&kind!=FV_WAVE){
         files_action_status="Unsupported file format (not executed)";return;
     }
     if(kind==FV_TEXT){
@@ -4917,7 +4913,9 @@ static void files_open_path(const char *path){
     files_preview_path[n]=0;
     files_preview_scroll=0;
     files_preview_active=true;
-    files_action_status=kind==FV_BITMAP?"Native BMP/24 image preview":
+    files_action_status=kind==FV_BITMAP?"Native BMP image preview":
+        kind==FV_PPM?"Native PPM RGB preview":
+        kind==FV_WAVE?"Real PCM waveform / metadata (playback unsupported)":
         "Read-only native text preview";
 }
 static void files_launch_pkg(const char *path){
