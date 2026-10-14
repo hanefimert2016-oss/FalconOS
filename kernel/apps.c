@@ -1797,15 +1797,17 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
         return 1;
     }
     if(k_strcmp(cmd,"lspci")==0){
-        if(cap<150){
+        if(cap<220){
             sh_copy_bounded(out,cap,"lspci: output buffer too small");
             return 1;
         }
         u32 total=pci_inventory_count(),limit=total;
         if(limit>20u)limit=20u;
-        k_strcpy(out,"PCI inventory: read-only enumeration, NOT functional drivers\n");
+        bool verbose=argc>=2&&(k_strcmp(argv[1],"-v")==0||
+                               k_strcmp(argv[1],"--drivers")==0);
+        k_strcpy(out,"PCI inventory: detected devices / active driver status\n");
         for(u32 i=0;i<limit;i++){
-            if(k_strlen(out)>cap-115)break;
+            if(k_strlen(out)>cap-190)break;
             u32 id=pci_inventory_field(i,0),cls=pci_inventory_field(i,1);
             u32 bdf=pci_inventory_field(i,2);
             char n[16];
@@ -1828,7 +1830,22 @@ static i32 sh_run_argv(i32 argc, char argv[][64], char *out, i32 cap)
                 vendor==0x1234u?"QEMU ":"";
             k_strcat(out,maker);
             k_strcat(out,class_name);k_strcat(out," (class ");
-            k_itoa(cls,n,16);k_strcat(out,n);k_strcat(out,")\n");
+            k_itoa(cls,n,16);k_strcat(out,n);
+            u32 bound=pci_inventory_field(i,6);
+            k_strcat(out,bound==2?") [RTL8139 ACTIVE]":
+                             bound==1?") [RTL8139 pending]":
+                                      ") [probe only]");
+            if(verbose){
+                u32 caps=pci_inventory_field(i,5);
+                if(caps){
+                    k_strcat(out," caps:");
+                    if(caps&1u)k_strcat(out," PM");
+                    if(caps&2u)k_strcat(out," MSI");
+                    if(caps&4u)k_strcat(out," PCIe");
+                    if(caps&8u)k_strcat(out," MSI-X");
+                }
+            }
+            k_strcat(out,"\n");
         }
         if(total>limit)k_strcat(out,"More devices detected; list truncated.\n");
         return 0;
