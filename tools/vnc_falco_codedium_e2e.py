@@ -165,8 +165,11 @@ def main():
                 # gK could match an OLD frame rendered during keyPress().
                 painted_after=LOG.stat().st_size
                 wait(b"gK",painted_after,90)
-                month_title_box=(initial.width*35//100,initial.height*29//100,
-                                 initial.width*47//100,initial.height*35//100)
+                # Window geometry in native OVMF output places the
+                # calendar title near 54% screen width, not the 35% area
+                # previously sampled. Compare actual text pixels.
+                month_title_box=(initial.width*49//100,initial.height*31//100,
+                                 initial.width*61//100,initial.height*37//100)
                 # VNC is asynchronous even after guest gfx_present. Poll the
                 # ACTUAL QEMU framebuffer until its month title changes;
                 # never silently accept a stale screenshot.
