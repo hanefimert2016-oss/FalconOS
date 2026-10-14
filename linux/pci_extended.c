@@ -20,7 +20,7 @@ static u32 found_nvme,found_usb3,found_gpu;
  * not a declaration that arbitrary controllers have functional drivers. */
 #define PCI_INVENTORY_LIMIT 48u
 typedef struct {
-    u32 id,cls,bdf,bar0,revision;
+    u32 id,cls,bdf,bar0,revision,caps;
 } pci_inventory_entry_t;
 static pci_inventory_entry_t inventory[PCI_INVENTORY_LIMIT];
 static u32 inventory_used;
@@ -33,6 +33,14 @@ u32 pci_inventory_field(u32 index,u32 field){
     if(field==2)return e->bdf; /* bus<<16 | device<<8 | function */
     if(field==3)return e->bar0; /* read only, never enable bus mastering */
     if(field==4)return e->revision;
+    if(field==5)return e->caps;
+    /* Running driver != detected PCI device. Do not claim NVMe/xHCI/
+     * NVIDIA GPU drivers until actual I/O support is implemented. */
+    if(field==6){
+        if((e->id&65535u)==0x10ECu&&(e->id>>16)==0x8139u)
+            return net_present()?2u:1u; /* ACTIVE : supported-not-active */
+        return 0u; /* no bound native driver */
+    }
     return 0;
 }
 
@@ -47,6 +55,30 @@ static void out32(u16 port,u32 value){
 static u32 config(u32 bus,u32 dev,u32 fn,u32 off){
     out32(0xCF8,0x80000000u|(bus<<16)|(dev<<11)|(fn<<8)|(off&0xFCu));
     return in32(0xCFC);
+}
+/* PCI conventional capability walker. Pure config-space reads, hard
+ * bounded against invalid pointers and cyclic next links. Bits:
+ * 1=power-management, 2=MSI, 4=PCIe, 8=MSI-X. Detection only. */
+static u32 cap_inventory(u32 bus,u32 dev,u32 fn){
+    u32 status_command=config(bus,dev,fn,0x04);
+    if(!(status_command&0x00100000u))return 0;
+    u32 ptr=config(bus,dev,fn,0x34)&0xFFu;
+    u32 seen[8]={0};u32 mask=0;
+    for(u32 budget=0;budget<32;budget++){
+        ptr&=0xFCu;
+        if(ptr<0x40u||ptr>0xFCu)break;
+        u32 slot=ptr>>2;
+        if(seen[slot>>5]&(1u<<(slot&31)))break;
+        seen[slot>>5]|=1u<<(slot&31);
+        u32 header=config(bus,dev,fn,ptr);
+        u32 id=header&255u;
+        if(id==0x01u)mask|=1u;
+        else if(id==0x05u)mask|=2u;
+        else if(id==0x10u)mask|=4u;
+        else if(id==0x11u)mask|=8u;
+        ptr=(header>>8)&255u;
+    }
+    return mask;
 }
 static u64 memory_bar(u32 bus,u32 dev,u32 fn){
     u32 low=config(bus,dev,fn,0x10);
@@ -95,6 +127,7 @@ void pci_extended_probe(void){
                 entry->bdf=(bus<<16)|(dev<<8)|fn;
                 entry->revision=cls&255u;
                 entry->bar0=config(bus,dev,fn,0x10);
+                entry->caps=cap_inventory(bus,dev,fn);
             }
             pci_capability_t *target=NULL;
             if(category==0x010802u){
