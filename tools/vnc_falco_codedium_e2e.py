@@ -109,6 +109,20 @@ def main():
                 pause(1.3)
                 snap(c,"FalconOS-Review-Falco")
                 STATE["checks"].append("Real Falco rendered in QEMU via PS/2 input")
+                # Open actual Browser and navigate to the explicit LOCAL
+                # MiniWeb fixture. This is not a screenshot mockup nor
+                # an invented external HTTPS site; all CSS and literal JS
+                # run through FalconOS's own safe native C renderer.
+                k(c,"f2");t(c,"Browser")
+                off=LOG.stat().st_size;k(c,"enter")
+                wait(b"zO",off,65);wait(b"gO",off,70)
+                k(c,"f4")
+                t(c,"falco.demo")
+                off=LOG.stat().st_size;k(c,"enter")
+                wait(b"wY",off,50)
+                pause(1.0)
+                snap(c,"FalconOS-Falco-MiniWeb-CSS-JS-Real-QEMU")
+                STATE["checks"].append("Falco MiniWeb/3 parsed and rendered native offline HTML with CSS and safe JavaScript DOM updates")
                 k(c,"f2");t(c,"Codedium")
                 off=LOG.stat().st_size;k(c,"enter")
                 wait(b"zS",off,60)
@@ -131,7 +145,7 @@ def main():
                 t(c,"uname");k(c,"enter");pause(.7)
                 t(c,"doctor");k(c,"enter");pause(.9)
                 snap(c,"FalconOS-V2-Beta-Terminal-Real-QEMU")
-                t(c,"lspci");k(c,"enter");pause(1.3)
+                t(c,"lspci -v");k(c,"enter");pause(1.3)
                 snap(c,"FalconOS-V2-PCI-Devices-Real-QEMU")
                 STATE["checks"].append("Native Terminal enumerated real PCI BDF/vendor/class devices with read-only config access")
                 STATE["checks"].append("Native Terminal accepted ver, uname and honest doctor runtime diagnostics in QEMU")
