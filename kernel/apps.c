@@ -24,6 +24,7 @@
 #include "falco_theme.h"
 #include "falco_html_text.h"
 #include "falco_miniweb.h"
+#include "file_viewer.h"
 #include "version.h"
 #include "calendar_math.h"
 #include "aeroflow.h"
@@ -404,7 +405,10 @@ static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static i32 files_scroll, files_scope;
 static char files_selected[SHFS_PATH],files_last_click_path[SHFS_PATH];
 static u32 files_last_click_ms;
-static const char *files_action_status="Double click .app.pkg to run in FalconOS";
+static const char *files_action_status="Open files with Enter/double-click; F4 search";
+static char files_preview_path[SHFS_PATH];
+static bool files_preview_active;
+static i32 files_preview_scroll;
 #define FAPP_RUNNER_APP_ID 19  /* appended after original 19 builtin apps */
 static char fapp_running_title[48]="FalconOS application";
 static char fapp_running_source[SHFS_PATH];
@@ -420,6 +424,7 @@ static bool fapp_gui_custom;
 static void fapp_gui_run_action(i32 index);
 static void fapp_gui_input(i32 key);
 static void files_launch_pkg(const char *path);
+static void files_open_path(const char *path);
 
 static bool files_search_mode;
 static char files_filter[40];
@@ -453,6 +458,14 @@ static bool files_matches(const char *path) {
     return false;
 }
 static void files_input_key(i32 key) {
+    if(files_preview_active){
+        if(key==KEY_BACKSPACE||key==KEY_F4){files_preview_active=false;return;}
+        if(key==KEY_UP&&files_preview_scroll>0)files_preview_scroll--;
+        if(key==KEY_DOWN&&files_preview_scroll<255)files_preview_scroll++;
+        if(key==KEY_PGUP){files_preview_scroll-=10;if(files_preview_scroll<0)files_preview_scroll=0;}
+        if(key==KEY_PGDN){files_preview_scroll+=10;if(files_preview_scroll>255)files_preview_scroll=255;}
+        return;
+    }
     if(key==KEY_F4){files_search_mode=!files_search_mode;return;}
     if(files_search_mode){
         if(key==KEY_BACKSPACE){
@@ -469,7 +482,7 @@ static void files_input_key(i32 key) {
     }
     if(key==KEY_LEFT){files_scope=(files_scope+4)%5;files_scroll=0;files_selected[0]=0;}
     if(key==KEY_RIGHT){files_scope=(files_scope+1)%5;files_scroll=0;files_selected[0]=0;}
-    if(key==KEY_ENTER&&!files_search_mode){files_launch_pkg(files_selected);return;}
+    if(key==KEY_ENTER&&!files_search_mode){files_open_path(files_selected);return;}
     if(key==KEY_UP&&files_scroll>0)files_scroll--;
     if(key==KEY_DOWN&&files_scroll<SHFS_MAX_ENTRIES-1)files_scroll++;
 }
@@ -487,14 +500,12 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
     bool selected=k_strcmp(files_selected,path)==0;
     gfx_round_rect_a(c->x,y,c->w,34,10,
         selected?PAL_ACCENT_DIM:((c->row&1)?PAL_PANEL:PAL_PANEL_DEEP),255);
-    bool app_pkg=false;
-    if(!is_dir){
-        u32 size=(u32)k_strlen(path);
-        app_pkg=size>=8u&&(k_strcmp(path+size-8u,".app.pkg")==0 || k_strcmp(path+size-8u,".app.kkg")==0);
-    }
+    fv_kind_t kind=is_dir?FV_UNKNOWN:fv_kind(path);
     gfx_round_rect(c->x+9,y+7,24,20,6,
-        is_dir?0xF3BC5Du:(app_pkg?0x26A78Cu:0x548FEBu));
-    gfx_text_centered(c->x+21,y+10,is_dir?"D":(app_pkg?"A":"F"),0xFFFFFFu);
+        is_dir?0xF3BC5Du:(kind==FV_PACKAGE?0x26A78Cu:
+        kind==FV_BITMAP?0xA565D9u:kind==FV_TEXT?0x548FEBu:0x748396u));
+    gfx_text_centered(c->x+21,y+10,is_dir?"D":
+        (kind==FV_PACKAGE?"A":kind==FV_BITMAP?"I":kind==FV_TEXT?"T":"F"),0xFFFFFFu);
     if(c->clicked&&!c->consumed&&c->mx>=c->x&&c->mx<c->x+c->w &&
        c->my>=y&&c->my<y+34){
         u32 now=pit_ms();
@@ -523,6 +534,69 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
         gfx_text(c->x+c->w-44,y+10,"B",PAL_TEXT_FAINT);
     }
     c->row++;
+}
+/* Files media/text preview: only validated, local SHFS bytes.  Actual
+ * BMP pixels are decoded by file_viewer.c; no fabricated media samples. */
+static void files_render_preview(i32 wx,i32 wy,i32 ww,i32 wh){
+    if(!files_preview_active)return;
+    shfs_ent_t *ent=shfs_lookup(files_preview_path);
+    if(!ent||ent->is_dir){files_preview_active=false;return;}
+    i32 x=wx+26,y=wy+130,w=ww-52,h=wh-193;
+    if(w<160||h<94)return;
+    gfx_round_rect_a(x,y,w,h,15,PAL_PANEL_DEEP,255);
+    gfx_round_outline(x,y,w,h,15,PAL_ACCENT);
+    char title[74];i32 count=0;
+    const char*name=files_preview_path;
+    for(i32 i=0;name[i];i++)if(name[i]=='/'&&name[i+1])name=files_preview_path+i+1;
+    while(name[count]&&count<70){title[count]=name[count];count++;}
+    title[count]=0;
+    gfx_text(x+18,y+13,title,PAL_TEXT);
+    gfx_round_rect(x+w-44,y+9,30,27,8,PAL_ACCENT_DIM);
+    gfx_text_centered(x+w-29,y+14,"X",PAL_TEXT);
+    i32 mx,my;bool down;mouse_get(&mx,&my,&down);(void)down;
+    if(wm_click_enabled()&&mx>=x+w-44&&mx<x+w-14&&my>=y+9&&my<y+36){
+        (void)mouse_consume_click();files_preview_active=false;return;
+    }
+    gfx_rect(x+15,y+44,w-30,1,PAL_HAIRLINE);
+    fv_kind_t kind=fv_kind(files_preview_path);
+    if(kind==FV_BITMAP){
+        fv_bitmap_t bmp={0};
+        if(!fv_bmp_open(ent->data,ent->len,&bmp)){
+            gfx_text(x+19,y+66,"Invalid BMP / unsupported bitmap compression",COL_WARN);
+            return;
+        }
+        i32 scale_w=(w-42)/(i32)bmp.width,scale_h=(h-82)/(i32)bmp.height;
+        i32 scale=scale_w<scale_h?scale_w:scale_h;
+        if(scale>12)scale=12;
+        if(scale<1){
+            gfx_text(x+19,y+66,"Image too large for this viewport",COL_WARN);
+            return;
+        }
+        i32 px=x+(w-(i32)bmp.width*scale)/2,py=y+55;
+        for(u32 yy=0;yy<bmp.height;yy++)
+            for(u32 xx=0;xx<bmp.width;xx++)
+                gfx_rect(px+(i32)xx*scale,py+(i32)yy*scale,scale,scale,
+                         fv_bmp_pixel(ent->data,&bmp,xx,yy));
+        return;
+    }
+    i32 line=0,row=0,maxrows=(h-76)/19;
+    i32 maxcols=(w-48)/8;if(maxcols>116)maxcols=116;
+    if(maxcols<1)return;
+    u32 at=0;
+    while(at<ent->len && row<maxrows){
+        char buf[120];i32 n=0;
+        while(at<ent->len&&ent->data[at]!='\n'&&n<maxcols){
+            u8 ch=(u8)ent->data[at++];
+            if(ch=='\r')continue;
+            buf[n++]=(ch>=32||ch=='\t')?(char)(ch=='\t'?' ':ch):'.';
+        }
+        if(at<ent->len&&ent->data[at]=='\n')at++;
+        buf[n]=0;
+        if(line++<files_preview_scroll)continue;
+        gfx_text(x+21,y+58+row*19,buf,PAL_TEXT);
+        row++;
+    }
+    gfx_text(x+20,y+h-22,"Up/Down scroll  |  Backspace close  |  Read only",PAL_TEXT_DIM);
 }
 static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;shfs_init();
@@ -568,7 +642,7 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     shfs_foreach_path(files_row,&ctx);
     /* Run OUTSIDE the SHFS enumeration callback. Never trust the file
      * extension alone: market_validate_app_pkg checks all manifest/body. */
-    if(ctx.open_path[0])files_launch_pkg(ctx.open_path);
+    if(ctx.open_path[0])files_open_path(ctx.open_path);
     if(ctx.seen==0)
         gfx_text(main_x+16,wy+top+89,
             files_filter_len?"No matching files":"No files in this location",PAL_TEXT_DIM);
@@ -576,8 +650,9 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_rect(sx,wy+wh-36,ww-2*margin,1,PAL_HAIRLINE);
     char count[16];k_itoa(ctx.files,count,10);
     gfx_text(sx+4,wy+wh-26,count,PAL_ACCENT);
-    gfx_text(sx+35,wy+wh-26,"files | Downloads | double click .app.pkg / Enter to run | F4 search",
+    gfx_text(sx+35,wy+wh-26,"files | Enter/double click: read text, view BMP, run verified app.pkg",
         PAL_TEXT_DIM);
+    files_render_preview(wx,wy,ww,wh);
 }
 
 static void render_clock(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
@@ -4705,6 +4780,29 @@ static void fapp_gui_input(i32 key){
     }else if(key==KEY_ENTER || key==' '){
         fapp_gui_run_action(fapp_button_selected);
     }
+}
+static void files_open_path(const char *path){
+    if(!path||!path[0]){files_action_status="Select a file first";return;}
+    fv_kind_t kind=fv_kind(path);
+    if(kind==FV_PACKAGE){files_preview_active=false;files_launch_pkg(path);return;}
+    shfs_ent_t *f=shfs_lookup(path);
+    if(!f||f->is_dir){files_action_status="Not a readable file";return;}
+    if(kind!=FV_TEXT&&kind!=FV_BITMAP){
+        files_action_status="Unsupported file format (not executed)";return;
+    }
+    if(kind==FV_TEXT){
+        /* Text viewers never interpret binary content as executable code. */
+        for(u32 i=0;i<f->len;i++)if(f->data[i]==0){
+            files_action_status="Binary data rejected by text viewer";return;
+        }
+    }
+    i32 n=0;while(path[n]&&n<(i32)sizeof files_preview_path-1)n++;
+    for(i32 i=0;i<n;i++)files_preview_path[i]=path[i];
+    files_preview_path[n]=0;
+    files_preview_scroll=0;
+    files_preview_active=true;
+    files_action_status=kind==FV_BITMAP?"Native BMP/24 image preview":
+        "Read-only native text preview";
 }
 static void files_launch_pkg(const char *path){
     if(!path||!path[0]){files_action_status="Select a .app.pkg file first";return;}
