@@ -179,7 +179,7 @@ static void boot_menu(void){
     STALL pause=EFI_FN(bs,28,STALL);
     if(!in||!in->read)return; /* headless firmware retains safe default */
     for(uint32_t tick=0;tick<50u;tick++){
-        INPUTKEY key={0,0};
+        INPUTKEY key;key.scan_code=0;key.unicode_char=0;
         if(((READ_KEY)in->read)(in,&key)==0){
             uint32_t previous=boot_preference;
             if(key.scan_code==1u&&boot_preference>0)boot_preference--;
