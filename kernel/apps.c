@@ -5279,6 +5279,19 @@ static void code_init(void)
     code_text[n] = 0;
     code_cursor = code_len = n;
 }
+static void code_new_document(void){
+    code_init();
+    if(code_dirty){
+        code_status="Save current edits (F5) before creating another document";
+        return;
+    }
+    code_document_path[0]=0;
+    k_strcpy(code_document_path,"/home/falcon/Desktop/untitled.fsh");
+    code_text[0]=0;code_len=0;code_cursor=0;
+    code_dirty=false;code_publish_armed=false;
+    code_undo_valid=code_redo_valid=false;
+    code_status="New blank FScript document. F5 saves to Desktop/untitled.fsh";
+}
 static bool code_open_path(const char*path){
     code_init();
     if(!path||!path[0]||fv_kind(path)!=FV_TEXT){
@@ -5371,6 +5384,7 @@ static void code_input_key(i32 key)
 {
     code_init();
     if (key == KEY_F5) { code_save(); return; }
+    if (key == KEY_F9) { code_new_document(); return; }
     if (key == KEY_F6) { code_run(); return; }
     if (key == KEY_F7) { (void)code_export(); return; }
     if (key == KEY_F10) {
@@ -5396,6 +5410,7 @@ static void code_input_key(i32 key)
         if(key=='z'||key=='Z'){code_history_apply(true);return;}
         if(key=='y'||key=='Y'){code_history_apply(false);return;}
         if(key=='s'||key=='S'){code_save();return;}
+        if(key=='n'||key=='N'){code_new_document();return;}
     }
     if (key == KEY_UP || key == KEY_DOWN) {
         i32 start = code_cursor;
@@ -5456,21 +5471,22 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
     code_init();
     section(wx,wy,"Codedium Studio","FAPP/1 editor  |  sandboxed commands only");
     /* Toolbar performs real actions; not placeholder or static artwork. */
-    const char *names[]={"Save  F5","Run  F6","Export  F7",
+    const char *names[]={"New F9","Save F5","Run F6","Export F7",
                          "GitHub F10"};
-    const u32 tones[]={0x3478E6u,0x19A680u,0x8862D7u,0x167B54u};
+    const u32 tones[]={0x60788Bu,0x3478E6u,0x19A680u,0x8862D7u,0x167B54u};
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool clicked=wm_click_enabled();
-    for(i32 i=0;i<4;i++){
-        i32 x=wx+21+i*123, y=wy+47;
+    for(i32 i=0;i<5;i++){
+        i32 x=wx+21+i*122, y=wy+47;
         bool hover=mx>=x&&mx<x+113&&my>=y&&my<y+34;
         gfx_round_rect_a(x,y,113,34,11,hover?PAL_ACCENT:tones[i],255);
         gfx_text_centered(x+56,y+11,names[i],0xFFFFFFu);
         if(clicked&&hover){
             (void)mouse_consume_click();clicked=false;
-            if(i==0)code_save();
-            else if(i==1)code_run();
-            else if(i==2)(void)code_export();
+            if(i==0)code_new_document();
+            else if(i==1)code_save();
+            else if(i==2)code_run();
+            else if(i==3)(void)code_export();
             else code_input_key(KEY_F10);
         }
     }
