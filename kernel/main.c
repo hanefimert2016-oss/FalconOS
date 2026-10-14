@@ -499,7 +499,11 @@ void long_start(u64 magic, u64 info_ptr)
     {
         const u8 gateway[4] = {10,0,2,2};
         outb(0xE9, net_present() ? 'V' : 'v');
-        outb(0xE9, native_net_ping(gateway) ? 'N' : 'n');
+        bool icmp_ok=native_net_ping(gateway);
+        outb(0xE9,icmp_ok?'N':'n');
+        /* Delimiter proves this exact kernel path emitted the result,
+         * not text from the UEFI FalconBoot stage. CI-only diagnostic. */
+        outb(0xE9,icmp_ok?'!':'?');
         u8 remote[4];
         outb(0xE9, native_net_dns_query("example.com", remote) ? 'D' : 'd');
 #ifdef FALCON_QEMU_DHCP_TEST
