@@ -4642,7 +4642,7 @@ static void render_video(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         char label[34];i32 cap=(sidebar-39)/8;
         if(cap>32)cap=32;
         if(cap<1)cap=1;
-        i32 n=0;while(name[n]&&n<cap)label[n++]=name[n];
+        i32 n=0;while(name[n]&&n<cap){label[n]=name[n];n++;}
         label[n]=0;
         gfx_text(left+17,y+11,label,chosen?PAL_ACCENT:PAL_TEXT);
         if(click&&mx>=left+7&&mx<left+sidebar-7&&my>=y&&my<y+35){
