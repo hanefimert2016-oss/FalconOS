@@ -28,6 +28,10 @@ typedef STATUS (*QUERY_MODE)(GOP*,uint32_t,uint64_t*,GOPINFO**);
 typedef STATUS (*SET_MODE)(GOP*,uint32_t);
 typedef STATUS (*FREE_POOL)(void*);
 typedef STATUS (*STALL)(uint64_t);
+typedef struct {uint16_t scan_code,unicode_char;} INPUTKEY;
+typedef struct {void*reset,*read,*wait;} SIMPLEINPUT;
+typedef STATUS (*READ_KEY)(SIMPLEINPUT*,INPUTKEY*);
+static uint32_t boot_preference=1u; /* HD 720, FHD 1080 (default), QHD 1440 */
 extern void falcon_jump_to_kernel(uint64_t,uint64_t,uint64_t,uint64_t);
 static ST*st;static BS*bs;static GOP*gop;
 static uint64_t framebuffer,pgtable,stack,info_addr,map_addr;
@@ -64,6 +68,15 @@ static const uint8_t FONT[][6]={
 {50,0x62,0x51,0x49,0x49,0x46},{89,0x03,0x04,0x78,0x04,0x03},
 {46,0,0x40,0x40,0,0},
 {45,0x08,0x08,0x08,0x08,0x08},{47,0x20,0x10,0x08,0x04,0x02},
+{48,0x3e,0x51,0x49,0x45,0x3e},{49,0,0x42,0x7f,0x40,0},
+{51,0x22,0x41,0x49,0x49,0x36},{52,0x18,0x14,0x12,0x7f,0x10},
+{53,0x27,0x45,0x45,0x45,0x39},{54,0x3c,0x4a,0x49,0x49,0x30},
+{55,0x01,0x71,0x09,0x05,0x03},{56,0x36,0x49,0x49,0x49,0x36},
+{57,0x06,0x49,0x49,0x29,0x1e},
+{74,0x20,0x40,0x41,0x3f,0x01},{75,0x7f,0x08,0x14,0x22,0x41},
+{80,0x7f,0x09,0x09,0x09,0x06},{81,0x3e,0x41,0x51,0x21,0x5e},
+{87,0x3f,0x40,0x38,0x40,0x3f},{88,0x63,0x14,0x08,0x14,0x63},
+{90,0x61,0x51,0x49,0x45,0x43},
 {32,0,0,0,0,0}
 };
 static void box(uint32_t x,uint32_t y,uint32_t w,uint32_t h,uint32_t c){
@@ -147,16 +160,51 @@ close_file:
 close_root:
     ((CLOSE_FILE)root->close)(root);
 }
+static void paint_choices(uint32_t current){
+    uint32_t cx=width/2u,cy=height/2u;
+    uint32_t first=cy+230u;
+    const char*const choices[3]={
+        "FALCONOS HD 720","FALCONOS FHD 1080","FALCONOS QHD 1440"
+    };
+    for(uint32_t i=0;i<3u;i++){
+        uint32_t y=first+i*37u;
+        box(cx-205u,y,410u,31u,i==current?0x1f658b:0x152940);
+        box(cx-205u,y,4u,31u,i==current?0x76f5e3:0x344b64);
+        label(cx-174u,y+8u,choices[i],2u,i==current?0xffffff:0xb2c6df);
+    }
+}
+static void boot_menu(void){
+    paint_choices(boot_preference);
+    SIMPLEINPUT*in=(SIMPLEINPUT*)st->in;
+    STALL pause=EFI_FN(bs,28,STALL);
+    if(!in||!in->read)return; /* headless firmware retains safe default */
+    for(uint32_t tick=0;tick<50u;tick++){
+        INPUTKEY key={0,0};
+        if(((READ_KEY)in->read)(in,&key)==0){
+            uint32_t previous=boot_preference;
+            if(key.scan_code==1u&&boot_preference>0)boot_preference--;
+            else if(key.scan_code==2u&&boot_preference<2u)boot_preference++;
+            else if(key.unicode_char==13u)break;
+            if(boot_preference!=previous)paint_choices(boot_preference);
+        }
+        pause(100000u); /* 100ms, automatic boot after 5s */
+    }
+    trace("FALCONBOOT/1 MENU SELECTED\\n");
+}
 static int select_video(void){
     LOCATE_PROTOCOL locate=EFI_FN(bs,37,LOCATE_PROTOCOL);
     if(locate(&ID_GOP,0,(void**)&gop)||!gop||!gop->mode)return 0;
     uint32_t chosen=0xffffffffu,best=0;
+    const uint32_t wanted_w=boot_preference==0u?1280u:
+                             boot_preference==1u?1920u:2560u;
+    const uint32_t wanted_h=boot_preference==0u?720u:
+                             boot_preference==1u?1080u:1440u;
     for(uint32_t i=0;i<gop->mode->max;i++){
         uint64_t size=0;GOPINFO *inf=0;
         if(((QUERY_MODE)gop->query)(gop,i,&size,&inf)||!inf)continue;
         uint32_t w=inf->width,h=inf->height,score=0;
-        if(inf->pixel_format==1 && w>=1024 && h>=768 && w<=2560 && h<=1440)
-            score=w*h+(w==1920&&h==1080?5000000u:0u);
+        if(inf->pixel_format==1 && w>=1024 && h>=720 && w<=2560 && h<=1440)
+            score=w*h+(w==wanted_w&&h==wanted_h?5000000u:0u);
         if(score>best){best=score;chosen=i;}
         ((FREE_POOL)bs->f[6])(inf);
     }
@@ -242,6 +290,12 @@ STATUS EfiMain(HANDLE image,ST*system){
     trace("FALCONBOOT/1 GOP\n");
     paint_loader();
     paint_dragon(image);
+    boot_menu();
+    if(boot_preference!=1u){
+        if(!select_video()){trace("FALCONBOOT/1 FAIL SELECTED GOP\\n");return 1;}
+        paint_loader();
+        paint_dragon(image);
+    }
     if(!load_image(image)){trace("FALCONBOOT/1 FAIL KERNEL ADDRESS/READ\n");return 2;}
     trace("FALCONBOOT/1 KERNEL\n");
     info_addr=pages(0,BOOTINFO_LEN,1);
@@ -252,7 +306,6 @@ STATUS EfiMain(HANDLE image,ST*system){
         trace("FALCONBOOT/1 FAIL ALLOC\n");return 3;
     }
     trace("FALCONBOOT/1 MENU DRAWN\n");
-    ((STALL)bs->f[28])(2700000u);
     GET_MEMORY_MAP get=EFI_FN(bs,4,GET_MEMORY_MAP);
     EXIT_BOOT_SERVICES exit_boot=EFI_FN(bs,26,EXIT_BOOT_SERVICES);
     for(uint32_t try=0;try<5;try++){
