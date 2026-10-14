@@ -22,38 +22,54 @@ static void pci_write(u32 a,u32 v){
     outl32(0xCF8,0x80000000u|(a&~3u));
     outl32(0xCFC,v);
 }
+/* RTL8139 operates on a 32-bit DMA engine. Do NOT bus-master until
+ * every actual DMA buffer address and I/O BAR was validated. Unlike
+ * pure PCI probes this attaches a working NIC on tested RTL8139/QEMU. */
+static bool rtl_dma_safe(void){
+    if(((u64)(uintptr_t)rx_mem)>>32)return false;
+    if(((u64)(uintptr_t)rx_mem&255u)!=0)return false;
+    for(i32 i=0;i<4;i++){
+        if(((u64)(uintptr_t)tx_mem[i])>>32)return false;
+    }
+    return true;
+}
 bool rtl8139_init(void){
-    if(ready) return true;
-    for(u32 bus=0;bus<256u;bus++) for(u32 dev=0;dev<32u;dev++){
+    if(ready)return true;
+    if(!rtl_dma_safe())return false;
+    for(u32 bus=0;bus<256u;bus++)for(u32 dev=0;dev<32u;dev++){
         u32 a=(bus<<16)|(dev<<11);
-        u32 ident=pci_read(a);
-        if(ident!=0x813910ECu)continue;
-        u32 bar=pci_read(a+0x10);
-        if(!(bar&1u) || (bar&~3u)>0xFFFFu)continue;
-        io_base=(u16)(bar&~3u);
-        if(io_base<0x100)continue;
-        u32 command=pci_read(a+4);
-        pci_write(a+4,command|0x5u); /* PCI I/O enable + bus mastering */
-        outb(io_base+0x52,0);
-        outb(io_base+0x37,0x10); /* software reset */
-        u32 guard=1000000;
-        while((inb(io_base+0x37)&0x10u) && --guard){}
-        if(!guard)return false;
-        for(i32 i=0;i<6;i++)mac[i]=inb((u16)(io_base+i));
-        /* These buffers reside in kernel BSS identity-mapped below 4 GiB. */
-        if(((u64)(uintptr_t)rx_mem)>>32)return false;
-        for(i32 i=0;i<4;i++)if(((u64)(uintptr_t)tx_mem[i])>>32)return false;
-        rx_position=0;tx_next=0;
-        outl32(io_base+0x30,(u32)(uintptr_t)rx_mem);
-        outw(io_base+0x3C,0); /* poll ISR; no IRQ handler needed */
-        outl32(io_base+0x44,0x0000008Fu); /* accept-all + WRAP, QEMU RTL8139 RX baseline */
-        outl32(io_base+0x40,0x03000700u); /* recommended TX DMA threshold */
-        outb(io_base+0x37,0x0Cu); /* RX + TX enable */
-        /* RTL8139 CAPR must initially lag the producer by 16 bytes.
-         * After device reset QEMU already provides the empty ring state;
-         * writing CAPR=0 can make it appear nearly full and drop RX. */
-        ready=true;
-        return true;
+        u32 header=pci_read(a+0x0C);
+        u32 functions=((header>>23)&1u)?8u:1u;
+        for(u32 fn=0;fn<functions;fn++){
+            u32 address=a|(fn<<8);
+            if(pci_read(address)!=0x813910ECu)continue;
+            u32 bar=pci_read(address+0x10);
+            if(!(bar&1u))continue; /* RTL8139 requires port-mapped BAR0 */
+            u32 base=bar&~3u;
+            if(base<0x100u||base+0x5Fu>0xFFFFu)continue;
+            io_base=(u16)base;
+            u32 command=pci_read(address+4u);
+            pci_write(address+4u,command|0x5u); /* I/O and bus-master enable */
+            outb(io_base+0x52,0);
+            outb(io_base+0x37,0x10);
+            u32 guard=1000000;
+            while((inb(io_base+0x37)&0x10u)&&--guard){}
+            if(!guard){
+                /* Never leave an uninitialized controller bus-mastering. */
+                pci_write(address+4u,command);
+                io_base=0;
+                continue;
+            }
+            for(i32 i=0;i<6;i++)mac[i]=inb((u16)(io_base+i));
+            rx_position=0;tx_next=0;
+            outl32(io_base+0x30,(u32)(uintptr_t)rx_mem);
+            outw(io_base+0x3C,0); /* polling mode: never enable unhandled IRQ */
+            outl32(io_base+0x44,0x0000008Fu);
+            outl32(io_base+0x40,0x03000700u);
+            outb(io_base+0x37,0x0Cu);
+            ready=true;
+            return true;
+        }
     }
     return false;
 }
