@@ -116,9 +116,9 @@ def main():
                 k(c,"f2");t(c,"Browser")
                 off=LOG.stat().st_size;k(c,"enter")
                 wait(b"zO",off,65);wait(b"gO",off,70)
-                k(c,"f4")
-                t(c,"falco.demo")
-                off=LOG.stat().st_size;k(c,"enter")
+                # F8 is the explicit offline MiniWeb demo shortcut,
+                # so the TR-Q physical key mapping cannot corrupt URL dots.
+                off=LOG.stat().st_size;k(c,"f8")
                 wait(b"wY",off,50)
                 pause(1.0)
                 snap(c,"FalconOS-Falco-MiniWeb-CSS-JS-Real-QEMU")
