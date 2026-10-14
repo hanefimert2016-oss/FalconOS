@@ -4190,6 +4190,14 @@ static void chrome_input_key(i32 key){
         browser_load();return;
     }
     if(key==KEY_ESC){browser_address_focus=false;return;}
+    if(key==KEY_F8){
+        /* Convenient offline CSS+JS self-test independent of TR-Q/US key
+         * mapping for ':' and '.' when navigating the Browser address. */
+        k_strcpy(browser_address,"falco.demo");
+        browser_address_len=k_strlen(browser_address);
+        browser_load();browser_address_focus=false;
+        return;
+    }
     if(key==KEY_F4){
         browser_address[0]=0;
         browser_address_len=0;
