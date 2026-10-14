@@ -38,6 +38,28 @@ int main(void){
     assert(strcmp(node(&page,"a")->text,"safe")==0);
     assert(page.js_mutations==0);
     assert(!falco_miniweb_parse(&page,"<script>alert(1)</script>"));
-    puts("PASS: MiniWeb/3 CSS id/class + safe JS literal DOM + native buttons");
+    /* CSS specificity, selector lists/compounds, inline precedence, rgb().
+     * Regression: two script tags must both be processed in order. */
+    const char *enhanced="<style>"
+       "#headline{color:#123456} h2.hero{color:rgb(12,34,56)} "
+       ".hero{color:red} h2{color:green} body{background-color:#102030}"
+       "#status,.special{background-color:#abc}</style>"
+       "<body><h2 id='headline' class='hero special'>Heading</h2>"
+       "<p id='status'>Initial</p>"
+       "<script>document.getElementById('status').textContent='First';</script>"
+       "<script>document.getElementById('status').innerText='Second';"
+       "document.getElementById('headline').style.backgroundColor='rgb(9,8,7)'</script>"
+       "</body>";
+    assert(falco_miniweb_parse(&page,enhanced));
+    assert(page.count==2&&page.page_bg==0x102030);
+    assert(node(&page,"headline")->color==0x123456);
+    assert(node(&page,"headline")->bg==0x090807);
+    assert(node(&page,"status")->bg==0xAABBCC);
+    assert(strcmp(node(&page,"status")->text,"Second")==0);
+    assert(page.js_mutations==3);
+    assert(falco_miniweb_parse(&page,
+       "<style>p{color:rgb(1,2,999)}</style><p id='a' style='color:#fed'>OK</p>"));
+    assert(node(&page,"a")->color==0xFFEEDD);
+    puts("PASS: MiniWeb/4 selector specificity, rgb, multi-script safe DOM and native buttons");
     return 0;
 }
