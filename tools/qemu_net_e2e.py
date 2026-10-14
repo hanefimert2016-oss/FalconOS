@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import time
 import struct
+import shutil
 
 def main():
     p=argparse.ArgumentParser()
@@ -46,8 +47,18 @@ def main():
 
     debug.parent.mkdir(exist_ok=True)
     if debug.exists(): debug.unlink()
-    cmd=["qemu-system-x86_64","-accel","tcg","-m","1024","-smp","1",
-         "-cdrom",args.iso,"-display","none","-vga","std",
+    firmware=[(Path("/usr/share/OVMF/OVMF_CODE_4M.fd"),Path("/usr/share/OVMF/OVMF_VARS_4M.fd")),
+              (Path("/usr/share/OVMF/OVMF_CODE.fd"),Path("/usr/share/OVMF/OVMF_VARS.fd")),
+              (Path("/usr/share/edk2/x64/OVMF_CODE.4m.fd"),Path("/usr/share/edk2/x64/OVMF_VARS.4m.fd"))]
+    pair=next(((c,v) for c,v in firmware if c.exists() and v.exists()),None)
+    if not pair:raise RuntimeError("Real network test requires UEFI OVMF firmware")
+    nvram=Path("build/rtl8139-net-ovmf-vars.fd")
+    shutil.copyfile(pair[1],nvram)
+    flash=["-drive",f"if=pflash,unit=0,format=raw,readonly=on,file={pair[0]}",
+           "-drive",f"if=pflash,unit=1,format=raw,file={nvram}"]
+    cmd=["qemu-system-x86_64","-machine","q35","-accel","tcg",
+         *flash,"-m","1024","-smp","1",
+         "-boot","d","-cdrom",args.iso,"-display","none","-vga","std",
          "-netdev","user,id=net0","-device","rtl8139,netdev=net0",
          "-object",f"filter-dump,id=trace,netdev=net0,file={pcap}",
          "-serial","none","-monitor","none",
