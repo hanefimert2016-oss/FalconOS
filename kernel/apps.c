@@ -4493,95 +4493,174 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         PAL_TEXT_FAINT);
 }
 
-/* --- Video (software demo player) ---------------------------------------- */
-static bool vid_play = true;
-static u32  vid_epoch_ms = 0;
-static u32  vid_freeze_ms = 0;
-static i32  vid_clip = 0;   /* 0..2 */
-
-static u32 vid_now_ms(void)
-{
-    if (vid_play) return pit_ms() - vid_epoch_ms;
-    return vid_freeze_ms;
+/* --- Falcon Media: actual SHFS media files, not procedural sample clips. --
+ * Native 24-bit BMP + binary PPM images, PCM RIFF/WAV inspection, waveform.
+ * Audio-output and compressed video playback are not implemented; do not
+ * pretend that animated UI cards constitute decoded MP4 footage.
+ */
+#define MEDIA_SLOTS 48
+static char media_paths[MEDIA_SLOTS][SHFS_PATH];
+static i32 media_count,media_sel,media_scroll;
+static void media_collect(const char*path,bool is_dir,u32 len,void*ud){
+    (void)ud;(void)len;
+    if(is_dir||media_count>=MEDIA_SLOTS)return;
+    fv_kind_t type=fv_kind(path);
+    if(type!=FV_BITMAP&&type!=FV_PPM&&type!=FV_WAVE)return;
+    i32 n=0;while(path[n]&&n<SHFS_PATH-1)n++;
+    for(i32 i=0;i<n;i++)media_paths[media_count][i]=path[i];
+    media_paths[media_count][n]=0;
+    media_count++;
 }
-
-static void video_input_key(i32 key)
-{
-    if (key == ' ' || key == 'p' || key == 'P') {
-        if (vid_play) {
-            vid_freeze_ms = vid_now_ms();
-            vid_play = false;
-        } else {
-            vid_epoch_ms = pit_ms() - vid_freeze_ms;
-            vid_play = true;
+static void media_refresh(void){
+    shfs_init();media_count=0;
+    shfs_foreach_path(media_collect,NULL);
+    if(media_sel>=media_count)media_sel=media_count?media_count-1:0;
+    if(media_sel<0)media_sel=0;
+}
+static void video_input_key(i32 key){
+    media_refresh();
+    if(key==KEY_UP){if(media_sel>0)media_sel--;return;}
+    if(key==KEY_DOWN){if(media_sel+1<media_count)media_sel++;return;}
+    if(key==KEY_HOME){media_sel=0;return;}
+    if(key==KEY_PGDN){media_sel+=6;if(media_sel>=media_count)
+        media_sel=media_count?media_count-1:0;return;}
+    if(key==KEY_PGUP){media_sel-=6;if(media_sel<0)media_sel=0;return;}
+    if(key==KEY_ENTER&&media_count){
+        files_open_path(media_paths[media_sel]);
+        apps_open(1);
+    }
+}
+static void media_draw_image(const shfs_ent_t*file,fv_kind_t kind,
+                             i32 left,i32 top,i32 width,i32 height){
+    fv_bitmap_t image={0};
+    bool valid=kind==FV_BITMAP?
+        fv_bmp_open(file->data,file->len,&image):
+        fv_ppm_open(file->data,file->len,&image);
+    if(!valid){
+        gfx_text(left+17,top+22,"Corrupt or unsupported image",COL_WARN);
+        return;
+    }
+    i32 scale_x=(width-24)/(i32)image.width;
+    i32 scale_y=(height-55)/(i32)image.height;
+    i32 scale=scale_x<scale_y?scale_x:scale_y;
+    if(scale>12)scale=12;
+    if(scale<1){
+        gfx_text(left+17,top+22,"Image exceeds available viewport",COL_WARN);
+        return;
+    }
+    i32 x0=left+(width-(i32)image.width*scale)/2;
+    i32 y0=top+(height-(i32)image.height*scale)/2;
+    for(u32 y=0;y<image.height;y++)for(u32 x=0;x<image.width;x++){
+        u32 rgb=kind==FV_BITMAP?
+            fv_bmp_pixel(file->data,&image,x,y):
+            fv_ppm_pixel(file->data,&image,x,y);
+        gfx_rect(x0+(i32)x*scale,y0+(i32)y*scale,scale,scale,rgb);
+    }
+    char a[20],b[20];
+    k_itoa(image.width,a,10);k_itoa(image.height,b,10);
+    gfx_text(left+17,top+height-29,"Real decoded image pixels",PAL_TEXT_DIM);
+    gfx_text(left+width-125,top+height-29,a,PAL_TEXT_DIM);
+    gfx_text(left+width-88,top+height-29,"x",PAL_TEXT_DIM);
+    gfx_text(left+width-74,top+height-29,b,PAL_TEXT_DIM);
+}
+static void media_draw_wave(const shfs_ent_t*file,
+                            i32 left,i32 top,i32 width,i32 height){
+    fv_wave_t wav={0};
+    if(!fv_wave_open(file->data,file->len,&wav)){
+        gfx_text(left+17,top+22,"Invalid WAV: only PCM 8/16-bit is accepted",COL_WARN);
+        return;
+    }
+    char number[24];
+    gfx_text(left+19,top+15,"RIFF / WAVE  |  Parsed real file",PAL_TEXT);
+    gfx_text(left+19,top+44,"Sample rate (Hz):",PAL_TEXT_DIM);
+    k_itoa(wav.sample_rate,number,10);
+    gfx_text(left+180,top+44,number,PAL_ACCENT);
+    gfx_text(left+19,top+67,"Channels:",PAL_TEXT_DIM);
+    k_itoa(wav.channels,number,10);gfx_text(left+180,top+67,number,PAL_ACCENT);
+    gfx_text(left+19,top+90,"PCM bits:",PAL_TEXT_DIM);
+    k_itoa(wav.bits_per_sample,number,10);gfx_text(left+180,top+90,number,PAL_ACCENT);
+    gfx_text(left+19,top+113,"Frames:",PAL_TEXT_DIM);
+    k_itoa(wav.frames,number,10);gfx_text(left+180,top+113,number,PAL_ACCENT);
+    i32 cx=left+20,cy=top+height-100;
+    i32 graphw=width-40,amplitude=48;
+    if(graphw>0&&height>210){
+        gfx_line(cx,cy,cx+graphw,cy,PAL_HAIRLINE);
+        for(i32 x=0;x<graphw;x++){
+            u32 sample=(u32)((u64)x*(u64)wav.frames/(u32)graphw);
+            if(sample>=wav.frames)sample=wav.frames-1u;
+            u32 off=wav.data_offset+sample*(u32)wav.channels*
+                    (u32)(wav.bits_per_sample/8u);
+            i32 signed_sample;
+            if(wav.bits_per_sample==8u)signed_sample=((u8)file->data[off]-128)*256;
+            else{
+                const u8*bytes=(const u8*)file->data+off;
+                signed_sample=(i16)((u16)bytes[0]|((u16)bytes[1]<<8));
+            }
+            i32 rise=(signed_sample*amplitude)/32768;
+            gfx_line(cx+x,cy,cx+x,cy-rise,PAL_ACCENT);
         }
-        return;
     }
-    if (key == KEY_RIGHT) { vid_freeze_ms = vid_now_ms() + 1500; if (vid_play) vid_epoch_ms = pit_ms() - vid_freeze_ms; return; }
-    if (key == KEY_LEFT)  {
-        vid_freeze_ms = vid_now_ms();
-        if (vid_freeze_ms > 1500) vid_freeze_ms -= 1500;
-        else                      vid_freeze_ms = 0;
-        if (vid_play) vid_epoch_ms = pit_ms() - vid_freeze_ms;
-        return;
-    }
-    if (key == KEY_TAB || key == 'n' || key == 'N') {
-        vid_clip = (vid_clip + 1) % 3;
-    }
+    gfx_text(left+19,top+height-27,
+      "Actual waveform. Audio playback requires a real sound driver.",PAL_TEXT_DIM);
 }
-
-static void render_video(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
+static void render_video(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;
-    section(wx, wy, T("Video", "Video"),
-            T("Space play/pause  ← / → seek  Tab clip",
-              "Boşluk duraklat  ← / → sar  Sekme klip"));
-
-    i32 vx = wx + 24, vy = wy + 56, vw = ww - 48, vh = wh - 120;
-    if (vh < 120) vh = 120;
-    gfx_round_rect_a(vx, vy, vw, vh, 12, 0x0D1118, 255);
-    gfx_round_outline(vx, vy, vw, vh, 12, PAL_HAIRLINE);
-
-    u32 t = vid_now_ms();
-    u32 sec = t / 1000;
-    u32 ms = t % 1000;
-
-    /* Procedural "video" clips rendered in real-time on the framebuffer. */
-    if (vid_clip == 0) {
-        for (i32 y = 8; y < vh - 8; y += 2) {
-            u8 a = (u8)(30 + (y * 60) / vh);
-            gfx_rect_a(vx + 8, vy + y, vw - 16, 2, PAL_ACCENT, a);
-        }
-        i32 bx = vx + 24 + (i32)(sec % (u32)(vw > 80 ? (vw - 80) : 1));
-        gfx_round_rect_a(bx, vy + vh / 2 - 18, 56, 36, 8, 0xFFFFFF, 190);
-    } else if (vid_clip == 1) {
-        i32 cx = vx + vw / 2, cy = vy + vh / 2;
-        for (i32 r = 18; r < (vh < vw ? vh : vw) / 2 - 8; r += 18) {
-            u8 a = (u8)(140 - (r * 100) / (vh > 0 ? vh : 1));
-            gfx_circle_a(cx, cy, r + (i32)(sec % 12), PAL_ACCENT, a);
-        }
-        gfx_circle(cx, cy, 14, 0xFFFFFF);
-    } else {
-        for (i32 x = vx + 10; x < vx + vw - 10; x += 18) {
-            i32 h = 20 + (i32)((((u32)x + sec * 37u) % (u32)(vh - 34)));
-            gfx_round_rect_a(x, vy + vh - h - 8, 10, h, 3, 0x34A853, 220);
+    media_refresh();
+    section(wx,wy,T("Falcon Media","Falcon Medya"),
+        T("Real local images and PCM audio inspector",
+          "Gercek yerel gorseller ve PCM ses inceleyici"));
+    i32 left=wx+18,top=wy+55;
+    i32 sidebar=ww/3;if(sidebar<175)sidebar=175;
+    if(sidebar>290)sidebar=290;
+    if(sidebar>ww-200)sidebar=ww-200;
+    i32 content_x=left+sidebar+14,content_w=ww-sidebar-50;
+    i32 content_h=wh-105;
+    if(sidebar<80||content_w<100||content_h<80)return;
+    gfx_round_rect_a(left,top,sidebar,content_h,13,PAL_PANEL_DEEP,255);
+    gfx_round_rect_a(content_x,top,content_w,content_h,13,0x0D1625u,255);
+    gfx_round_outline(content_x,top,content_w,content_h,13,PAL_HAIRLINE);
+    gfx_text(left+14,top+12,"ON-DEVICE MEDIA",PAL_TEXT_DIM);
+    char number[12];k_itoa(media_count,number,10);
+    gfx_text(left+sidebar-35,top+12,number,PAL_ACCENT);
+    i32 visible=(content_h-80)/40;
+    if(visible<1)visible=1;
+    if(media_sel<media_scroll)media_scroll=media_sel;
+    if(media_sel>=media_scroll+visible)media_scroll=media_sel-visible+1;
+    i32 mx,my;bool pressed;mouse_get(&mx,&my,&pressed);(void)pressed;
+    bool click=wm_click_enabled();
+    for(i32 row=0;row<visible&&row+media_scroll<media_count;row++){
+        i32 index=row+media_scroll,y=top+44+row*40;
+        bool chosen=index==media_sel;
+        gfx_round_rect(left+7,y,sidebar-14,35,9,
+            chosen?PAL_ACCENT_DIM:PAL_PANEL);
+        const char*name=media_paths[index];
+        for(i32 j=0;media_paths[index][j];j++)
+            if(media_paths[index][j]=='/'&&media_paths[index][j+1])
+                name=media_paths[index]+j+1;
+        char label[34];i32 cap=(sidebar-39)/8;
+        if(cap>32)cap=32;
+        if(cap<1)cap=1;
+        i32 n=0;while(name[n]&&n<cap)label[n++]=name[n];
+        label[n]=0;
+        gfx_text(left+17,y+11,label,chosen?PAL_ACCENT:PAL_TEXT);
+        if(click&&mx>=left+7&&mx<left+sidebar-7&&my>=y&&my<y+35){
+            media_sel=index;(void)mouse_consume_click();click=false;
         }
     }
-
-    /* Transport row */
-    i32 tx = vx + 12, ty = vy + vh + 10, tw = vw - 24;
-    gfx_round_rect_a(tx, ty, tw, 28, 12, PAL_PANEL_DEEP, 255);
-    gfx_round_outline(tx, ty, tw, 28, 12, PAL_HAIRLINE);
-    i32 prog = (i32)(ms % (u32)(tw > 16 ? tw - 16 : 1));
-    gfx_round_rect_a(tx + 8, ty + 10, prog, 8, 4, PAL_ACCENT, 255);
-    gfx_text(tx + tw - 210, ty + 7, vid_play ? "playing" : "paused", vid_play ? COL_OK : COL_WARN);
-    char ts[32], n[8];
-    k_strcpy(ts, "t=");
-    k_itoa(sec, n, 10); k_strcat(ts, n); k_strcat(ts, ".");
-    if (ms < 100) k_strcat(ts, "0");
-    if (ms < 10)  k_strcat(ts, "0");
-    k_itoa(ms, n, 10); k_strcat(ts, n); k_strcat(ts, "s");
-    gfx_text(tx + 12, ty + 7, ts, PAL_TEXT);
+    if(!media_count){
+        gfx_text(left+14,top+60,"No local media files",PAL_TEXT_DIM);
+        gfx_text(content_x+20,top+35,"Use Files to add BMP / PPM / WAV.",PAL_TEXT);
+        gfx_text(content_x+20,top+66,"No sample videos or mock playback.",PAL_TEXT_DIM);
+        return;
+    }
+    shfs_ent_t*file=shfs_lookup(media_paths[media_sel]);
+    if(!file||file->is_dir)return;
+    fv_kind_t kind=fv_kind(media_paths[media_sel]);
+    if(kind==FV_WAVE)media_draw_wave(file,content_x,top,content_w,content_h);
+    else media_draw_image(file,kind,content_x,top,content_w,content_h);
+    gfx_text(left+14,top+content_h-26,
+        T("Up/Down choose   Enter open in Files",
+          "Yukari/Asagi sec  Enter Dosyalarda ac"),PAL_TEXT_DIM);
 }
 
 /* --- Heroic Launcher (Linux app bridge mock) ----------------------------- */
@@ -5521,7 +5600,7 @@ static app_def_t APPS[] = {
     { "Stats",      "system telemetry",    0xE53935, render_stats,    NULL,             icon_stats    },
     { "Calendar",   "real RTC month view", 0x3070FF, render_calendar, calendar_input_key, icon_calendar },
     { "Gallery",    "palette swatches",    0xC084FC, render_gallery,  NULL,             icon_gallery  },
-    { "Video",      "software player",     0x16B5A8, render_video,    video_input_key,  icon_video    },
+    { "Media",      "local BMP / PPM / PCM WAV",0x16B5A8, render_video, video_input_key, icon_video    },
     { "Falco",      "native web search",   0x2A66F5, render_falco,    falco_input_key,  icon_falco    },
     { "Browser",    "Native TLS 1.2 text web", 0x4285F4, render_browser, chrome_input_key, icon_browser },
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
@@ -5541,7 +5620,7 @@ static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
  */
 static const i32 LAUNCH_FAVORITES[] = {1,14,13,20,6,7,3,5,2,8};
 static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,18,20,5};
-static const i32 LAUNCH_ALL[] = {1,14,13,20,6,7,3,5,2,8,9,4,17,18,10};
+static const i32 LAUNCH_ALL[] = {1,14,13,20,12,6,7,3,5,2,8,9,4,17,18,10};
 i32 apps_launcher_count(i32 group) {
     if(group==0) return (i32)(sizeof LAUNCH_FAVORITES/sizeof *LAUNCH_FAVORITES);
     if(group==1) return (i32)(sizeof LAUNCH_SYSTEM/sizeof *LAUNCH_SYSTEM);
@@ -5599,7 +5678,7 @@ const char *apps_display_name(i32 i)
         case 9:  return "İstatistik";
         case 10: return "Takvim";
         case 11: return "Galeri";
-        case 12: return "Video";
+        case 12: return "Medya";
         case 13: return "Falco";
         case 14: return "Tarayıcı";
         case 15: return "Heroic";
