@@ -547,7 +547,7 @@ static void files_render_preview(i32 wx,i32 wy,i32 ww,i32 wh){
     gfx_round_outline(x,y,w,h,15,PAL_ACCENT);
     char title[74];i32 count=0;
     const char*name=files_preview_path;
-    for(i32 i=0;name[i];i++)if(name[i]=='/'&&name[i+1])name=files_preview_path+i+1;
+    for(i32 i=0;files_preview_path[i];i++)if(files_preview_path[i]=='/'&&files_preview_path[i+1])name=files_preview_path+i+1;
     while(name[count]&&count<70){title[count]=name[count];count++;}
     title[count]=0;
     gfx_text(x+18,y+13,title,PAL_TEXT);
