@@ -5652,13 +5652,12 @@ static app_def_t APPS[] = {
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
-/* ChromeOS-style launcher catalog: native functions only, stable original
- * app IDs for desktop pins, Store receipts and automation compatibility.
- * Demo video/palette gallery, Heroic (no Linux ABI) and Jarvis (not a
- * connected AI) are deliberately absent rather than mislabeled as working.
- * USB UVC camera is not yet implemented and is never faked.
+/* Launcher catalog: preserve app IDs for old pins, receipts and tooling.
+ * Falcon Media replaces the procedural video demo and previews real files.
+ * Heroic/Jarvis (missing execution backend) remain intentionally hidden.
+ * USB UVC camera and compressed audio/video codecs remain unsupported.
  */
-static const i32 LAUNCH_FAVORITES[] = {1,14,13,20,6,7,3,5,2,8};
+static const i32 LAUNCH_FAVORITES[] = {1,14,13,12,20,6,7,3,5,2,8};
 static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,18,20,5};
 static const i32 LAUNCH_ALL[] = {1,14,13,20,12,6,7,3,5,2,8,9,4,17,18,10};
 i32 apps_launcher_count(i32 group) {
@@ -5752,7 +5751,7 @@ const char *apps_display_subtitle(i32 i)
         case 9:  return "RAM / CPU / ekran";
         case 10: return "Ay görünümü";
         case 11: return "Renk paleti";
-        case 12: return "Yazılım oynatıcı";
+        case 12: return "BMP / PPM / PCM WAV";
         case 13: return "Yerel indeks arama";
         case 14: return "Doğrulanmış HTTPS metin görünümü";
         case 15: return "Oyun başlatıcı (uyum)";
@@ -5785,6 +5784,13 @@ void apps_draw_icon(i32 i,i32 cx,i32 cy){
         gfx_round_rect(cx-12,cy-9,13,5,2,white);
         gfx_round_rect(cx-12,cy-5,24,17,4,shadow);
         gfx_line(cx-9,cy+3,cx+9,cy+3,0xD59C42u);
+        break;
+    case 12: /* Falcon Media: real image and PCM file inspector */
+        gfx_round_rect(cx-12,cy-10,24,20,5,white);
+        gfx_circle(cx-5,cy-4,3,0x159B9Bu);
+        gfx_line(cx-10,cy+8,cx-2,cy,0x159B9Bu);
+        gfx_line(cx-2,cy,cx+3,cy+5,0x159B9Bu);
+        gfx_line(cx+3,cy+5,cx+8,cy,0x159B9Bu);
         break;
     case 14: /* Browser: globe, not deceptive Chrome logo */
         gfx_circle_outline(cx,cy,12,white);
