@@ -23,6 +23,7 @@
 #include "shfs.h"
 #include "falco_theme.h"
 #include "falco_html_text.h"
+#include "falco_miniweb.h"
 #include "version.h"
 #include "calendar_math.h"
 #include "aeroflow.h"
@@ -3851,6 +3852,8 @@ static bool browser_host_gateway=true;
 static bool browser_dhcp_attempted=false;
 static char browser_result[4096];
 static char browser_text[4096];
+static fmw_page_t browser_dom;
+static bool browser_miniweb;
 static char browser_status[120]="Type an HTTPS address, then press Enter to load.";
 static i32 browser_scroll;
 static bool browser_loaded;
@@ -3862,14 +3865,19 @@ static void browser_page_from_http(void){
     while(*p&&!(p[0]=='\r'&&p[1]=='\n'&&p[2]=='\r'&&p[3]=='\n'))p++;
     if(!*p){k_strcpy(browser_status,"Invalid HTTP response");return;}
     p+=4;
+    /* First try native CSS box layout and constrained DOM literal actions.
+     * Unsupported content falls back to the already safe SemanticText/2. */
+    browser_miniweb=falco_miniweb_parse(&browser_dom,p);
     i32 n=falco_html_extract(p,browser_text,sizeof browser_text);
-    if(n<=0){
+    if(n<=0&&!browser_miniweb){
         k_strcpy(browser_status,"No renderable HTML content received");
         return;
     }
     browser_loaded=true;
     browser_scroll=0;
-    k_strcpy(browser_status,"TLS checked | SemanticText/2 | HTML blocks & entities | No JS/CSS");
+    k_strcpy(browser_status,browser_miniweb?
+        "Host-verified HTTPS | MiniWeb/3 CSS | Safe JS DOM subset":
+        "Host-verified HTTPS | SemanticText/2 fallback");
 }
 /* Direct HTTPS .app.pkg download. CA and redirect policy are checked by
  * the opt-in 18444 host HTTPS companion; the package is transferred through
@@ -3950,7 +3958,7 @@ static void browser_load(void){
 #ifdef FALCON_QEMU_BROWSER_TEST
     outb(0xE9,'b'); /* user pressed Enter inside the real GUI */
 #endif
-    browser_loaded=false;browser_result[0]=0;browser_text[0]=0;
+    browser_loaded=false;browser_miniweb=false;browser_result[0]=0;browser_text[0]=0;
     if(!net_present()){
         k_strcpy(browser_status,"No RTL8139 NIC. Set Virt-Manager network model to rtl8139.");
         return;
@@ -4165,6 +4173,65 @@ static void chrome_input_key(i32 key){
     (void)sh_buf_append_key(browser_address,&browser_address_len,
                             sizeof browser_address,key);
 }
+/* FalconOS-owned CSS box layout with constrained JS button actions.
+ * Rendering is in C, in the guest framebuffer; no browser host pixels.
+ * Only supported DOM nodes and declarations from falco_miniweb.c.
+ * Element bounds remain clipped to the actual browser content area. */
+static i32 browser_miniweb_layout(i32 x,i32 y,i32 w,i32 h,bool paint){
+    const i32 top=y-((browser_scroll>0)?browser_scroll*26:0);
+    i32 cursor=top;
+    i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
+    bool click=paint&&wm_click_enabled();
+    if(paint){
+        u32 bg=browser_dom.page_bg;
+        if(bg==0xFFFFFFFFu)bg=0xFFFFFFu;
+        gfx_rect(x,y,w,h,bg);
+    }
+    for(u32 i=0;i<browser_dom.count;i++){
+        fmw_node_t*n=&browser_dom.nodes[i];
+        if(n->hidden||!n->text[0])continue;
+        i32 textsize=n->font_px>=24?16:8;
+        i32 chars=(w-32)/textsize;if(chars>87)chars=87;
+        if(chars<10)chars=10;
+        i32 length=k_strlen(n->text);
+        i32 rows=(length+chars-1)/chars;
+        if(rows<1)rows=1;
+        if(rows>12)rows=12;
+        i32 step=n->font_px>=24?32:20;
+        i32 hh=12+rows*step+(n->button?12:0);
+        if(hh>h-10)hh=h-10;
+        i32 row_top=cursor;
+        bool visible=row_top>=y && row_top+hh<=y+h;
+        if(paint&&visible){
+            if(n->bg!=0xFFFFFFFFu)gfx_round_rect(x+8,row_top,w-16,hh,10,n->bg);
+            else if(n->button)gfx_round_rect(x+8,row_top,w-16,hh,10,0xE1EAF4u);
+            if(n->button)gfx_round_outline(x+8,row_top,w-16,hh,10,0x839ABD);
+            if(n->button&&click &&mx>=x+8&&mx<x+w-8&&my>=row_top&&my<row_top+hh){
+                if(falco_miniweb_action(&browser_dom,i)){
+#ifdef FALCON_QEMU_UI_GALLERY
+                    outb(0xE9,'j');outb(0xE9,'Y');
+#endif
+                }
+                (void)mouse_consume_click();click=false;
+            }
+            for(i32 row=0;row<rows;row++){
+                char line[96];i32 offset=row*chars;
+                i32 take=length-offset;if(take>chars)take=chars;
+                if(take<=0)break;
+                for(i32 k=0;k<take;k++)line[k]=n->text[offset+k];
+                line[take]=0;
+                i32 tx=x+18;
+                if(n->align==1)tx=x+w/2-(take*textsize)/2;
+                if(n->align==2)tx=x+w-18-take*textsize;
+                if(n->font_px>=24)gfx_text_lg(tx,row_top+6+row*step,line,n->color);
+                else gfx_text(tx,row_top+6+row*step,line,n->color);
+            }
+        }
+        cursor+=hh+9;
+        if(cursor>y+h+500)break;
+    }
+    return cursor;
+}
 static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;
     i32 margin=18,bar=wy+54;
@@ -4225,7 +4292,9 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         gfx_text(sx+20,py+102,
             "Certificates validated by BearSSL, no HTTP fallback.",PAL_TEXT_DIM);
         gfx_text(sx+20,py+128,
-            "Supports limited HTML-to-text, not CSS/JS or full websites.",PAL_TEXT_DIM);
+            "Supports CSS subset + safe JS DOM actions; no full web engine.",PAL_TEXT_DIM);
+    }else if(browser_miniweb){
+        browser_miniweb_layout(sx+1,py+1,sw-2,height-2,true);
     }else{
         i32 chars=(sw-40)/8;
         if(chars<15)chars=15;
