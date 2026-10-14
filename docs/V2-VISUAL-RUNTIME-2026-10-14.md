@@ -24,16 +24,44 @@ This change set is experimental and lives on
   image decoder, verifies the actual embedded boot image, and boots QEMU using
   OVMF (not legacy SeaBIOS).
 
+## Additional native runtime work
+
+- `Falcon Media` is a real native image/PCM inspection app, replacing the
+  misleading procedural `Video` simulation at its stable built-in ID. It
+  enumerates existing SHFS files; it does not invent screenshots or media.
+  It paints decoded uncompressed BMP/24 and binary PPM/P6 pixels. It
+  parses RIFF WAVE chunks, validates mono/stereo 8/16-bit PCM metadata
+  and draws the original audio samples as a waveform; **it does not
+  play audio** because a verified audio output driver is still missing.
+- Files also previews PPM and WAV data and recognizes more source-code
+  extensions. Unknown binary types are never treated as applications.
+- F8 in Files opens a text document in Codedium; the editor tracks the real
+  source filename, supports editing/saving without replacing another file,
+  and rejects binary/oversized source or unsaved-document loss.
+- F9 / Ctrl+N creates a blank `untitled.fsh` source buffer in Codedium
+  and the new native toolbar exposes New / Save / Run / Export / Publish.
+  Saving files is separate from executing restricted FAPP commands.
+- FalconBoot now displays three genuine UEFI keyboard choices:
+  HD 720p, FHD 1080p and QHD 1440p (where GOP supports the chosen mode).
+  Up/Down moves the selected row and Enter boots immediately; unattended
+  boots default to FHD after five seconds. The original dragon GLB
+  preview remains visible above this actual boot menu. No installer
+  wizard is used as a substitute for boot selection.
+
+These features must not be labeled as fully functional MP4/video playback,
+a general native scripting VM, a complete GPU driver, or safe physical
+storage installation.
+
 ## Outstanding blocking work — not shipping yet
 
 | Area | Current state | Release gate |
 | --- | --- | --- |
-| UEFI/boot | Original GLB frame in loader + kernel sprite animation | Confirm viewer-facing frame with QEMU screenshot; implement user-selectable boot menu only if desired |
+| UEFI/boot | Original GLB frame, 48-frame kernel animation, UEFI display-mode menu | Capture/verify selected modes in QEMU; firmware/hardware compatibility |
 | Hardware graphics | UEFI GOP + software framebuffer | Real vendor GPU modesetting, driver tests, memory safety, framebuffer transitions |
 | App engine | FAPP scripts in restricted interpreter, FVM experiments | Ring 3 per-process isolation, capabilities, native loader/ABI, robust app lifecycle |
 | Falco | MiniWeb intentionally limited | HTML5 tokenizer/layout, CSS modern layout and verified sandboxed JS, HTTPS independently tested |
-| Multimedia | Text and BMP reader only; existing Video app is a procedural demo | Actual WAV/PCM and video codecs, safe streams, audio device driver and real media playback |
-| FScript/Codedium | Existing editor + FAPP scripts | Rewrite compiler/VM/SDK with isolated execution, tested app packaging and debugging |
+| Multimedia | BMP/PPM preview + genuine WAV/PCM file parsing and waveform | Real audio playback, compressed video codecs, streaming and tested device drivers |
+| FScript/Codedium | Real SHFS file opening, saving, blank files, safe FAPP scripts | Complete isolated VM/language, full editor features, tested packaging and debugging |
 | Files/storage | SHFS/PFS/JFS prototypes | Crash-safe journal/migrations, fsck, quota, safe install/rollback |
 | Updater | Host-assisted, checksum-verifying QEMU ISO stage | Signed metadata, rollback and safe native update; no drive rewriting |
 | Marketplace | Existing tiny reviewed FAPP packages, limited catalog | Signed publisher packages, install/uninstall/reboot E2E, independent GUI apps |
