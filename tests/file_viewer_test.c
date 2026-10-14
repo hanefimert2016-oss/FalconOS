@@ -30,15 +30,15 @@ int main(void){
     assert(fv_kind("/home/falcon/image.PPM")==FV_PPM);
     assert(fv_kind("recording.WaV")==FV_WAVE);
     assert(fv_kind("source.java")==FV_TEXT);
-    const u8 ppm[]={'P','6','\\n','2',' ','1','\\n',
-                    '2','5','5','\\n',10,20,30,255,0,128};
+    const u8 ppm[]={'P','6','\n','2',' ','1','\n',
+                    '2','5','5','\n',10,20,30,255,0,128};
     fv_bitmap_t pm={0};
     assert(fv_ppm_open(ppm,sizeof ppm,&pm));
     assert(pm.width==2&&pm.height==1);
     assert(fv_ppm_pixel(ppm,&pm,0,0)==0x0A141E);
     assert(fv_ppm_pixel(ppm,&pm,1,0)==0xFF0080);
     assert(!fv_ppm_open(ppm,sizeof ppm-1u,&pm));
-    const u8 malformed_ppm[]="P6\\n2 1\\n65535\\n000000";
+    const u8 malformed_ppm[]="P6\n2 1\n65535\n000000";
     assert(!fv_ppm_open(malformed_ppm,sizeof malformed_ppm-1u,&pm));
 
     /* Real RIFF parser: 8-bit mono 8 kHz PCM with four samples.
