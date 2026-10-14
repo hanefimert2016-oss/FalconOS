@@ -1160,6 +1160,11 @@ static char term_buf[TERM_LINES][TERM_COLS];
 static i32  term_init_done = 0;
 static i32  term_input_len = 0;
 static char term_input[TERM_COLS];
+/* Bounded local command recall, never shell execution on navigation. */
+#define TERM_HISTORY 16
+static char term_history[TERM_HISTORY][TERM_COLS];
+static i32 term_history_count,term_history_cursor;
+static char term_history_draft[TERM_COLS];
 static shvar_t  sh_vars [SH_VARS];
 
 static void term_push(const char *s)
@@ -2847,8 +2852,8 @@ static void render_term(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
              T("FalconOS shell — POSIX subset", "FalconOS kabuğu — POSIX alt kümesi"),
              0xCFE6FF);
     gfx_text(wx + 30, wy + 38,
-             T("Try: help · hwinfo · prg · update check — cat readme.txt",
-              "Deneyin: help · hwinfo · prg · update check — cat readme.txt"),
+             T("Up/Down command history · help · hwinfo · prg · update check",
+              "Yukari/Asagi komut gecmisi · help · hwinfo · prg · update check"),
              0x8AAACE);
 
     for (i32 i = 0; i < TERM_LINES; i++) {
@@ -2872,7 +2877,39 @@ static void render_term(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static void term_input_key(i32 key)
 {
     term_init();
+    if(key==KEY_UP){
+        if(!term_history_count)return;
+        if(term_history_cursor==term_history_count)
+            k_strcpy(term_history_draft,term_input);
+        if(term_history_cursor>0)term_history_cursor--;
+        k_strcpy(term_input,term_history[term_history_cursor]);
+        term_input_len=k_strlen(term_input);
+        return;
+    }
+    if(key==KEY_DOWN){
+        if(term_history_cursor>=term_history_count)return;
+        term_history_cursor++;
+        k_strcpy(term_input,term_history_cursor==term_history_count?
+                 term_history_draft:term_history[term_history_cursor]);
+        term_input_len=k_strlen(term_input);
+        return;
+    }
     if (key == KEY_ENTER) {
+        if(term_input_len>0){
+            /* Drop oldest entry when full; ignore duplicate commands. */
+            bool duplicate=term_history_count>0&&
+                k_strcmp(term_input,term_history[term_history_count-1])==0;
+            if(!duplicate){
+                if(term_history_count==TERM_HISTORY){
+                    for(i32 n=1;n<TERM_HISTORY;n++)
+                        k_strcpy(term_history[n-1],term_history[n]);
+                    term_history_count--;
+                }
+                k_strcpy(term_history[term_history_count++],term_input);
+            }
+        }
+        term_history_cursor=term_history_count;
+        term_history_draft[0]=0;
         char prompt[TERM_COLS];
         k_strcpy(prompt, "$ ");
         k_strcat(prompt, term_input);
