@@ -71,23 +71,39 @@ def main():
             if proc.poll() is not None:
                 raise RuntimeError("QEMU exited before network probe completed")
             data=debug.read_bytes() if debug.exists() else b""
-            if b"N" in data:
+            # FalcoBoot's literal string "MENU DRAWN" contains 'N'.
+            # NEVER treat it as a network success. The guest must have
+            # passed UEFI handoff and emitted the adjacent RTL8139 live
+            # driver marker V + its real ICMP result N from main.c.
+            pos=data.find(b"FALCONBOOT/1 HANDOFF")
+            guest=data[pos+len(b"FALCONBOOT/1 HANDOFF"):] if pos>=0 else b""
+            if b"VN" in guest:
+                payload=pcap.read_bytes() if pcap.exists() else b""
+                eth=[];offset=24
+                while offset+16<=len(payload):
+                    size=struct.unpack_from("<I",payload,offset+8)[0]
+                    offset+=16
+                    if size<14 or offset+size>len(payload):break
+                    eth.append(int.from_bytes(payload[offset+12:offset+14],"big"))
+                    offset+=size
+                if 0x0806 not in eth or 0x0800 not in eth:
+                    raise RuntimeError("Kernel reported ICMP success without ARP + IPv4 frames: "+summary())
                 if not args.require_dns:
-                    print("PASS native RTL8139 -> ARP -> IPv4 -> ICMP echo reply")
+                    print("PASS guest RTL8139 ACTIVE -> real ARP + IPv4 pcap -> ICMP echo reply")
                     return
-                if b"D" in data:
+                if b"D" in guest:
                     if not args.require_dhcp:
                         print("PASS native RTL8139 ARP/ICMP and DNS-over-UDP response")
                         return
-                    if b"B" in data:
+                    if b"B" in guest:
                         print("PASS native RTL8139 ARP + ICMP + DNS and DHCP DORA lease")
                         return
-                    if b"b" in data:
-                        raise RuntimeError("Guest DHCP DORA failed; "+repr(data)+"; "+summary())
-                if b"d" in data:
-                    raise RuntimeError("Native DNS query failed; debug "+repr(data)+"; "+summary())
-            if b"n" in data:
-                raise RuntimeError("Guest NIC probe did not receive ICMP reply; debug "+repr(data)+"; "+summary())
+                    if b"b" in guest:
+                        raise RuntimeError("Guest DHCP DORA failed; "+repr(guest)+"; "+summary())
+                if b"d" in guest:
+                    raise RuntimeError("Native DNS query failed; debug "+repr(guest)+"; "+summary())
+            if b"Vn" in guest or b"vn" in guest or b"vN" in guest:
+                raise RuntimeError("Guest RTL8139 ping failed; debug "+repr(guest[-120:])+"; "+summary())
             time.sleep(.2)
         raise TimeoutError("Guest network probe timed out; debug "+repr(debug.read_bytes() if debug.exists() else b"")+"; "+summary())
     finally:
