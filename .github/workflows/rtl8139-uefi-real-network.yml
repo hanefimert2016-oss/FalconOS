@@ -1,0 +1,37 @@
+name: RTL8139 native driver UEFI packet verification
+on:
+  push:
+    branches: [v2-beta]
+    paths:
+      - linux/rtl8139.c
+      - linux/pci_extended.c
+      - kernel/net_native.c
+      - kernel/main.c
+      - tools/qemu_net_e2e.py
+      - .github/workflows/rtl8139-uefi-real-network.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rtl8139-native-network:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install UEFI/OVMF and native x86 toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm xorriso mtools qemu-system-x86 ovmf clang lld binutils fonts-dejavu-core python3-pil
+      - name: Build FalconBoot UEFI ISO with actual RTL8139 NIC diagnostic
+        run: make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_NET_TEST'
+      - name: Capture actual guest RTL8139 Ethernet, ARP, IPv4 and ICMP reply
+        run: python3 tools/qemu_net_e2e.py --timeout 120
+      - name: Upload real pcap and guest diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-Real-RTL8139-UEFI-Network-PCAP
+          path: |
+            build/net-smoke-debug.log
+            build/net-smoke.pcap
+          if-no-files-found: warn
