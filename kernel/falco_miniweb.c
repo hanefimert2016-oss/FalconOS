@@ -192,9 +192,12 @@ bool falco_miniweb_parse(fmw_page_t*page,const char*html){
      * bridge (browser_result has 4096 bytes). Scripts are never executed. */
     for(u32 i=0;p[i]&&i<4094;i++)if(p[i]=='<'&&starts(p+i,"<style")){
         const char*open=p+i;while(*open&&*open!='>')open++;
-        if(!*open)break;open++;
+        if(!*open)break;
+        open++;
         const char*end=find_ci(open,"</style>");
-        if(!end)break;parse_css(page,open,end);i=(u32)(end-p)+7u;
+        if(!end)break;
+        parse_css(page,open,end);
+        i=(u32)(end-p)+7u;
     }
     char embedded_js[768]={0};u32 jslen=0;u32 cur=FMW_NODES;
     for(u32 i=0;p[i]&&i<4094;){
