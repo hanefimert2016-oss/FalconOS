@@ -1,4 +1,48 @@
-# FalconOS
+# FalconOS V2 — public preview branch
+
+**This is the published `v2` source branch, separate from V1 and `v2-beta`.**
+It is a research/VM preview; **not a hardware-safe finished operating system**.
+Pre-release builds and unmodified QEMU screenshots are published by
+[the V2 verification workflow](../../actions/workflows/v2-publication-qa.yml).
+Do not flash the experimental ISO to a physical disk or assume reliable drivers.
+
+### Falco V2 — native HTML projection, not a Chrome screenshot
+
+The HTTPS companion now uses `tools/falco_html_v2.py` to **preserve
+actual source-page headings, paragraphs, safe HTTPS links, and some
+inline CSS** as bounded inert HTML. Earlier builds called
+`semantic_html_text()` and dropped every HTML tag before the guest
+received it. The guest's existing MiniWeb software renderer interprets
+the projected tags and draws its own framebuffer. The host never
+sends a rendered bitmap or runs webpage scripts.
+
+Falco has 10-page navigation history, a local start page, HTTPS-only
+link activation, optional reader/contrast modes, zoom and compact
+chrome. Open Settings to change these; F2 opens your home page,
+Alt+Left/Right navigates, F9 clears guest-RAM history.
+
+**Known limitations:** this is deliberately a *safe reader projection*,
+not faithful original CSS. Unsupported scripts, websites requiring
+JavaScript, images, video, CSS flex/grid, forms, and most advanced
+web standards remain missing. Host-assisted HTTPS checks public
+CA certificates and hostname, but the host-to-VM hop is not TLS.
+This is not a hardened web sandbox. Do not use for sensitive accounts.
+
+### Getting the V2 preview
+
+```bash
+git clone --branch v2 --single-branch https://github.com/hanefimert2016-oss/FalconOS.git
+cd FalconOS
+make iso ENABLE_BEARSSL=0
+make run-market
+```
+
+QEMU, OVMF, the C toolchain and host build prerequisites are required.
+GitHub Actions also makes the actual `FalconOS.iso` downloadable
+without building locally. Details and remaining milestones:
+[docs/FALCONOS-V2-PREVIEW.md](docs/FALCONOS-V2-PREVIEW.md).
+
+---
 
 > A bare-metal **x86_64** operating system with one unified desktop,
 > native multiwindow compositor, a Codedium editor, a verified Marketplace,
