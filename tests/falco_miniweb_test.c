@@ -60,6 +60,24 @@ int main(void){
     assert(falco_miniweb_parse(&page,
        "<style>p{color:rgb(1,2,999)}</style><p id='a' style='color:#fed'>OK</p>"));
     assert(node(&page,"a")->color==0xFFEEDD);
-    puts("PASS: MiniWeb/4 selector specificity, rgb, multi-script safe DOM and native buttons");
+    /* Real hyperlinks stay inert in MiniWeb until the Falcon Web native
+     * navigation layer validates the target as an HTTPS-only URL. */
+    assert(falco_miniweb_parse(&page,
+       "<a id='docs' href='https://example.com/docs'>Documentation</a>"
+       "<a id='local' href='/about'>About</a>"
+       "<p id='state'>Before</p>"));
+    assert(strcmp(node(&page,"docs")->href,"https://example.com/docs")==0);
+    assert(strcmp(node(&page,"local")->href,"/about")==0);
+    assert(falco_miniweb_parse_options(&page,
+       "<p id='state'>Before</p>"
+       "<button onclick=\\"document.getElementById('state').textContent='After'\\">Tap</button>"
+       "<script>document.getElementById('state').textContent='Injected'</script>",
+       false));
+    assert(strcmp(node(&page,"state")->text,"Before")==0);
+    assert(page.js_mutations==0);
+    /* Disabling safe DOM actions is a UI policy; parser retains text and
+     * buttons, but the caller must not dispatch callbacks when disabled. */
+    assert(page.buttons==1);
+        puts("PASS: MiniWeb/4 selector specificity, rgb, multi-script safe DOM and native buttons");
     return 0;
 }
