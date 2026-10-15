@@ -152,7 +152,7 @@ def project_safe_html(raw: bytes, *, max_bytes: int=MAX_DOCUMENT_BYTES) -> bytes
         parts=["<",tag]
         if item["href"]:parts.extend([' href="',escape(item["href"],quote=True),'"'])
         if item["style"]:parts.extend([' style="',escape(item["style"],quote=True),'"'])
-        parts.extend([">",escape(item["text"]),"</",tag,">"])
+        parts.extend([">",escape(item["text"],quote=False),"</",tag,">"])
         encoded="".join(parts).encode("utf8")
         if len(output)+len(encoded)+reserve>max_bytes:
             if selected:break
