@@ -161,7 +161,9 @@ def main():
     for marker in (b"P",b"Q",b"O"):
      off=len(dbg());command(sock,"sendkey ret",.22)
      wait_for_marker(DEBUG,marker,after=off,timeout=70)
-    command(sock,"sendkey right",.20)
+    # INST_USER_MORE defaults to NO (g_choice=1). Sending Right here
+    # wraps to YES and starts a second username page. Keep the secure
+    # default: finish with Enter without toggling the selection.
     off=len(dbg());command(sock,"sendkey ret",.28)
     wait_for_marker(DEBUG,b"W",after=off,timeout=70)
     off=len(dbg());command(sock,"sendkey ret",.38)
