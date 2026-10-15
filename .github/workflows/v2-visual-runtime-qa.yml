@@ -22,6 +22,10 @@ jobs:
           mkdir -p build
           gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/falco_miniweb_test.c kernel/falco_miniweb.c -o build/test-miniweb
           build/test-miniweb
+      - name: Validate real Falcon Web history and HTTPS-only links
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/falco_navigation_test.c kernel/falco_navigation.c -o build/test-navigation
+          build/test-navigation
       - name: Validate file association and real BMP decoder
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/file_viewer_test.c kernel/file_viewer.c -o build/test-files
