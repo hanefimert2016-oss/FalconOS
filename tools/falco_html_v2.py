@@ -4,6 +4,7 @@ This is a *reader projection*, not source-authentic CSS/layout. All scripts,
 event attributes, forms and active embeds are removed on the host. The FalconOS
 native MiniWeb renderer draws the resulting real text and HTTPS links.
 """
+import re
 from html import escape
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
@@ -46,6 +47,39 @@ def _safe_href(raw: str) -> str:
         return raw
     return ""
 
+def _safe_ident(value: str) -> str:
+    """Only CSS identifiers supported by guest MiniWeb, no selectors/code."""
+    v=(value or "").strip()
+    return v if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,23}",v) else ""
+
+def _sample_site_css(styles: list[str], entries: list[dict]) -> str:
+    """Extract only flat site CSS rules actually usable by native MiniWeb.
+
+    CSS @rules/combinators, url(), expressions and executable material are
+    intentionally not supported. All outputs are selected by an allowlist.
+    """
+    useful={"body","h1","h2","h3","p","a","li","div","blockquote"}
+    for item in entries:
+        if item.get("id"):useful.add("#"+item["id"])
+        if item.get("klass"):useful.add("."+item["klass"])
+    output=[]
+    seen=set()
+    raw="".join(styles)[:12000]
+    raw=re.sub(r"/\*.*?\*/","",raw,flags=re.S)
+    for match in re.finditer(r"([^{}]{1,90})\{([^{}]{1,450})\}",raw):
+        selectors=[s.strip() for s in match.group(1).split(",")]
+        valid=[s for s in selectors if s in useful and s not in seen]
+        if not valid:continue
+        style=_safe_style(match.group(2))
+        if not style:continue
+        for sel in valid[:2]:
+            result=sel+"{"+style+"}"
+            if sum(map(len,output))+len(result)>390:return "".join(output)
+            output.append(result)
+            seen.add(sel)
+            if len(output)>=7:return "".join(output)
+    return "".join(output)
+
 def _safe_style(value: str) -> str:
     rules=[]
     for decl in value[:350].split(";"):
@@ -72,10 +106,15 @@ class _Collector(HTMLParser):
         self.main=0
         self.seq=0
         self.images=0
+        self.styles=[]
+        self.style_depth=0
     def handle_starttag(self,tag,attrs):
         tag=tag.lower()
         if tag=="head":
             self.head+=1
+        if tag=="style":
+            self.style_depth+=1
+            if len(self.styles)<10:self.styles.append("")
         if tag=="title":
             self.title_parts=[]
             self.in_title=True
@@ -106,8 +145,12 @@ class _Collector(HTMLParser):
             rendered="h3" if tag in {"h4","h5","h6"} else (
                 "p" if tag in {"button","summary","dt","dd"} else tag)
             label=" ".join((attrs.get("aria-label") or "").split())[:90]
+            klass=next((_safe_ident(k) for k in
+                (attrs.get("class") or "").split()
+                if _safe_ident(k)),"")
             item={"tag":rendered,"source_tag":tag,
                   "text":[],"label":label,"href":href,
+                  "id":_safe_ident(attrs.get("id") or ""),"klass":klass,
                   "style":_safe_style(attrs.get("style") or ""),
                   "main":self.main>0,"seq":self.seq}
             self.seq+=1
@@ -121,6 +164,7 @@ class _Collector(HTMLParser):
             self.title="".join(self.title_parts).strip()[:85]
             self.in_title=False
         if tag=="head":self.head=max(0,self.head-1)
+        if tag=="style":self.style_depth=max(0,self.style_depth-1)
         if tag in SKIP_TAGS and tag not in {"input","embed"}:
             self.skip=max(0,self.skip-1)
         if tag=="main":self.main=max(0,self.main-1)
@@ -130,6 +174,10 @@ class _Collector(HTMLParser):
                     self.open_tags=self.open_tags[:index]
                     break
     def handle_data(self,data):
+        if self.style_depth and self.styles:
+            if len(self.styles[-1])<2000:
+                self.styles[-1]+=data[:2000-len(self.styles[-1])]
+            return
         if self.in_title and not self.skip:
             self.title_parts.append(data[:120])
             return
@@ -161,8 +209,9 @@ def project_safe_html(raw: bytes, *, max_bytes: int=MAX_DOCUMENT_BYTES) -> bytes
     main=[item for item in entries if item["main"]]
     if sum(len(item["text"]) for item in main)>85:entries=main
     title=escape(parser.title or "Falco V2 Reader")[:90]
+    site_css=_sample_site_css(parser.styles,entries)
     prefix=("<html><head><title>"+title+"</title><style>"+BASIC_STYLE+
-            "</style></head><body>")
+            site_css+"</style></head><body>")
     suffix="</body></html>"
     output=prefix.encode("utf8")
     reserve=len(suffix.encode("utf8"))
@@ -171,6 +220,8 @@ def project_safe_html(raw: bytes, *, max_bytes: int=MAX_DOCUMENT_BYTES) -> bytes
         tag=item["tag"]
         parts=["<",tag]
         if item["href"]:parts.extend([' href="',escape(item["href"],quote=True),'"'])
+        if item.get("id"):parts.extend([' id="',item["id"],'"'])
+        if item.get("klass"):parts.extend([' class="',item["klass"],'"'])
         if item["style"]:parts.extend([' style="',escape(item["style"],quote=True),'"'])
         parts.extend([">",escape(item["text"],quote=False),"</",tag,">"])
         encoded="".join(parts).encode("utf8")
