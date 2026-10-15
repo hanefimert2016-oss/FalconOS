@@ -224,7 +224,7 @@ def main():
       # Host proxy strips CSS/JS/images and supplies semantic text;
       # a verified fetch is incomplete visual compatibility at best.
       category="Yarim" if state=="success" and seen_request else "Berbat"
-      critique=("Metin yuklendi; orijinal resimler, CSS ve JS kayip."
+      critique=("Gercek HTML/CSS okuma var; orijinal resimler ve JS eksik."
                 if category=="Yarim" else
                 "Istenen sayfa acilmadi; gercek HTTPS icerigi gorunmuyor.")
       results.append({"site":site,"category":category,"load":state,
