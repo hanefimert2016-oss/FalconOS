@@ -316,6 +316,10 @@ bool falco_miniweb_parse_options(fmw_page_t*page,const char*html,
         i=(u32)(end-p)+7u;
     }
     char embedded_js[768]={0};u32 jslen=0;u32 cur=FMW_NODES;
+    /* The previous parser discarded text after a nested </a> or </h2>
+     * because cur was reset to 'no node'. Track enclosing semantic
+     * elements so ordinary HTML nesting preserves text and hyperlinks. */
+    u32 parents[FMW_NODES];u32 depth=0;
     for(u32 i=0;p[i]&&i<4094;){
         if(p[i]!='<'){
             const char*b=p+i;while(p[i]&&p[i]!='<'&&i<4094)i++;
@@ -361,7 +365,14 @@ bool falco_miniweb_parse_options(fmw_page_t*page,const char*html,
             continue;
         }
         if(closing){
-            if(cur<page->count&&eq(page->nodes[cur].tag,node_tag))cur=FMW_NODES;
+            if(is_node(node_tag)){
+                for(u32 j=depth;j>0;j--){
+                    if(eq(page->nodes[parents[j-1]].tag,node_tag)){
+                        depth=j-1;cur=depth?parents[depth-1]:FMW_NODES;
+                        break;
+                    }
+                }
+            }
             continue;
         }
         if(eq(node_tag,"body")){
@@ -374,6 +385,7 @@ bool falco_miniweb_parse_options(fmw_page_t*page,const char*html,
         }
         if(!is_node(node_tag)||page->count>=FMW_NODES)continue;
         cur=page->count++;
+        if(depth<FMW_NODES)parents[depth++]=cur;
         fmw_node_t*n=&page->nodes[cur];strcopy(n->tag,sizeof n->tag,node_tag);
         strcopy(n->id,sizeof n->id,"");
         n->color=0x273346u;n->bg=0xFFFFFFFFu;
