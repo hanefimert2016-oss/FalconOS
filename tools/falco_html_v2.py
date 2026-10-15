@@ -8,9 +8,10 @@ from html import escape
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
-MAX_DOCUMENT_BYTES = 2850
-CONTENT_NODES = {"h1","h2","h3","p","div","section","article","li",
-                 "blockquote","label","a","button"}
+MAX_DOCUMENT_BYTES = 3200
+CONTENT_NODES = {"h1","h2","h3","h4","h5","h6","p","div",
+                 "section","article","li","blockquote","label","a",
+                 "button","summary","dt","dd"}
 SKIP_TAGS = {"script","style","svg","iframe","canvas","template","object",
              "embed","form","input","select","textarea","nav","footer",
              "noscript"}
@@ -70,6 +71,7 @@ class _Collector(HTMLParser):
         self.in_title=False
         self.main=0
         self.seq=0
+        self.images=0
     def handle_starttag(self,tag,attrs):
         tag=tag.lower()
         if tag=="head":
@@ -83,12 +85,29 @@ class _Collector(HTMLParser):
             self.skip+=1
         if tag=="main":self.main+=1
         if self.skip or self.head:return
+        attrs=dict(attrs)
+        if tag=="img":
+            # Images are NOT decoded in native FalconOS. Surface only
+            # meaningful *actual alt text*, explicitly marked as a caption.
+            alt=" ".join((attrs.get("alt") or "").split())[:90]
+            if self.open_tags and self.open_tags[-1]["tag"]=="a":
+                if alt and not self.open_tags[-1]["text"]:
+                    self.open_tags[-1]["text"].append(alt)
+            elif alt and len(alt)>=6 and self.images<5:
+                self.images+=1
+                self.entries.append({"tag":"p","text":["[Image: "+alt+"]"],
+                     "href":"","style":"color:#5c687b",
+                     "main":self.main>0,"seq":self.seq})
+                self.seq+=1
+            return
         if tag in CONTENT_NODES:
-            attrs=dict(attrs)
             href=_safe_href(attrs.get("href") or "") if tag=="a" else ""
-            # Untrusted website scripts can never add real button actions.
-            if tag=="button":tag="p"
-            item={"tag":tag,"text":[],"href":href,
+            # No untrusted site may create native interactive JS buttons.
+            rendered="h3" if tag in {"h4","h5","h6"} else (
+                "p" if tag in {"button","summary","dt","dd"} else tag)
+            label=" ".join((attrs.get("aria-label") or "").split())[:90]
+            item={"tag":rendered,"source_tag":tag,
+                  "text":[],"label":label,"href":href,
                   "style":_safe_style(attrs.get("style") or ""),
                   "main":self.main>0,"seq":self.seq}
             self.seq+=1
@@ -106,9 +125,8 @@ class _Collector(HTMLParser):
             self.skip=max(0,self.skip-1)
         if tag=="main":self.main=max(0,self.main-1)
         if tag in CONTENT_NODES and self.open_tags:
-            search="p" if tag=="button" else tag
             for index in range(len(self.open_tags)-1,-1,-1):
-                if self.open_tags[index]["tag"]==search:
+                if self.open_tags[index]["source_tag"]==tag:
                     self.open_tags=self.open_tags[:index]
                     break
     def handle_data(self,data):
@@ -133,6 +151,8 @@ def project_safe_html(raw: bytes, *, max_bytes: int=MAX_DOCUMENT_BYTES) -> bytes
     entries=[]
     for item in parser.entries:
         cleaned=" ".join("".join(item["text"]).split()).strip()
+        if not cleaned:
+            cleaned=item.get("label","") if item["tag"]=="a" else ""
         if not cleaned:continue
         # Cap each visible block to fit the software-native renderer.
         item["text"]=" ".join(cleaned.split())[:185]
