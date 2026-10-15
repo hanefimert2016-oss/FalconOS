@@ -78,6 +78,28 @@ int main(void){
     /* Disabling safe DOM actions is a UI policy; parser retains text and
      * buttons, but the caller must not dispatch callbacks when disabled. */
     assert(page.buttons==1);
-    puts("PASS: MiniWeb/4 selector specificity, rgb, multi-script safe DOM and native buttons");
+    /* Real HTTPS HTML is nested and contains escaped query parameters,
+     * numeric UTF-8 characters, &#39; apostrophes and named entities. */
+    assert(falco_miniweb_parse(&page,
+       "<div id='outer'>Before <a id='inside' "
+       "href='https://example.com/search?q=birds&amp;sort=recent'>"
+       "Go &amp; explore</a> and after <h2 id='child'>Heading</h2>"
+       " trailing text</div>"
+       "<p id='decoded'>A &quot;quote&quot;, &#39;apostrophe&#39;, "
+       "&#x263A; &nbsp; end</p>"));
+    assert(strcmp(node(&page,"inside")->href,
+          "https://example.com/search?q=birds&sort=recent")==0);
+    assert(strcmp(node(&page,"inside")->text,"Go & explore")==0);
+    assert(strcmp(node(&page,"outer")->text,
+                  "Before  and after  trailing text")==0);
+    assert(strcmp(node(&page,"child")->text,"Heading")==0);
+    assert(strcmp(node(&page,"decoded")->text,
+                  "A \"quote\", 'apostrophe', \xE2\x98\xBA  end")==0);
+    /* A single malformed/incomplete entity is treated as text rather
+     * than interpreted as markup or prematurely terminating a buffer. */
+    assert(falco_miniweb_parse(&page,
+       "<p id='safe'>Alpha &#xD800; &#x110000; &unknown; Omega</p>"));
+    assert(strstr(node(&page,"safe")->text,"&unknown;")!=NULL);
+    puts("PASS: MiniWeb/5 nested DOM, UTF-8 entities, HTTPS query links and safe JS");
     return 0;
 }
