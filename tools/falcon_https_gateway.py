@@ -17,6 +17,7 @@ import argparse,http.server,ipaddress,socket,ssl,urllib.error,urllib.request
 import urllib.parse,json,html,re
 
 from html.parser import HTMLParser
+from falco_html_v2 import project_safe_html
 
 class FalcoSemanticHTML(HTMLParser):
     """FalconOS-owned inert HTML structure reader. No JS, CSS or DOM execution."""
@@ -249,16 +250,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # HTTPS-only redirects and every DNS hop are checked above.
             url="https://"+host+"/"+tail
             data=self.validated_https_request(url,60000)
-            # Preserve real headings, paragraph and link boundaries.
-            # Unsupported CSS/JavaScript is never executed or misrepresented.
+            # V2: preserve *bounded safe HTML* with native heading, paragraph,
+            # HTTPS anchor and allowlisted inline CSS semantics. In V1 this
+            # step called semantic_html_text() and destroyed all markup.
+            # No external JS, CSS, images, cookies, forms or active embeds
+            # cross the plaintext host-to-guest VM bridge.
             head=data[:1024].lower()
-            if b"<html" in head or b"<!doctype html" in head or b"<body" in head:
-                data=semantic_html_text(data)
+            projected=b"<html" in head or b"<!doctype html" in head or b"<body" in head
+            if projected:
+                page=project_safe_html(data)
+                if page:
+                    data=page
+                else:
+                    projected=False
+                    data=semantic_html_text(data)
             else:
                 data=data[:2650].decode("utf-8","ignore").encode("utf-8")
-            # No script evaluation; data rendered as inert text in FalconOS.
+            # Browser is the only renderer; never inject Chromium pixels.
             self.send_response(200)
-            self.send_header("Content-Type","text/html; charset=utf-8")
+            self.send_header("Content-Type",
+                "text/html; charset=utf-8" if projected else "text/plain; charset=utf-8")
+            self.send_header("X-Falcon-Document-Mode",
+                "SafeHTML-V2" if projected else "SemanticText-V2")
             self.send_header("Content-Length",str(len(data)))
             self.send_header("X-Falcon-Host-HTTPS-Verified","yes")
             self.send_header("Connection","close")
