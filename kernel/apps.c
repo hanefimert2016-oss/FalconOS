@@ -4098,8 +4098,8 @@ static void browser_page_from_http(void){
     browser_loaded=true;
     browser_scroll=0;
     k_strcpy(browser_status,browser_miniweb?
-        "Host-verified HTTPS | MiniWeb/3 CSS | Safe JS DOM subset":
-        "Host-verified HTTPS | SemanticText/2 fallback");
+        "SafeHTML V2 projection | native HTML/CSS subset | no external JS":
+        "SafeHTML V2 fallback | guest semantic text only");
 }
 /* Direct HTTPS .app.pkg download. CA and redirect policy are checked by
  * the opt-in 18444 host HTTPS companion; the package is transferred through
@@ -4336,8 +4336,9 @@ static void browser_load(void){
     outb(0xE9,browser_loaded?'Y':'N');
 #endif
     if(browser_loaded && browser_host_gateway)
-        k_strcpy(browser_status,
-            "HOST-verified HTTPS | local VM link plaintext | read-only");
+        k_strcpy(browser_status,browser_miniweb?
+            "HOST CA TLS | Falco V2 native HTML projection | local VM hop":
+            "HOST CA TLS | semantic text fallback | local VM hop");
     browser_history_commit();
 }
 /* Native text-web view is shared by Falco and the Browser, not simulated.
