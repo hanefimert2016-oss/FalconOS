@@ -70,7 +70,7 @@ int main(void){
     assert(strcmp(node(&page,"local")->href,"/about")==0);
     assert(falco_miniweb_parse_options(&page,
        "<p id='state'>Before</p>"
-       "<button onclick=\\"document.getElementById('state').textContent='After'\\">Tap</button>"
+       "<button onclick=\"document.getElementById('state').textContent='After'\">Tap</button>"
        "<script>document.getElementById('state').textContent='Injected'</script>",
        false));
     assert(strcmp(node(&page,"state")->text,"Before")==0);
@@ -78,6 +78,6 @@ int main(void){
     /* Disabling safe DOM actions is a UI policy; parser retains text and
      * buttons, but the caller must not dispatch callbacks when disabled. */
     assert(page.buttons==1);
-        puts("PASS: MiniWeb/4 selector specificity, rgb, multi-script safe DOM and native buttons");
+    puts("PASS: MiniWeb/4 selector specificity, rgb, multi-script safe DOM and native buttons");
     return 0;
 }
