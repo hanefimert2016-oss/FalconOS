@@ -4047,8 +4047,9 @@ static bool browser_miniweb;
 static char browser_status[120]="Type an HTTPS address, then press Enter to load.";
 static i32 browser_scroll;
 static bool browser_loaded;
-/* Browser history only tracks successfully decoded pages; not failed URL
- * attempts, downloads, credentials or other local application actions. */
+/* In-memory browsing history tracks only successfully rendered pages, not
+ * failed attempts or downloaded packages. URL query strings may be included;
+ * F9 clears the RAM history and no history is written to FalconFS. */
 static fnav_history_t browser_history;
 static bool browser_history_restoring;
 static void browser_history_commit(void){
@@ -4425,6 +4426,11 @@ static void chrome_input_key(i32 key){
         (void)browser_history_move(1);return;
     }
     if(key==KEY_F2){browser_home_page();return;}
+    if(key==KEY_F9){
+        k_memset(&browser_history,0,sizeof browser_history);
+        k_strcpy(browser_status,"Visited URL history cleared from guest RAM.");
+        return;
+    }
     if((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
         browser_address_focus=true;return;
     }
@@ -4648,7 +4654,7 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
     }
     gfx_text(wx+margin,wy+wh-26,
-        "F2 Home | Alt+Left/Right history | Ctrl+L URL | F5 reload | F8 demo",
+        "F2 Home | Alt+Left/Right history | Ctrl+L URL | F8 demo | F9 clear",
         PAL_TEXT_FAINT);
 }
 
