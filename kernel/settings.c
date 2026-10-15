@@ -36,6 +36,12 @@ void settings_init(void)
     SET.viewport_h    = 0;
     SET.wallpaper_style = 0;
     SET.update_channel = 1; /* Beta: existing users keep the beta channel */
+    SET.browser_zoom=2;      /* 100% readability */
+    SET.browser_home=0;      /* offline safe Falco MiniWeb home */
+    SET.browser_reader=false;
+    SET.browser_scripts=true;  /* only allowlisted literal DOM mutations */
+    SET.browser_contrast=false;
+    SET.browser_compact=false;
     SET.widgets_shown = true;
     SET.center_circle = false;          /* removed in v5 by user request */
     k_strcpy(SET.password, "");
@@ -62,6 +68,8 @@ void settings_init(void)
      * overwritten and the installer wizard is skipped automatically.    */
     diskdb_load();
     if(SET.update_channel>2)SET.update_channel=1;
+    if(SET.browser_zoom>4)SET.browser_zoom=2;
+    if(SET.browser_home>2)SET.browser_home=0;
 #ifdef FALCON_QEMU_UI_GALLERY
     outb(0xE9,'w');outb(0xE9,'B');
     outb(0xE9,(u8)('0'+(SET.wallpaper_style%4u)));
