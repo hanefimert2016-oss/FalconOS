@@ -37,6 +37,9 @@ jobs:
           p=Path("build/falco-sites-audit")
           j=json.loads((p/"falco-12site-results.json").read_text())
           assert len(j["results"])==12, "Wrong site count"
+          assert all(site.get("attempted") is True for site in j["results"]), (
+              "Not all website hostnames were actually requested from Falco: "+
+              str([(s["site"],s["load"]) for s in j["results"] if not s.get("attempted")]))
           for site in j["results"]:
               assert site["screenshot"] and Path(site["screenshot"]).exists(),site
               im=Image.open(site["screenshot"])
