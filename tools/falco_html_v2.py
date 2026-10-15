@@ -28,9 +28,13 @@ def _safe_href(raw: str) -> str:
     if not raw or len(raw)>155 or any(ord(c)<33 for c in raw):
         return ""
     if raw.startswith("https://"):
-        parts=urlsplit(raw)
+        try:
+            parts=urlsplit(raw)
+            port=parts.port
+        except ValueError:
+            return ""
         host=parts.hostname or ""
-        if not host or parts.username or parts.password or parts.port not in (None,443):
+        if not host or parts.username or parts.password or port not in (None,443):
             return ""
         if any(not (x.isascii() and (x.isalnum() or x in ".-")) for x in host):
             return ""
@@ -63,6 +67,7 @@ class _Collector(HTMLParser):
         self.head=0
         self.title=""
         self.title_parts=[]
+        self.in_title=False
         self.main=0
         self.seq=0
     def handle_starttag(self,tag,attrs):
@@ -71,7 +76,11 @@ class _Collector(HTMLParser):
             self.head+=1
         if tag=="title":
             self.title_parts=[]
-        if tag in SKIP_TAGS:self.skip+=1
+            self.in_title=True
+        # HTML void tags have no matching end tag; never let <input> or
+        # <embed> permanently hide following legitimate body content.
+        if tag in SKIP_TAGS and tag not in {"input","embed"}:
+            self.skip+=1
         if tag=="main":self.main+=1
         if self.skip or self.head:return
         if tag in CONTENT_NODES:
@@ -89,9 +98,12 @@ class _Collector(HTMLParser):
         self.handle_starttag(tag,attrs);self.handle_endtag(tag)
     def handle_endtag(self,tag):
         tag=tag.lower()
-        if tag=="title":self.title="".join(self.title_parts).strip()[:85]
+        if tag=="title":
+            self.title="".join(self.title_parts).strip()[:85]
+            self.in_title=False
         if tag=="head":self.head=max(0,self.head-1)
-        if tag in SKIP_TAGS:self.skip=max(0,self.skip-1)
+        if tag in SKIP_TAGS and tag not in {"input","embed"}:
+            self.skip=max(0,self.skip-1)
         if tag=="main":self.main=max(0,self.main-1)
         if tag in CONTENT_NODES and self.open_tags:
             search="p" if tag=="button" else tag
@@ -100,9 +112,8 @@ class _Collector(HTMLParser):
                     self.open_tags=self.open_tags[:index]
                     break
     def handle_data(self,data):
-        if self.head and not self.skip and self.open_tags==[]:
-            # Only explicit <title> text should populate title; this path
-            # receives harmless head text which is omitted from the page.
+        if self.in_title and not self.skip:
+            self.title_parts.append(data[:120])
             return
         if self.skip or self.head or not self.open_tags:return
         item=self.open_tags[-1]
@@ -129,7 +140,8 @@ def project_safe_html(raw: bytes, *, max_bytes: int=MAX_DOCUMENT_BYTES) -> bytes
         entries.append(item)
     main=[item for item in entries if item["main"]]
     if sum(len(item["text"]) for item in main)>85:entries=main
-    prefix=("<html><head><title>Falco V2 Reader</title><style>"+BASIC_STYLE+
+    title=escape(parser.title or "Falco V2 Reader")[:90]
+    prefix=("<html><head><title>"+title+"</title><style>"+BASIC_STYLE+
             "</style></head><body>")
     suffix="</body></html>"
     output=prefix.encode("utf8")
