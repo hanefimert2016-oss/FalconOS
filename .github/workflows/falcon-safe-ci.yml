@@ -1,0 +1,31 @@
+name: FalconOS safe storage and ISO
+on:
+  push:
+    branches: [FalconOS-1-release, 'fix/**']
+  pull_request:
+    branches: [FalconOS-1-release]
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kernel toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-common grub-pc-bin xorriso mtools
+      - name: Test disk image creation
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Test disk persistence with ATA mocks
+        run: |
+          mkdir -p build
+          gcc -std=gnu11 -Wall -Wextra -Werror -Ikernel tests/diskdb_test.c kernel/diskdb.c -o build/test-diskdb
+          ./build/test-diskdb
+      - name: Compile ISO
+        run: make iso
+      - name: Validate Multiboot2 kernel
+        run: grub-file --is-x86-multiboot2 build/falcon.elf
+      - name: Upload FalconOS ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-safe-ISO
+          path: build/FalconOS.iso
