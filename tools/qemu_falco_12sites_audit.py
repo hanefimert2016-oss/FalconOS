@@ -149,7 +149,11 @@ def main():
     time.sleep(.1)
    with socket.socket(socket.AF_UNIX) as sock:
     sock.settimeout(12);sock.connect(str(MONITOR))
-    wait_for_marker(DEBUG,b"L",timeout=100)
+    # The UEFI loader prints FALCONBOOT and MENU text containing the
+    # letters L/T/A. Never mistake these firmware bytes for real setup
+    # key transitions: wait until settings_init emits wB0 and installer L.
+    wait_for_marker(DEBUG,b"wB0L",timeout=100)
+    time.sleep(.7)
     for marker in (b"T",b"A",b"K",b"D",b"U"):
      off=len(dbg());command(sock,"sendkey ret",.25)
      wait_for_marker(DEBUG,marker,after=off,timeout=70)
