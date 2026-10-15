@@ -33,7 +33,7 @@ jobs:
           PATH="/tmp/falcon-v2/bin:$PATH" make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=0 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
           test -s build/FalconOS.iso
           file build/BOOTX64.EFI | grep -F 'PE32+'
-          strings build/falcon.elf | grep -F 'FalconOS 2.0 Preview'
+          strings build/falcon.elf | grep -F 'FalconOS 2.1 Preview'
           strings build/falcon.elf | grep -F 'V2 PREVIEW'
       - name: Verify real FalconBoot 3D color preview baked into UEFI ESP
         run: |
