@@ -24,6 +24,7 @@
 #include "falco_theme.h"
 #include "falco_html_text.h"
 #include "falco_miniweb.h"
+#include "falco_navigation.h"
 #include "file_viewer.h"
 #include "version.h"
 #include "calendar_math.h"
@@ -37,6 +38,7 @@ static void falco_open_site(const char *address);
 static void falco_open_site_host(const char *address);
 static void chrome_input_key(i32 key);
 static void chrome_focus_url(void);
+static void browser_home_page(void);
 static void render_browser(i32 x,i32 y,i32 w,i32 h,u32 frame);
 static void market_launch(i32 i);
 static i32 builtin_app_count(void);
@@ -3813,6 +3815,9 @@ static void falco_input_key(i32 key){
         return;
     }
 #endif
+    if(key==KEY_F2){
+        falco_native_view=false;falco_web_view=true;browser_home_page();return;
+    }
     if(key==KEY_F9){falco_native_open();return;}
     if(falco_native_view){
         if((kbd_mod_state() & KMOD_CTRL) && (key=='l'||key=='L')){
@@ -4042,6 +4047,36 @@ static bool browser_miniweb;
 static char browser_status[120]="Type an HTTPS address, then press Enter to load.";
 static i32 browser_scroll;
 static bool browser_loaded;
+/* Browser history only tracks successfully decoded pages; not failed URL
+ * attempts, downloads, credentials or other local application actions. */
+static fnav_history_t browser_history;
+static bool browser_history_restoring;
+static void browser_history_commit(void){
+    if(browser_loaded&&!browser_history_restoring)
+        (void)fnav_record(&browser_history,browser_address);
+}
+static void browser_load(void);
+static bool browser_history_move(i32 direction){
+    u32 previous=browser_history.cursor;
+    const char*url=fnav_step(&browser_history,direction);
+    if(!url)return false;
+    k_strcpy(browser_address,url);
+    browser_address_len=k_strlen(browser_address);
+    browser_history_restoring=true;
+    browser_load();
+    browser_history_restoring=false;
+    if(!browser_loaded){browser_history.cursor=previous;return false;}
+    browser_address_focus=false;
+    return true;
+}
+static void browser_home_page(void){
+    const char*page=SET.browser_home==1?"https://falconos.tech/":
+                    SET.browser_home==2?"https://example.com/":"falco.demo";
+    k_strcpy(browser_address,page);
+    browser_address_len=k_strlen(page);
+    browser_load();
+    browser_address_focus=false;
+}
 static void browser_page_from_http(void){
     /* Verified TLS transport is separate from safe display. This pure
      * FalconOS renderer preserves semantic blocks and decodes entities;
@@ -4052,7 +4087,8 @@ static void browser_page_from_http(void){
     p+=4;
     /* First try native CSS box layout and constrained DOM literal actions.
      * Unsupported content falls back to the already safe SemanticText/2. */
-    browser_miniweb=falco_miniweb_parse(&browser_dom,p);
+    browser_miniweb=!SET.browser_reader &&
+        falco_miniweb_parse_options(&browser_dom,p,SET.browser_scripts);
     i32 n=falco_html_extract(p,browser_text,sizeof browser_text);
     if(n<=0&&!browser_miniweb){
         k_strcpy(browser_status,"No renderable HTML content received");
@@ -4163,9 +4199,16 @@ static void browser_load(void){
             "<button onclick=\"document.getElementById('result').textContent='Clicked in FalconOS'\">Click to change text</button>"
             "<script>document.getElementById('result').textContent='JavaScript DOM updated!';</script>"
             "</body></html>";
-        browser_miniweb=falco_miniweb_parse(&browser_dom,demo);
+        browser_miniweb=!SET.browser_reader &&
+            falco_miniweb_parse_options(&browser_dom,demo,SET.browser_scripts);
         browser_loaded=browser_miniweb;
+        if(SET.browser_reader){
+            browser_miniweb=false;
+            browser_loaded=falco_html_extract(demo,browser_text,
+                                             sizeof browser_text)>0;
+        }
         browser_scroll=0;
+        browser_history_commit();
         k_strcpy(browser_status,"LOCAL falco.demo | CSS + safe JS DOM subset | offline");
 #ifdef FALCON_QEMU_UI_GALLERY
         outb(0xE9,'w');outb(0xE9,browser_loaded?'Y':'N');
@@ -4270,7 +4313,7 @@ static void browser_load(void){
     if(browser_loaded && browser_host_gateway)
         k_strcpy(browser_status,
             "HOST-verified HTTPS | local VM link plaintext | read-only");
-
+    browser_history_commit();
 }
 /* Native text-web view is shared by Falco and the Browser, not simulated.
  * F6 in Falco loads the requested site with the same certificate checks.
@@ -4351,6 +4394,13 @@ static void falco_open_site(const char *address){
 }
 static void falco_open_site_host(const char *address){falco_navigate(address,true);}
 static void chrome_input_key(i32 key){
+    if((kbd_mod_state() & KMOD_ALT) && key==KEY_LEFT){
+        (void)browser_history_move(-1);return;
+    }
+    if((kbd_mod_state() & KMOD_ALT) && key==KEY_RIGHT){
+        (void)browser_history_move(1);return;
+    }
+    if(key==KEY_F2){browser_home_page();return;}
     if((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
         browser_address_focus=true;return;
     }
@@ -4399,36 +4449,57 @@ static void chrome_input_key(i32 key){
  * Only supported DOM nodes and declarations from falco_miniweb.c.
  * Element bounds remain clipped to the actual browser content area. */
 static i32 browser_miniweb_layout(i32 x,i32 y,i32 w,i32 h,bool paint){
-    const i32 top=y-((browser_scroll>0)?browser_scroll*26:0);
+    const i32 top=y-((browser_scroll>0)?browser_scroll*
+                      (SET.browser_zoom>=3?33:22):0);
     i32 cursor=top;
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool click=paint&&wm_click_enabled();
     if(paint){
-        u32 bg=browser_dom.page_bg;
+        u32 bg=SET.browser_contrast?0x101624u:browser_dom.page_bg;
         if(bg==0xFFFFFFFFu)bg=0xFFFFFFu;
         gfx_rect(x,y,w,h,bg);
     }
     for(u32 i=0;i<browser_dom.count;i++){
         fmw_node_t*n=&browser_dom.nodes[i];
         if(n->hidden||!n->text[0])continue;
-        i32 textsize=n->font_px>=24?16:8;
+        bool larger=SET.browser_zoom>=3 || n->font_px>=24;
+        i32 textsize=larger?16:8;
         i32 chars=(w-32)/textsize;if(chars>87)chars=87;
         if(chars<10)chars=10;
         i32 length=k_strlen(n->text);
         i32 rows=(length+chars-1)/chars;
         if(rows<1)rows=1;
         if(rows>12)rows=12;
-        i32 step=n->font_px>=24?32:20;
+        i32 step=larger?
+            (SET.browser_zoom==4?39:32):
+            (SET.browser_zoom==0?16:SET.browser_zoom==1?18:20);
         i32 hh=12+rows*step+(n->button?12:0);
         if(hh>h-10)hh=h-10;
         i32 row_top=cursor;
         bool visible=row_top>=y && row_top+hh<=y+h;
         if(paint&&visible){
-            if(n->bg!=0xFFFFFFFFu)gfx_round_rect(x+8,row_top,w-16,hh,10,n->bg);
-            else if(n->button)gfx_round_rect(x+8,row_top,w-16,hh,10,0xE1EAF4u);
-            if(n->button)gfx_round_outline(x+8,row_top,w-16,hh,10,0x839ABD);
-            if(n->button&&click &&mx>=x+8&&mx<x+w-8&&my>=row_top&&my<row_top+hh){
-                if(falco_miniweb_action(&browser_dom,i)){
+            if(SET.browser_contrast)
+                gfx_round_rect(x+8,row_top,w-16,hh,10,0x192438u);
+            else if(n->bg!=0xFFFFFFFFu)
+                gfx_round_rect(x+8,row_top,w-16,hh,10,n->bg);
+            else if(n->button)
+                gfx_round_rect(x+8,row_top,w-16,hh,10,0xE1EAF4u);
+            if(n->button||n->href[0])
+                gfx_round_outline(x+8,row_top,w-16,hh,10,
+                    SET.browser_contrast?0xB5CFFFu:0x839ABDu);
+            if(click&&(n->button||n->href[0])&&
+               mx>=x+8&&mx<x+w-8&&my>=row_top&&my<row_top+hh){
+                if(n->href[0]){
+                    char target[FNAV_URL];
+                    if(fnav_resolve(browser_address,n->href,target,sizeof target)){
+                        k_strcpy(browser_address,target);
+                        browser_address_len=k_strlen(target);
+                        browser_load();browser_address_focus=false;
+                    }else k_strcpy(browser_status,"Link blocked: HTTPS-only safe navigation.");
+                    (void)mouse_consume_click();
+                    return cursor; /* page DOM may be replaced by navigation */
+                }
+                if(SET.browser_scripts&&falco_miniweb_action(&browser_dom,i)){
 #ifdef FALCON_QEMU_UI_GALLERY
                     outb(0xE9,'j');outb(0xE9,'Y');
 #endif
@@ -4444,8 +4515,10 @@ static i32 browser_miniweb_layout(i32 x,i32 y,i32 w,i32 h,bool paint){
                 i32 tx=x+18;
                 if(n->align==1)tx=x+w/2-(take*textsize)/2;
                 if(n->align==2)tx=x+w-18-take*textsize;
-                if(n->font_px>=24)gfx_text_lg(tx,row_top+6+row*step,line,n->color);
-                else gfx_text(tx,row_top+6+row*step,line,n->color);
+                u32 text_color=SET.browser_contrast?0xFFFFFFu:
+                               n->href[0]?PAL_ACCENT:n->color;
+                if(larger)gfx_text_lg(tx,row_top+6+row*step,line,text_color);
+                else gfx_text(tx,row_top+6+row*step,line,text_color);
             }
         }
         cursor+=hh+9;
@@ -4461,9 +4534,10 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         if(my>=wy+7&&my<wy+41){
             (void)mouse_consume_click();
             if(mx<wx+100){
-                if(active_app==13)falco_web_view=false;
-                else {browser_loaded=false;browser_address_focus=true;}
+                if(!browser_history_move(-1) && active_app==13)
+                    falco_web_view=false;
             }else if(mx<wx+196)browser_load();
+            else if(mx<wx+287)browser_home_page();
             else if(mx>=wx+ww-160){
                 browser_host_gateway=!browser_host_gateway;
                 k_strcpy(browser_status,browser_host_gateway?
@@ -4486,8 +4560,11 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_text(wx+margin+10,wy+15,"< Back",style.text);
     gfx_round_rect(wx+104,wy+7,88,32,10,style.tab_inactive);
     gfx_text(wx+114,wy+15,"Reload",style.muted);
-    gfx_text(wx+211,wy+16,active_app==13?"Falco Web":"Falcon Browser",style.text);
-    gfx_rect(wx+208,wy+42,114,2,style.accent);
+    gfx_round_rect(wx+201,wy+7,83,32,10,style.tab_inactive);
+    gfx_text(wx+218,wy+15,"Home",style.text);
+    if(ww>665)gfx_text(wx+299,wy+16,
+        active_app==13?"Falco Web":"Falcon Browser",style.text);
+    gfx_rect(wx+288,wy+42,95,2,style.accent);
     gfx_round_rect(wx+ww-160,wy+7,141,32,10,style.tab_inactive);
     gfx_round_outline(wx+ww-160,wy+7,141,32,10,style.chrome_border);
     gfx_text(wx+ww-150,wy+15,
@@ -4499,11 +4576,13 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
                       browser_address_focus?style.accent:style.hairline);
     gfx_circle(sx+15,sy+17,5,style.secure);
     gfx_text(sx+27,sy+11,browser_address,style.text);
-    gfx_rect(wx,wy+102,ww,34,style.chrome);
-    gfx_text(wx+margin,wy+113,browser_status,
-             browser_loaded?style.secure:style.muted);
-    i32 py=wy+146;
-    i32 height=wh-184;
+    if(!SET.browser_compact){
+        gfx_rect(wx,wy+102,ww,34,style.chrome);
+        gfx_text(wx+margin,wy+113,browser_status,
+                 browser_loaded?style.secure:style.muted);
+    }
+    i32 py=wy+(SET.browser_compact?110:146);
+    i32 height=wh-(SET.browser_compact?148:184);
     if(height<70)height=70;
     gfx_round_rect(sx,py,sw,height,12,style.surface);
     gfx_round_outline(sx,py,sw,height,12,style.hairline);
@@ -4545,7 +4624,7 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
     }
     gfx_text(wx+margin,wy+wh-26,
-        "Ctrl+L URL | Enter load | F5 reload | Esc exit URL | Up/Down scroll",
+        "F2 Home | Alt+Left/Right history | Ctrl+L URL | F5 reload | F8 demo",
         PAL_TEXT_FAINT);
 }
 
