@@ -165,9 +165,11 @@ def main():
     # wraps to YES and starts a second username page. Keep the secure
     # default: finish with Enter without toggling the selection.
     off=len(dbg());command(sock,"sendkey ret",.28)
-    wait_for_marker(DEBUG,b"W",after=off,timeout=70)
-    off=len(dbg());command(sock,"sendkey ret",.38)
-    wait_for_marker(DEBUG,b"H",after=off,timeout=70)
+    wait_for_marker(DEBUG,b"Z",after=off,timeout=70)
+    # Blank-password user created in this disposable guest is auto-logged in.
+    # FalconOS emits aUH rather than lockscreen W; pressing Enter a second
+    # time here is an unintended desktop action.
+    wait_for_marker(DEBUG,b"aUH",after=off,timeout=70)
     command(sock,"sendkey esc",.15)
     command(sock,"sendkey f2",.55)
     command(sock,"sendkey right",.18)
