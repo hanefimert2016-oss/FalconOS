@@ -1,4 +1,4 @@
-# FalconOS V2 public preview — 15 October 2026
+# FalconOS V2.1 public preview — 15 October 2026
 
 ## Branch and scope
 
@@ -73,4 +73,4 @@ compatibility with any specific public website.
 5. Signed Marketplace apps, atomic system updates, verified rollback,
    comprehensive security audits and actual bare-metal compatibility matrix.
 
-**Release classification: V2 PREVIEW. Not V2 stable, not production-safe.**
+**Release classification: V2.1 PREVIEW. Not V2 stable, not production-safe.**
