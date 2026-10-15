@@ -1,4 +1,4 @@
-# FalconOS V2 — public preview branch
+# FalconOS V2.1 Preview — public preview branch
 
 **This is the published `v2` source branch, separate from V1 and `v2-beta`.**
 It is a research/VM preview; **not a hardware-safe finished operating system**.
@@ -6,11 +6,13 @@ Pre-release builds and unmodified QEMU screenshots are published by
 [the V2 verification workflow](../../actions/workflows/v2-publication-qa.yml).
 Do not flash the experimental ISO to a physical disk or assume reliable drivers.
 
-### Falco V2 — native HTML projection, not a Chrome screenshot
+### Falco V2.1 — native HTML/CSS reader, not a Chrome screenshot
 
 The HTTPS companion now uses `tools/falco_html_v2.py` to **preserve
-actual source-page headings, paragraphs, safe HTTPS links, and some
-inline CSS** as bounded inert HTML. Earlier builds called
+actual source-page headings, paragraphs, safe HTTPS links, image alt
+captions, and a bounded allowlist of embedded/inline CSS** as inert HTML.
+Falco MiniWeb now decodes numeric and named HTML entities and handles
+nested links/containers without losing trailing text. Earlier builds called
 `semantic_html_text()` and dropped every HTML tag before the guest
 received it. The guest's existing MiniWeb software renderer interprets
 the projected tags and draws its own framebuffer. The host never
