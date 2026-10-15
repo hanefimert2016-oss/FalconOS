@@ -4455,11 +4455,17 @@ static void chrome_input_key(i32 key){
         return;
     }
     if(key==KEY_F6){
+#ifdef FALCON_BEARSSL
         browser_host_gateway=!browser_host_gateway;
         browser_loaded=false;browser_result[0]=0;
         k_strcpy(browser_status,browser_host_gateway?
-            "HOST HTTPS enabled (no guest TLS). Start host gateway first.":
-            "NATIVE HTTPS mode - BearSSL checks CA and hostname.");
+            "HOST CA TLS enabled; VM NAT hop is plaintext.":
+            "Guest BearSSL TLS enabled; CA and hostname checked.");
+#else
+        browser_host_gateway=true;
+        k_strcpy(browser_status,
+            "Guest TLS is not compiled; host-verified HTTPS only.");
+#endif
         return;
     }
     if(key==KEY_UP){if(browser_scroll>0)browser_scroll--;return;}
@@ -4600,10 +4606,17 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
             }else if(mx<wx+196)browser_load();
             else if(mx<wx+287)browser_home_page();
             else if(mx>=wx+ww-160){
+#ifdef FALCON_BEARSSL
                 browser_host_gateway=!browser_host_gateway;
+                browser_loaded=false;
                 k_strcpy(browser_status,browser_host_gateway?
-                    "HOST TLS via companion bridge enabled":
-                    "NATIVE TLS (BearSSL) enabled");
+                    "Host CA verified; private guest hop plaintext.":
+                    "Guest BearSSL TLS validates certificates.");
+#else
+                browser_host_gateway=true;
+                k_strcpy(browser_status,
+                    "Guest TLS not in this build. Host CA gateway required.");
+#endif
             }else browser_address_focus=true;
             return;
         }
@@ -4660,9 +4673,13 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         gfx_text_lg(sx+20,py+26,"Falcon Browser",PAL_TEXT);
         gfx_text(sx+20,py+76,"Open a real HTTPS page using Enter.",PAL_TEXT);
         gfx_text(sx+20,py+102,
-            "Certificates validated by BearSSL, no HTTP fallback.",PAL_TEXT_DIM);
+            browser_host_gateway?
+            "HOST CA verified; guest-to-host link is plain private TCP.":
+            "Guest BearSSL certificate and hostname validation.",
+            PAL_TEXT_DIM);
         gfx_text(sx+20,py+128,
-            "Supports CSS subset + safe JS DOM actions; no full web engine.",PAL_TEXT_DIM);
+            "Falco V2.1 HTML/CSS reader subset; no general JavaScript VM.",
+            PAL_TEXT_DIM);
     }else if(browser_miniweb){
         browser_miniweb_layout(sx+1,py+1,sw-2,height-2,true);
     }else{
