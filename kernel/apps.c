@@ -3020,7 +3020,9 @@ static void render_calc(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
  *  and uses left/right (or Enter) to toggle / cycle the value.            */
 typedef enum {
     SR_THEME = 0, SR_ACCENT, SR_AERO, SR_LANG, SR_KBD, SR_TZ, SR_DOCK,
-    SR_ANIM, SR_WIDGETS, SR_WALLPAPER, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_DRIVERS,
+    SR_ANIM, SR_WIDGETS, SR_WALLPAPER,
+    SR_WEB_ZOOM, SR_WEB_HOME, SR_WEB_READER, SR_WEB_JS, SR_WEB_CONTRAST,
+    SR_WEB_COMPACT, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_DRIVERS,
     SR_SAVE, SR_LOCK, SR_COUNT
 } set_row_t;
 
@@ -3140,6 +3142,30 @@ static void set_input_key(i32 key)
 #endif
             break;
         }
+        case SR_WEB_ZOOM:
+            SET.browser_zoom=(u8)(((i32)SET.browser_zoom+d+5)%5);
+            (void)diskdb_save();
+            break;
+        case SR_WEB_HOME:
+            SET.browser_home=(u8)(((i32)SET.browser_home+d+3)%3);
+            (void)diskdb_save();
+            break;
+        case SR_WEB_READER:
+            SET.browser_reader=!SET.browser_reader;
+            (void)diskdb_save();
+            break;
+        case SR_WEB_JS:
+            SET.browser_scripts=!SET.browser_scripts;
+            (void)diskdb_save();
+            break;
+        case SR_WEB_CONTRAST:
+            SET.browser_contrast=!SET.browser_contrast;
+            (void)diskdb_save();
+            break;
+        case SR_WEB_COMPACT:
+            SET.browser_compact=!SET.browser_compact;
+            (void)diskdb_save();
+            break;
         case SR_VIEWPORT:
             { i32 n = (i32)(sizeof VIEWPORT_NAMES / sizeof *VIEWPORT_NAMES);
               i32 v = (set_viewport_idx + d + n) % n;
@@ -3318,6 +3344,34 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
               T("Wallpaper", "Arka plan"),
               wallpapers[SET.wallpaper_style%4u],
               set_row==SR_WALLPAPER,PAL_ACCENT);
+    }
+
+    /* Falcon Web: all six controls affect the native Falco browser. ---- */
+    {
+        static const char*const zoom[]={"75%","90%","100%","125%","150%"};
+        static const char*const home[]={"Offline MiniWeb","falconos.tech","example.com"};
+        s_row(sx,sy+SR_WEB_ZOOM*step,sw,T("Web text zoom","Web yazi olcegi"),
+              zoom[SET.browser_zoom<=4?SET.browser_zoom:2],
+              set_row==SR_WEB_ZOOM,PAL_ACCENT);
+        s_row(sx,sy+SR_WEB_HOME*step,sw,T("Web home page","Web ana sayfasi"),
+              home[SET.browser_home<=2?SET.browser_home:0],
+              set_row==SR_WEB_HOME,PAL_TEXT);
+        s_row(sx,sy+SR_WEB_READER*step,sw,T("Web reader mode","Web okuma modu"),
+              SET.browser_reader?T("on","acik"):T("off","kapali"),
+              set_row==SR_WEB_READER,SET.browser_reader?COL_OK:PAL_TEXT_DIM);
+        s_row(sx,sy+SR_WEB_JS*step,sw,
+              T("Safe JavaScript DOM actions","Guvenli JS DOM islemleri"),
+              SET.browser_scripts?T("allowed","izinli"):T("blocked","kapali"),
+              set_row==SR_WEB_JS,SET.browser_scripts?COL_OK:PAL_TEXT_DIM);
+        s_row(sx,sy+SR_WEB_CONTRAST*step,sw,
+              T("Web high contrast","Web yuksek kontrast"),
+              SET.browser_contrast?T("on","acik"):T("off","kapali"),
+              set_row==SR_WEB_CONTRAST,
+              SET.browser_contrast?COL_OK:PAL_TEXT_DIM);
+        s_row(sx,sy+SR_WEB_COMPACT*step,sw,
+              T("Web compact toolbar","Web kompakt cubuk"),
+              SET.browser_compact?T("on","acik"):T("off","kapali"),
+              set_row==SR_WEB_COMPACT,SET.browser_compact?COL_OK:PAL_TEXT_DIM);
     }
 
     /* Viewport / resolution ------------------------------------------- */
