@@ -4479,6 +4479,29 @@ static void chrome_input_key(i32 key){
  * Rendering is in C, in the guest framebuffer; no browser host pixels.
  * Only supported DOM nodes and declarations from falco_miniweb.c.
  * Element bounds remain clipped to the actual browser content area. */
+/* Word-aware text layout for the native 8/16px Falcon framebuffer fonts.
+ * Never split a line in the middle of an ordinary word when there is a
+ * whitespace boundary. Bounded UTF-8-aware slicing avoids invalid trails. */
+static i32 browser_wrapped_line(const char*src,i32 length,i32 at,i32 limit,
+                                char*line){
+    while(at<length&&src[at]==' ')at++;
+    if(at>=length){line[0]=0;return length;}
+    i32 end=at+limit;if(end>length)end=length;
+    if(end<length){
+        i32 split=end;
+        while(split>at+8&&src[split-1]!=' ')split--;
+        if(split>at+8)end=split;
+        /* Do not truncate within a UTF-8 codepoint. */
+        while(end>at&&((u8)src[end]&0xC0u)==0x80u)end--;
+    }
+    if(end<=at)end=at+1;
+    i32 chars=0;
+    for(i32 i=at;i<end&&chars<126;i++)line[chars++]=src[i];
+    while(chars>0&&line[chars-1]==' ')chars--;
+    line[chars]=0;
+    while(end<length&&src[end]==' ')end++;
+    return end;
+}
 static i32 browser_miniweb_layout(i32 x,i32 y,i32 w,i32 h,bool paint){
     const i32 top=y-((browser_scroll>0)?browser_scroll*
                       (SET.browser_zoom>=3?33:22):0);
@@ -4495,12 +4518,18 @@ static i32 browser_miniweb_layout(i32 x,i32 y,i32 w,i32 h,bool paint){
         if(n->hidden||!n->text[0])continue;
         bool larger=SET.browser_zoom>=3 || n->font_px>=24;
         i32 textsize=larger?16:8;
-        i32 chars=(w-32)/textsize;if(chars>87)chars=87;
+        i32 chars=(w-32)/textsize;
+        if(chars>110)chars=110;
         if(chars<10)chars=10;
         i32 length=k_strlen(n->text);
-        i32 rows=(length+chars-1)/chars;
+        i32 rows=0,probe=0;
+        while(probe<length&&rows<12){
+            char preview[128];
+            i32 next=browser_wrapped_line(n->text,length,probe,chars,preview);
+            if(next<=probe)break;
+            probe=next;rows++;
+        }
         if(rows<1)rows=1;
-        if(rows>12)rows=12;
         i32 step=larger?
             (SET.browser_zoom==4?39:32):
             (SET.browser_zoom==0?16:SET.browser_zoom==1?18:20);
@@ -4537,12 +4566,13 @@ static i32 browser_miniweb_layout(i32 x,i32 y,i32 w,i32 h,bool paint){
                 }
                 (void)mouse_consume_click();click=false;
             }
-            for(i32 row=0;row<rows;row++){
-                char line[96];i32 offset=row*chars;
-                i32 take=length-offset;if(take>chars)take=chars;
-                if(take<=0)break;
-                for(i32 k=0;k<take;k++)line[k]=n->text[offset+k];
-                line[take]=0;
+            i32 offset=0;
+            for(i32 row=0;row<rows&&offset<length;row++){
+                char line[128];
+                i32 next=browser_wrapped_line(n->text,length,offset,chars,line);
+                if(next<=offset)break;
+                offset=next;
+                i32 take=k_strlen(line);
                 i32 tx=x+18;
                 if(n->align==1)tx=x+w/2-(take*textsize)/2;
                 if(n->align==2)tx=x+w-18-take*textsize;
