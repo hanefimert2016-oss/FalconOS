@@ -60,6 +60,55 @@ class FalcoV2SafeHTMLTests(unittest.TestCase):
     def test_empty_or_only_script_page_no_fake_page(self):
         self.assertEqual(project_safe_html(b"<html><script>evil()</script></html>"),b"")
         self.assertRaises(ValueError,project_safe_html,b"<h1>x</h1>",max_bytes=10000)
+    def test_accessible_image_and_icon_links_without_fake_pixels(self):
+        raw=(b"<html><body><main>"
+             b"<h2>Illustrated story</h2>"
+             b"<a aria-label='Read the full article' href='/article'><svg>"
+             b"<path d='...'/></svg></a>"
+             b"<a href='https://example.com/gallery'>"
+             b"<img src='/image.webp' alt='Gallery photographs'/></a>"
+             b"<img src='/photo.png' alt='Rocket launch platform'/>"
+             b"</main></body></html>")
+        out=project_safe_html(raw).decode()
+        self.assertIn(">Read the full article</a>",out)
+        self.assertIn(">Gallery photographs</a>",out)
+        self.assertIn("[Image: Rocket launch platform]",out)
+        self.assertNotIn("<img",out)
+        self.assertNotIn("<svg",out)
+        self.assertNotIn("src=",out)
+
+    def test_whitelisted_real_stylesheet_selectors(self):
+        raw=(b"<html><head><style>"
+             b"h1 { color: #2266bb; font-size: 28px; }"
+             b".hero{color:rgb(10,20,30);}"
+             b"a:hover{color:red}"
+             b"@import url('https://evil.test/style');"
+             b"</style><title>Actual CSS page</title></head>"
+             b"<body><main><h1 class='hero' id='welcome'>Headline</h1>"
+             b"<a href='/guide'>Guide</a></main></body></html>")
+        out=project_safe_html(raw).decode()
+        self.assertIn("<title>Actual CSS page</title>",out)
+        self.assertIn("h1{color:#2266bb;font-size:28px}",out)
+        self.assertIn(".hero{color:rgb(10,20,30)}",out)
+        self.assertIn('class="hero"',out)
+        self.assertIn('id="welcome"',out)
+        self.assertNotIn("hover",out)
+        self.assertNotIn("@import",out)
+        self.assertNotIn("evil.test",out)
+
+    def test_unsafe_css_properties_and_id_injection_not_projected(self):
+        raw=(b"<html><head><style>"
+             b"#safe{background:url('http://bad.test/pixel');color:#123456;}"
+             b"#x>script{color:red}</style></head>"
+             b"<body><p id='safe' style='position:absolute;opacity:0;"
+             b"background-image:url(javascript:evil);color:#456789'>Text</p>"
+             b"<p id='x\" onclick=\"evil()'>Other</p></body></html>")
+        out=project_safe_html(raw).decode()
+        self.assertIn("color:#456789",out)
+        for token in ("position:absolute","opacity:0","javascript:","onclick=",
+                      "bad.test","<script"):
+            self.assertNotIn(token,out)
+
     def test_guest_http_reply_contains_projected_html(self):
         handler=object.__new__(gateway.Handler)
         handler.path="/fetch/example.com/"
