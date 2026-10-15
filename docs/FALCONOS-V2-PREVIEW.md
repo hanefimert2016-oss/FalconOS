@@ -43,6 +43,44 @@ Host bridge security boundary:
 - bridge over private VM NAT TCP remains **plaintext**, not end-to-end TLS
 - no web accounts, passwords, banking or personal secrets in Falco
 
+## FalconOS 2.1 Preview — browser upgrade (15 October 2026)
+
+This upgrade is committed directly to the public `v2` branch. It is
+incremental functionality, **not a production-quality HTML5 browser**:
+
+- **Native HTML nesting:** MiniWeb tracks the bounded ancestor stack so text
+  after a child link/heading is not silently lost. A closing tag restores
+  its actual parent rather than discarding the remainder of a paragraph.
+- **HTML text + links:** `&amp;`, `&quot;`, `&apos;`, `&nbsp;`
+  and bounded decimal/hex numeric Unicode entities are decoded in the
+  freestanding C renderer. Real HTTPS query links with `&amp;` now navigate
+  using the intended `&`; malformed or surrogate entities remain inert.
+- **Verified site readability:** host SafeHTML projection can retain
+  allowlisted flat site styles (safe colors, typography), simple classes
+  and element IDs; unsupported CSS, external scripts and JavaScript are
+  not executed. The bounded page transport budget increases from
+  2,850 to 3,200 bytes without removing existing HTTP-response limits.
+- **Accessibility fallback:** native reader accepts site-authored
+  `aria-label` on otherwise empty links; `img alt` inside a link
+  contributes its name. Up to five meaningful image alt descriptions
+  appear as clearly labeled **text captions**, not images or invented
+  replacement photographs. Headings h4–h6 and definition list text
+  are projected into native supported text nodes.
+- **HTTPS UI honesty:** in builds without BearSSL, F6/the HTTPS toggle
+  no longer falsely announces usable native TLS; only the real
+  host-CA-verified companion mode remains. The private host-to-guest
+  TCP hop is explicitly not TLS. Do not enter sensitive credentials.
+- **Regression:** additional native tests exercise real nested HTML,
+  UTF-8/numeric entities, query parameters, malformed input and CSS
+  projection security; the public V2 Actions workflow builds the
+  real GRUB-free ISO and boots it under OVMF/QEMU. A separate workflow
+  replays public sites and retains actual framebuffer PNG screenshots.
+
+Despite better typography and more preserved structure, the CSS is
+a restricted reading-mode subset. Images, JS app frameworks, interactive
+maps, video and client-side route rendering still are **not supported**.
+Network/CDN timeouts may also affect individual public-site tests.
+
 ## Preview verification
 
 Workflow stages:
