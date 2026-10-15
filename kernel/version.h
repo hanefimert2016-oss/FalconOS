@@ -1,5 +1,5 @@
-/* FalconOS v2-beta -- single authoritative, user-visible release identity.
- * This header exists in v2-beta only; V1 release remains unchanged. */
+/* FalconOS V2.1 Preview -- public V2 branch release identity.
+ * V1 stable branch remains unchanged; this is an experimental VM preview. */
 #ifndef FALCON_VERSION_H
 #define FALCON_VERSION_H
 
@@ -12,8 +12,8 @@
 #define FALCON_RELEASE_LABEL         "FalconOS 2.0.1 Preview"
 #define FALCON_RELEASE_SEMVER        "2.0.1-preview"
 #else
-#define FALCON_RELEASE_LABEL         "FalconOS 2.0 Preview"
-#define FALCON_RELEASE_SEMVER        "2.0.0-preview"
+#define FALCON_RELEASE_LABEL         "FalconOS 2.1 Preview"
+#define FALCON_RELEASE_SEMVER        "2.1.0-preview"
 #endif
 #define FALCON_RELEASE_BADGE         "V2 PREVIEW"
 #define FALCON_RELEASE_CHANNEL       "v2"
