@@ -11,7 +11,7 @@ static u32 len(const char*s,u32 limit){
 }
 static bool clean_url(const char*s){
     if(!s||!*s)return false;
-    for(u32 i=0;s[i]&&i<FNAV_URL;i++){
+    for(u32 i=0;i<FNAV_URL&&s[i];i++){
         unsigned char c=(unsigned char)s[i];
         if(c<33||c>126||c=='<'||c=='>'||c=='"'||
            c==39||c=='\\')return false;
@@ -64,7 +64,7 @@ bool fnav_resolve(const char*current,const char*href,char*out,u32 cap){
     }
     if(!prefix(current,"https://")||!clean_url(current)||
        !href[0]||href[0]=='#'||href[0]=='?'||
-       href[0]==':'||href[0]=='/'&&href[1]=='/')return false;
+       href[0]==':'||(href[0]=='/'&&href[1]=='/'))return false;
     /* Reject any parent-navigation or colon (custom scheme) in relatives. */
     for(u32 i=0;href[i];i++){
         if(href[i]==':')return false;
