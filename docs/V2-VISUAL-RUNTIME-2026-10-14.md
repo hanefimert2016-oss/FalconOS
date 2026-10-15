@@ -52,6 +52,54 @@ These features must not be labeled as fully functional MP4/video playback,
 a general native scripting VM, a complete GPU driver, or safe physical
 storage installation.
 
+## Falcon Web and personalization — 15 October 2026
+
+The first priority is the **native** Falcon Web system (Falco plus the
+shared Browser rendering surface). This iteration delivers actual code,
+not a hosted browser screenshot:
+
+- **Native navigation:** back/forward history retains up to ten
+  successfully rendered URLs (not failed or interrupted downloads).
+  A new navigation drops forward history; oldest entries fall off safely.
+  Browser back button and Alt+Left/Right navigate recorded pages; F2
+  opens the configured homepage.
+- **Real link clicks:** HTML `<a href>` surfaces now carry bounded
+  URLs into the native UI. Navigation accepts explicit HTTPS destinations
+  and carefully checked same-origin root/relative URLs. Plain HTTP,
+  `javascript:`, `data:`, path traversal and scheme-relative URLs are
+  rejected. No link executes code inside the guest.
+- **Native Falcon Start:** a small offline HTML/CSS homepage with
+  real HTTPS hyperlinks to FalconOS, Wikipedia, GitHub and an
+  example HTTPS site. `falco.demo` stays available independently as
+  the *explicit* DOM/CSS self-test, not a spoofed live website.
+- **Settings > Falcon Web:** six preferences implemented and integrated:
+  text density/zoom presets 75/90/100/125/150 (approximate with the
+  current 8/16-pixel software fonts), home page (offline start,
+  falconos.tech, example.com), text-only Reader mode, safe literal DOM
+  mutations on/off, high-contrast content, and compact toolbar. Each
+  updates the live browser path, and settings save through existing
+  FalconFS when a **previously validated dedicated volume** is selected.
+  Otherwise preferences are session-only and must never silently write
+  the user's physical disk.
+- **Safe-script switch:** when disabled, the HTML parser suppresses even
+  the allowed literal on-load DOM changes, and the native UI does not
+  dispatch onclick actions. It was never a general-purpose JS engine.
+- **Compatibility migration:** FalconFS settings imports the prior
+  saved-structure length and defaults the new preference fields; user
+  accounts, themes and other earlier fields retain their original
+  offsets. Current and legacy values are bounded before use.
+- **Regression coverage:** link and script opt-out tests, strict
+  URL normalization/history tests, existing native media/HTML tests,
+  real ISO compile and QEMU framebuffer boot in GitHub Actions.
+
+**Remaining:** a standards-compatible HTML DOM, real CSS layout engine,
+general isolated JavaScript runtime, HTTP cookie partitioning, caching,
+multi-tab session management, forms, image formats in network documents,
+accessibility tree, site permissions and memory-safe full-site rendering.
+The existing bounded host-CA-verified HTTPS bridge or optional
+BearSSL guest path is still necessary; **Falco is not yet Chromium**.
+The CI boot smoke does not certify complex public websites render correctly.
+
 ## Outstanding blocking work — not shipping yet
 
 | Area | Current state | Release gate |
