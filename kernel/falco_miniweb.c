@@ -152,6 +152,61 @@ static void apply_rules(fmw_node_t*n){
             if(selector_level(n,rules[i].selector)==level)
                 declarations(n,rules[i].decl,(u32)k_strlen(rules[i].decl));
 }
+/* Bounded HTML entities for real HTTPS page text and href attributes.
+ * All string scans are bounded by their actual tag/text end pointers. */
+static u32 entity_utf8(const char*p,const char*end,char out[4],u32*consumed){
+    if(p>=end||*p!='&')return 0;
+    const char*q=p+1;
+    static const struct{const char*name;char value;} names[]={
+        {"amp;",'&'},{"lt;",'<'},{"gt;",'>'},
+        {"quot;",'"'},{"apos;",39},{"nbsp;",' '}
+    };
+    for(u32 i=0;i<sizeof names/sizeof names[0];i++){
+        const char*n=names[i].name,*t=q;
+        while(t<end&&*n&&*t==*n){t++;n++;}
+        if(!*n){out[0]=names[i].value;*consumed=(u32)(t-p);return 1;}
+    }
+    if(q>=end||*q!='#')return 0;
+    q++;u32 base=10,number=0,digits=0;
+    if(q<end&&(*q=='x'||*q=='X')){base=16;q++;}
+    while(q<end&&digits<7){
+        u32 digit=base==16?hex(*q):
+                  (*q>='0'&&*q<='9'?(u32)(*q-'0'):99);
+        if(digit>=base)break;
+        if(number>(0x10FFFFu-digit)/base)return 0;
+        number=number*base+digit;digits++;q++;
+    }
+    if(!digits||q>=end||*q!=';'||!number||number>0x10FFFFu||
+       (number>=0xD800u&&number<=0xDFFFu))return 0;
+    *consumed=(u32)(q-p)+1u;
+    if(number<32u||number==127u||number==160u)number=' ';
+    if(number<0x80u){out[0]=(char)number;return 1;}
+    if(number<0x800u){
+        out[0]=(char)(0xC0u|(number>>6));out[1]=(char)(0x80u|(number&63u));
+        return 2;
+    }
+    if(number<0x10000u){
+        out[0]=(char)(0xE0u|(number>>12));
+        out[1]=(char)(0x80u|((number>>6)&63u));
+        out[2]=(char)(0x80u|(number&63u));return 3;
+    }
+    out[0]=(char)(0xF0u|(number>>18));
+    out[1]=(char)(0x80u|((number>>12)&63u));
+    out[2]=(char)(0x80u|((number>>6)&63u));
+    out[3]=(char)(0x80u|(number&63u));return 4;
+}
+static void attr_decode(char*out,u32 cap,const char*b,const char*end){
+    u32 used=0;const char*p=b;
+    while(p<end&&used+1<cap){
+        char buf[4];u32 consumed=0;
+        u32 count=entity_utf8(p,end,buf,&consumed);
+        if(count&&used+count<cap){
+            for(u32 k=0;k<count;k++)out[used++]=buf[k];
+            p+=consumed;
+        }else out[used++]=*p++;
+    }
+    out[used]=0;trim(out);
+}
 /* HTML attributes are quoted literals only. This ignores events other than
  * inline onclick, which is parsed but NEVER evaluated as arbitrary JS. */
 static void attr(const char*b,const char*end,const char*key,char*out,u32 cap){
@@ -170,7 +225,7 @@ static void attr(const char*b,const char*end,const char*key,char*out,u32 cap){
         s=b;
         if(q){while(b<end&&*b!=q)b++;}
         else{while(b<end&&!space(*b)&&*b!='>')b++;}
-        if(eq(name,key)){slice(out,cap,s,b);return;}
+        if(eq(name,key)){attr_decode(out,cap,s,b);return;}
         if(b<end&&q&&*b==q)b++;
     }
 }
@@ -181,15 +236,23 @@ static bool is_node(const char*t){
 }
 static void push_text(fmw_node_t*n,const char*p,const char*end){
     u32 used=(u32)k_strlen(n->text);
-    for(;p<end&&used+1<sizeof n->text;p++){
-        if(*p=='&'){
-            if(end-p>=5&&starts(p,"&amp;")){n->text[used++]='&';p+=4;continue;}
-            if(end-p>=4&&starts(p,"&lt;")){n->text[used++]='<';p+=3;continue;}
-            if(end-p>=4&&starts(p,"&gt;")){n->text[used++]='>';p+=3;continue;}
+    while(p<end&&used+1<sizeof n->text){
+        char buf[4];u32 consumed=0;
+        u32 count=entity_utf8(p,end,buf,&consumed);
+        if(count&&used+count<sizeof n->text){
+            p+=consumed;
+            for(u32 k=0;k<count;k++){
+                char c=buf[k];
+                if(space(c)){
+                    if(used&&n->text[used-1]!=' ')n->text[used++]=' ';
+                }else n->text[used++]=c;
+            }
+            continue;
         }
-        if(space(*p)){
+        char c=*p++;
+        if(space(c)){
             if(used&&n->text[used-1]!=' ')n->text[used++]=' ';
-        }else if((unsigned char)*p>=32)n->text[used++]=*p;
+        }else if((unsigned char)c>=32)n->text[used++]=c;
     }
     n->text[used]=0;
 }
