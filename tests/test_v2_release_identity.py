@@ -8,9 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 class V2ReleaseBrandingTests(unittest.TestCase):
     def test_single_authoritative_beta_label(self):
         version = (ROOT / "kernel/version.h").read_text(encoding="utf-8")
-        self.assertIn('#define FALCON_RELEASE_LABEL         "FalconOS 2.0 Beta"', version)
-        self.assertIn('#define FALCON_RELEASE_BADGE         "V2 BETA"', version)
-        self.assertIn('#define FALCON_RELEASE_CHANNEL       "v2-beta"', version)
+        self.assertIn('#define FALCON_RELEASE_LABEL         "FalconOS 2.0 Preview"', version)
+        self.assertIn('#define FALCON_RELEASE_BADGE         "V2 PREVIEW"', version)
+        self.assertIn('#define FALCON_RELEASE_CHANNEL       "v2"', version)
 
     def test_about_and_launcher_share_release_label(self):
         apps = (ROOT / "kernel/apps.c").read_text(encoding="utf-8")
