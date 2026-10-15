@@ -4071,7 +4071,7 @@ static bool browser_history_move(i32 direction){
 }
 static void browser_home_page(void){
     const char*page=SET.browser_home==1?"https://falconos.tech/":
-                    SET.browser_home==2?"https://example.com/":"falco.demo";
+                    SET.browser_home==2?"https://example.com/":"falco.start";
     k_strcpy(browser_address,page);
     browser_address_len=k_strlen(page);
     browser_load();
@@ -4183,7 +4183,8 @@ static void browser_load(void){
     /* Explicit offline self-test, not a spoofed HTTPS page. Opens even when
      * there is no network card, and uses the exact same HTML/CSS/JS parser
      * and framebuffer renderer as external, host-verified HTTPS content. */
-    if(k_strcmp(browser_address,"falco.demo")==0 ||
+    if(k_strcmp(browser_address,"falco.start")==0 ||
+       k_strcmp(browser_address,"falco.demo")==0 ||
        k_strcmp(browser_address,"falco://demo")==0){
         static const char demo[]=
             "<html><head><title>Falco MiniWeb/3</title>"
@@ -4199,17 +4200,40 @@ static void browser_load(void){
             "<button onclick=\"document.getElementById('result').textContent='Clicked in FalconOS'\">Click to change text</button>"
             "<script>document.getElementById('result').textContent='JavaScript DOM updated!';</script>"
             "</body></html>";
+        static const char start[]=
+            "<html><head><title>Falco Start</title><style>"
+            "body{background:#101c32}h1{color:#1273c9;font-size:34px}"
+            "h2{color:#285acc;font-size:24px}"
+            ".intro{color:#304568;font-size:18px}"
+            "a{color:#1268d8;font-size:20px;background:#edf3fe}"
+            ".note{color:#51617b;font-size:16px}"
+            "</style></head><body>"
+            "<h1>FALCO  /  Start</h1>"
+            "<p class='intro'>FalconOS native web. Search securely with HTTPS.</p>"
+            "<h2>Your starting points</h2>"
+            "<a href='https://falconos.tech/'>FalconOS website</a>"
+            "<a href='https://www.wikipedia.org/'>Wikipedia</a>"
+            "<a href='https://github.com/'>GitHub</a>"
+            "<a href='https://example.com/'>Example HTTPS page</a>"
+            "<p class='note'>F2 Home / Alt+Left Back / F5 Reload</p>"
+            "<p class='note'>Reader, zoom, contrast and privacy: Settings.</p>"
+            "<p class='note'>Only a safe HTML/CSS and literal DOM subset.</p>"
+            "</body></html>";
+        bool is_home=k_strcmp(browser_address,"falco.start")==0;
+        const char*content=is_home?start:demo;
         browser_miniweb=!SET.browser_reader &&
-            falco_miniweb_parse_options(&browser_dom,demo,SET.browser_scripts);
+            falco_miniweb_parse_options(&browser_dom,content,SET.browser_scripts);
         browser_loaded=browser_miniweb;
         if(SET.browser_reader){
             browser_miniweb=false;
-            browser_loaded=falco_html_extract(demo,browser_text,
+            browser_loaded=falco_html_extract(content,browser_text,
                                              sizeof browser_text)>0;
         }
         browser_scroll=0;
         browser_history_commit();
-        k_strcpy(browser_status,"LOCAL falco.demo | CSS + safe JS DOM subset | offline");
+        k_strcpy(browser_status,is_home?
+            "Falco Start | Offline native home | HTTPS links | no telemetry":
+            "LOCAL falco.demo | CSS + safe JS DOM subset | offline");
 #ifdef FALCON_QEMU_UI_GALLERY
         outb(0xE9,'w');outb(0xE9,browser_loaded?'Y':'N');
 #endif
