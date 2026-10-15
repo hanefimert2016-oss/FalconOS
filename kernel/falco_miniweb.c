@@ -235,7 +235,8 @@ static u32 mutate(fmw_page_t*page,const char*js,u32 length){
     }
     return changed;
 }
-bool falco_miniweb_parse(fmw_page_t*page,const char*html){
+bool falco_miniweb_parse_options(fmw_page_t*page,const char*html,
+                                 bool allow_literal_dom){
     if(!page||!html)return false;
     k_memset(page,0,sizeof *page);page->page_bg=0xFFFFFFu;
     rule_count=0;
@@ -319,13 +320,18 @@ bool falco_miniweb_parse(fmw_page_t*page,const char*html){
         attr(tag,gt,"id",n->id,sizeof n->id);
         attr(tag,gt,"class",n->klass,sizeof n->klass);
         attr(tag,gt,"onclick",n->onclick,sizeof n->onclick);
+        if(eq(node_tag,"a"))attr(tag,gt,"href",n->href,sizeof n->href);
         apply_rules(n);
         char inline_style[160];attr(tag,gt,"style",inline_style,sizeof inline_style);
         declarations(n,inline_style,(u32)k_strlen(inline_style));
         if(n->button)page->buttons++;
     }
-    if(jslen)page->js_mutations=mutate(page,embedded_js,jslen);
+    if(jslen&&allow_literal_dom)
+        page->js_mutations=mutate(page,embedded_js,jslen);
     return page->count>0;
+}
+bool falco_miniweb_parse(fmw_page_t*page,const char*html){
+    return falco_miniweb_parse_options(page,html,true);
 }
 bool falco_miniweb_action(fmw_page_t*page,u32 index){
     if(!page||index>=page->count||!page->nodes[index].button)return false;
