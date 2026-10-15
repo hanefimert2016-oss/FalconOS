@@ -100,8 +100,9 @@ def render(results,technical_error=None):
  return counts
 
 def type_url(sock,site):
- # Ctrl+L clears guest Browser omnibox; physical PS/2 scan codes are injected.
- command(sock,"sendkey ctrl-l",.16)
+ # Ctrl+L only focuses the Browser URL field (it does NOT erase it).
+ # F4 is the actual guest URL-clear shortcut; no fake direct guest memory edits.
+ command(sock,"sendkey f4",.16)
  for ch in site:
   if ch.islower() or ch.isdigit(): key=ch
   elif ch==".":key="dot"
@@ -155,6 +156,11 @@ def main():
     wait_for_marker(DEBUG,b"wB0L",timeout=100)
     time.sleep(.7)
     for marker in (b"T",b"A",b"K",b"D",b"U"):
+     # On the KBD page, use US-QWERTY so QEMU's sendkey dot emits '.'
+     # rather than the punctuation/letter mapping of Turkish-Q.
+     if marker==b"D":
+      command(sock,"sendkey right",.15)
+      command(sock,"sendkey right",.15)
      off=len(dbg());command(sock,"sendkey ret",.25)
      wait_for_marker(DEBUG,marker,after=off,timeout=70)
     for ch in "falcon":command(sock,"sendkey "+ch,.20)
@@ -185,6 +191,7 @@ def main():
      print(f"TEST_SITE {idx:02d}/{len(SITES)} https://{site}/",flush=True)
      try:
       type_url(sock,site)
+      gateway_before=GATEWAY_LOG.stat().st_size if GATEWAY_LOG.exists() else 0
       off=len(dbg())
       command(sock,"sendkey ret",.1)
       # Browser emits b at load entry, Y at verified result completion.
@@ -206,14 +213,23 @@ def main():
       time.sleep(1.0)
       screenshot(sock,target)
       ppm_to_png(target,OUT/(target.stem+".png"))
+      # Only call a domain *tested* when the host gateway has proof that
+      # THIS guest address generated a request. Wrong keyboard mappings
+      # or host fallback to a previous URL must not count as site failure.
+      gateway_tail=(GATEWAY_LOG.read_text(encoding="utf8",errors="replace")
+                    if GATEWAY_LOG.exists() else "")
+      seen_request=("/fetch/"+site+"/") in gateway_tail[gateway_before:]
+      if not seen_request:
+       state="not_reached"
       # Host proxy strips CSS/JS/images and supplies semantic text;
       # a verified fetch is incomplete visual compatibility at best.
-      category="Yarim" if state=="success" else "Berbat"
+      category="Yarim" if state=="success" and seen_request else "Berbat"
       critique=("Metin yuklendi; orijinal resimler, CSS ve JS kayip."
-                if state=="success" else
-                "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.")
+                if category=="Yarim" else
+                "Istenen sayfa acilmadi; gercek HTTPS icerigi gorunmuyor.")
       results.append({"site":site,"category":category,"load":state,
-         "critique":critique,"screenshot":str(OUT/(target.stem+".png"))})
+         "attempted":seen_request,"critique":critique,
+         "screenshot":str(OUT/(target.stem+".png"))})
       print(f"SITE_RESULT {idx} {site} {category} {state}",flush=True)
      except Exception as exc:
       # Continue with every requested domain; never omit failures.
