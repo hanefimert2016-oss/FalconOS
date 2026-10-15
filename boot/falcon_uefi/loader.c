@@ -109,7 +109,7 @@ static void paint_loader(void){
     uint32_t cx=w/2,cy=h/2;
     uint32_t z=w>=1920?5u:3u;
     label(cx-11*6*z/2,cy+54,"FALCONOS V2",z,0xeff6ff);
-    label(cx-7*6*3/2,cy+110,"V2 BETA",3,0x70dffa);
+    label(cx-10*6*3/2,cy+110,"V2 PREVIEW",3,0x70dffa);
     label(cx-21*6*2/2,cy+153,"FALCONBOOT UEFI LOADER",2,0xb0cce7);
     box(cx-205,cy+187,410,4,0x315e8a);
     box(cx-205,cy+187,325,4,0x60d5f5);
