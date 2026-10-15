@@ -4593,8 +4593,17 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_text(wx+114,wy+15,"Reload",style.muted);
     gfx_round_rect(wx+201,wy+7,83,32,10,style.tab_inactive);
     gfx_text(wx+218,wy+15,"Home",style.text);
-    if(ww>665)gfx_text(wx+299,wy+16,
-        active_app==13?"Falco Web":"Falcon Browser",style.text);
+    /* Real document title comes from the HTTPS-verified, sanitized HTML
+     * received in the guest; never synthesize a website's identity. */
+    if(ww>665){
+        const char*caption=active_app==13?"Falco Web":"Falcon Browser";
+        if(browser_loaded&&browser_miniweb&&browser_dom.title[0])
+            caption=browser_dom.title;
+        char shortened[37];i32 n=0;
+        while(caption[n]&&n<30){shortened[n]=caption[n];n++;}
+        shortened[n]=0;
+        gfx_text(wx+299,wy+16,shortened,style.text);
+    }
     gfx_rect(wx+288,wy+42,95,2,style.accent);
     gfx_round_rect(wx+ww-160,wy+7,141,32,10,style.tab_inactive);
     gfx_round_outline(wx+ww-160,wy+7,141,32,10,style.chrome_border);
