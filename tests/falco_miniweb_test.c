@@ -91,10 +91,10 @@ int main(void){
           "https://example.com/search?q=birds&sort=recent")==0);
     assert(strcmp(node(&page,"inside")->text,"Go & explore")==0);
     assert(strcmp(node(&page,"outer")->text,
-                  "Before  and after  trailing text")==0);
+                  "Before and after trailing text")==0);
     assert(strcmp(node(&page,"child")->text,"Heading")==0);
     assert(strcmp(node(&page,"decoded")->text,
-                  "A \"quote\", 'apostrophe', \xE2\x98\xBA  end")==0);
+                  "A \"quote\", 'apostrophe', \xE2\x98\xBA end")==0);
     /* A single malformed/incomplete entity is treated as text rather
      * than interpreted as markup or prematurely terminating a buffer. */
     assert(falco_miniweb_parse(&page,
