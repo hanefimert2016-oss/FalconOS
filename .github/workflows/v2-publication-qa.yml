@@ -1,0 +1,55 @@
+name: FalconOS V2 public preview — real native tests
+on:
+  push:
+    branches: ['v2']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native UEFI/QEMU build stack
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm xorriso mtools qemu-system-x86 ovmf clang lld binutils python3-venv fonts-dejavu-core
+          python3 -m venv /tmp/falcon-v2
+          /tmp/falcon-v2/bin/pip -q install 'numpy<3' trimesh opencv-python-headless pillow
+      - name: Test V2 original-site HTML projection, HTTPS safety and OS regressions
+        run: /tmp/falcon-v2/bin/python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Compile and run actual native Falco MiniWeb/5 HTML/CSS regression
+        run: |
+          mkdir -p build
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/falco_miniweb_test.c kernel/falco_miniweb.c -o build/v2-falco-web-test
+          build/v2-falco-web-test
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/falco_navigation_test.c kernel/falco_navigation.c -o build/v2-falco-nav-test
+          build/v2-falco-nav-test
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/file_viewer_test.c kernel/file_viewer.c -o build/v2-media-test
+          build/v2-media-test
+      - name: Build real FalconOS V2 GRUB-free UEFI ISO
+        run: |
+          PATH="/tmp/falcon-v2/bin:$PATH" make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=0 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
+          test -s build/FalconOS.iso
+          file build/BOOTX64.EFI | grep -F 'PE32+'
+          strings build/falcon.elf | grep -F 'FalconOS 2.0 Preview'
+          strings build/falcon.elf | grep -F 'V2 PREVIEW'
+      - name: Verify real FalconBoot 3D color preview baked into UEFI ESP
+        run: |
+          mcopy -i build/iso/falcon-esp.img ::/FALCONOS/BOOT.BMP build/v2-boot-from-esp.bmp
+          cmp build/boot_dragon.bmp build/v2-boot-from-esp.bmp
+      - name: Boot actual V2 in OVMF/QEMU, screenshot genuine framebuffer
+        run: timeout 100s python3 tools/qemu_smoke.py --boot-seconds 20 --output build/FalconOS-V2-Preview-Real-QEMU.png
+      - name: Publish V2 ISO, screenshot and build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-V2-Preview-UEFI-ISO-and-real-QEMU
+          retention-days: 30
+          if-no-files-found: ignore
+          path: |
+            build/FalconOS.iso
+            build/FalconOS-V2-Preview-Real-QEMU.png
+            build/v2-boot-from-esp.bmp
+            build/falcon-boot-smoke.log
