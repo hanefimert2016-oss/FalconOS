@@ -20,7 +20,7 @@ def load(path):
         binary=f.read(n)
     return j,binary
 
-def bake(src,out,count):
+def bake(src,out,count,bmp_out=None):
     j,binary=load(src)
     scene=trimesh.load(str(src),force="scene")
     node_names={v["name"]:i for i,v in enumerate(j["nodes"])}
@@ -154,6 +154,10 @@ def bake(src,out,count):
             cv2.fillConvexPoly(img,poly,color,lineType=cv2.LINE_AA)
         rgb=cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
         rgb=cv2.resize(rgb,(360,270),interpolation=cv2.INTER_AREA)
+        if bmp_out is not None and frame==count//2:
+            # Representative front-facing, full-colour frame for native
+            # FalconBoot UEFI menu; the kernel still plays all 48 frames.
+            Image.fromarray(rgb,"RGB").save(bmp_out,format="BMP")
         present=rgb.max(axis=2)>10
         blue=(rgb[:,:,2].astype(np.int32)>rgb[:,:,0].astype(np.int32)*1.5)&present&(rgb[:,:,0]<110)
         dark=present&(~blue)&(rgb[:,:,0]<100)
@@ -206,6 +210,8 @@ if __name__=="__main__":
                     default="assets/boot/falconos_boot_intro_animation.glb")
     ap.add_argument("--out",default="build/boot_model_frames.inc")
     ap.add_argument("--frames",type=int,default=48)
+    ap.add_argument("--bmp",default="build/boot_dragon.bmp",
+                    help="Baked preview frame for FalconBoot UEFI menu")
     args=ap.parse_args()
     src=pathlib.Path(args.source)
     if not src.is_file():
@@ -215,4 +221,7 @@ if __name__=="__main__":
     output.parent.mkdir(parents=True,exist_ok=True)
     import hashlib
     print("Boot GLB source:",src,"SHA256",hashlib.sha256(src.read_bytes()).hexdigest())
-    bake(src,output,args.frames)
+    bmp=pathlib.Path(args.bmp) if args.bmp else None
+    if bmp is not None:
+        bmp.parent.mkdir(parents=True,exist_ok=True)
+    bake(src,output,args.frames,bmp)

@@ -125,7 +125,9 @@ static bool validate_and_import(const u8 *buf)
     u32 old_size=(u32)__builtin_offsetof(settings_t,wallpaper_style);
     u32 prior_size=(u32)__builtin_offsetof(settings_t,update_auto_install);
     u32 beta_size=(u32)__builtin_offsetof(settings_t,update_channel);
-    if(h->length != sizeof(settings_t) && h->length != beta_size &&
+    u32 web_legacy_size=(u32)__builtin_offsetof(settings_t,browser_zoom);
+    if(h->length != sizeof(settings_t) && h->length != web_legacy_size &&
+       h->length != beta_size &&
        h->length != prior_size && h->length != old_size)return false;
     const u8 *payload = buf + sizeof(super_hdr_t);
     if (fletcher16(payload,h->length) != h->checksum)return false;
@@ -133,8 +135,15 @@ static bool validate_and_import(const u8 *buf)
     k_memcpy(&SET,payload,h->length);
     if(h->length==old_size)SET.wallpaper_style=0;
     if(h->length<beta_size)SET.update_auto_install=false;
-    if(h->length<sizeof(settings_t))SET.update_channel=1;
+    if(h->length<web_legacy_size)SET.update_channel=1;
+    if(h->length<sizeof(settings_t)){
+        SET.browser_zoom=2; SET.browser_home=0;
+        SET.browser_reader=false;SET.browser_scripts=true;
+        SET.browser_contrast=false;SET.browser_compact=false;
+    }
     if(SET.update_channel>2)SET.update_channel=1;
+    if(SET.browser_zoom>4)SET.browser_zoom=2;
+    if(SET.browser_home>2)SET.browser_home=0;
     if(SET.wallpaper_style>3u)SET.wallpaper_style=0;
     return true;
 }

@@ -560,6 +560,14 @@ typedef struct {
     u32         wallpaper_style; /* appended for safe legacy disk migration */
     bool        update_auto_install; /* persisted only to validated FalconFS 0xFA volume */
     u8          update_channel;      /* 0 Stable, 1 Beta (default), 2 Alpha */
+    /* Falcon Web preferences v2: always append; older FalconFS records are
+     * migrated using the length field, never reinterpreted in place. */
+    u8          browser_zoom;         /* 0..4: 75%, 90%, 100%, 125%, 150% */
+    u8          browser_home;         /* 0 local demo, 1 FalconOS, 2 example */
+    bool        browser_reader;       /* force inert SemanticText, no DOM */
+    bool        browser_scripts;      /* allow literal-only DOM actions */
+    bool        browser_contrast;     /* high-contrast native text reader */
+    bool        browser_compact;      /* save 24 px of chrome height */
 } settings_t;
 
 extern settings_t SET;

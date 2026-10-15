@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import socket
+import shutil
 import struct
 import subprocess
 import time
@@ -58,10 +59,30 @@ def main():
     for path in (mon, screen):
         if path.exists():
             path.unlink()
+    # FalconOS V2 is UEFI-only: the old SeaBIOS smoke launcher showed a
+    # monochrome firmware error instead of booting FalconBoot.  Keep this
+    # screenshot test a genuine OVMF/QEMU framebuffer assertion.
+    firmware = [
+        (Path("/usr/share/OVMF/OVMF_CODE_4M.fd"), Path("/usr/share/OVMF/OVMF_VARS_4M.fd")),
+        (Path("/usr/share/OVMF/OVMF_CODE.fd"), Path("/usr/share/OVMF/OVMF_VARS.fd")),
+        (Path("/usr/share/edk2/x64/OVMF_CODE.4m.fd"), Path("/usr/share/edk2/x64/OVMF_VARS.4m.fd")),
+    ]
+    pair = next(((code, var) for code, var in firmware
+                 if code.is_file() and var.is_file()), None)
+    if pair is None:
+        raise RuntimeError("FalconOS V2 smoke requires installed OVMF UEFI firmware")
+    nvram = (build / "smoke-ovmf-vars.fd").absolute()
+    shutil.copyfile(pair[1], nvram)
+    debug = (build / "smoke-debug.log").absolute()
     command = [
-        "qemu-system-x86_64", "-accel", "tcg", "-m", "1024", "-smp", "1",
-        "-cdrom", opts.iso, "-boot", "order=d", "-display", "none",
+        "qemu-system-x86_64", "-machine", "q35", "-accel", "tcg",
+        "-m", "4096", "-smp", "2",
+        "-drive", f"if=pflash,unit=0,format=raw,readonly=on,file={pair[0]}",
+        "-drive", f"if=pflash,unit=1,format=raw,file={nvram}",
+        "-drive", f"file={Path(opts.iso).absolute()},if=ide,index=2,media=cdrom",
+        "-boot", "order=d", "-display", "none",
         "-vga", "std", "-serial", "none",
+        "-debugcon", f"file:{debug}", "-global", "isa-debugcon.iobase=0xe9",
         "-monitor", f"unix:{mon},server=on,wait=off", "-no-reboot"
     ]
     if opts.disk:
@@ -90,7 +111,11 @@ def main():
                 if time.monotonic() > deadline:
                     raise TimeoutError("QEMU could not capture framebuffer")
                 time.sleep(0.1)
-        ppm_to_png(screen, opts.output)
+        try:
+            ppm_to_png(screen, opts.output)
+        except RuntimeError as exc:
+            diag=debug.read_text(encoding="ascii",errors="replace") if debug.exists() else ""
+            raise RuntimeError(f"{exc}; FalconBoot debug tail: {diag[-350:]}") from exc
     finally:
         proc.terminate()
         try:

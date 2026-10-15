@@ -1,0 +1,110 @@
+{
+  "mode": "real QEMU FalconOS native Browser",
+  "date": "2026-10-15",
+  "seed": 20261015,
+  "sample": [
+    "archive.org",
+    "www.kde.org",
+    "www.rust-lang.org",
+    "www.nasa.gov",
+    "example.com",
+    "www.wikimedia.org",
+    "www.openstreetmap.org",
+    "www.bbc.com",
+    "www.ietf.org",
+    "www.cloudflare.com",
+    "www.kernel.org",
+    "www.mozilla.org"
+  ],
+  "counts": {
+    "Basarili": 0,
+    "Yarim": 0,
+    "Berbat": 12
+  },
+  "results": [
+    {
+      "site": "archive.org",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/01-archive_org.png"
+    },
+    {
+      "site": "www.kde.org",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/02-www_kde_org.png"
+    },
+    {
+      "site": "www.rust-lang.org",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/03-www_rust-lang_org.png"
+    },
+    {
+      "site": "www.nasa.gov",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/04-www_nasa_gov.png"
+    },
+    {
+      "site": "example.com",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/05-example_com.png"
+    },
+    {
+      "site": "www.wikimedia.org",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/06-www_wikimedia_org.png"
+    },
+    {
+      "site": "www.openstreetmap.org",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/07-www_openstreetmap_org.png"
+    },
+    {
+      "site": "www.bbc.com",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/08-www_bbc_com.png"
+    },
+    {
+      "site": "www.ietf.org",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/09-www_ietf_org.png"
+    },
+    {
+      "site": "www.cloudflare.com",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/10-www_cloudflare_com.png"
+    },
+    {
+      "site": "www.kernel.org",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/11-www_kernel_org.png"
+    },
+    {
+      "site": "www.mozilla.org",
+      "category": "Berbat",
+      "load": "no_marker",
+      "critique": "HTTPS/yukleme basarisiz veya bos ekran; tasarim gorunmuyor.",
+      "screenshot": "/home/runner/work/FalconOS/FalconOS/build/falco-sites-audit/12-www_mozilla_org.png"
+    }
+  ]
+}

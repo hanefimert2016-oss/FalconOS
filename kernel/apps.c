@@ -24,6 +24,8 @@
 #include "falco_theme.h"
 #include "falco_html_text.h"
 #include "falco_miniweb.h"
+#include "falco_navigation.h"
+#include "file_viewer.h"
 #include "version.h"
 #include "calendar_math.h"
 #include "aeroflow.h"
@@ -36,6 +38,7 @@ static void falco_open_site(const char *address);
 static void falco_open_site_host(const char *address);
 static void chrome_input_key(i32 key);
 static void chrome_focus_url(void);
+static void browser_home_page(void);
 static void render_browser(i32 x,i32 y,i32 w,i32 h,u32 frame);
 static void market_launch(i32 i);
 static i32 builtin_app_count(void);
@@ -404,7 +407,10 @@ static void render_home(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static i32 files_scroll, files_scope;
 static char files_selected[SHFS_PATH],files_last_click_path[SHFS_PATH];
 static u32 files_last_click_ms;
-static const char *files_action_status="Double click .app.pkg to run in FalconOS";
+static const char *files_action_status="Open files with Enter/double-click; F4 search";
+static char files_preview_path[SHFS_PATH];
+static bool files_preview_active;
+static i32 files_preview_scroll;
 #define FAPP_RUNNER_APP_ID 19  /* appended after original 19 builtin apps */
 static char fapp_running_title[48]="FalconOS application";
 static char fapp_running_source[SHFS_PATH];
@@ -420,6 +426,8 @@ static bool fapp_gui_custom;
 static void fapp_gui_run_action(i32 index);
 static void fapp_gui_input(i32 key);
 static void files_launch_pkg(const char *path);
+static void files_open_path(const char *path);
+static bool code_open_path(const char *path);
 
 static bool files_search_mode;
 static char files_filter[40];
@@ -453,6 +461,19 @@ static bool files_matches(const char *path) {
     return false;
 }
 static void files_input_key(i32 key) {
+    if(key==KEY_F8){
+        if(code_open_path(files_selected))apps_open(18);
+        else files_action_status="Codedium: open failed (unsupported/unsaved/size)";
+        return;
+    }
+    if(files_preview_active){
+        if(key==KEY_BACKSPACE||key==KEY_F4){files_preview_active=false;return;}
+        if(key==KEY_UP&&files_preview_scroll>0)files_preview_scroll--;
+        if(key==KEY_DOWN&&files_preview_scroll<255)files_preview_scroll++;
+        if(key==KEY_PGUP){files_preview_scroll-=10;if(files_preview_scroll<0)files_preview_scroll=0;}
+        if(key==KEY_PGDN){files_preview_scroll+=10;if(files_preview_scroll>255)files_preview_scroll=255;}
+        return;
+    }
     if(key==KEY_F4){files_search_mode=!files_search_mode;return;}
     if(files_search_mode){
         if(key==KEY_BACKSPACE){
@@ -469,7 +490,7 @@ static void files_input_key(i32 key) {
     }
     if(key==KEY_LEFT){files_scope=(files_scope+4)%5;files_scroll=0;files_selected[0]=0;}
     if(key==KEY_RIGHT){files_scope=(files_scope+1)%5;files_scroll=0;files_selected[0]=0;}
-    if(key==KEY_ENTER&&!files_search_mode){files_launch_pkg(files_selected);return;}
+    if(key==KEY_ENTER&&!files_search_mode){files_open_path(files_selected);return;}
     if(key==KEY_UP&&files_scroll>0)files_scroll--;
     if(key==KEY_DOWN&&files_scroll<SHFS_MAX_ENTRIES-1)files_scroll++;
 }
@@ -487,14 +508,14 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
     bool selected=k_strcmp(files_selected,path)==0;
     gfx_round_rect_a(c->x,y,c->w,34,10,
         selected?PAL_ACCENT_DIM:((c->row&1)?PAL_PANEL:PAL_PANEL_DEEP),255);
-    bool app_pkg=false;
-    if(!is_dir){
-        u32 size=(u32)k_strlen(path);
-        app_pkg=size>=8u&&(k_strcmp(path+size-8u,".app.pkg")==0 || k_strcmp(path+size-8u,".app.kkg")==0);
-    }
+    fv_kind_t kind=is_dir?FV_UNKNOWN:fv_kind(path);
     gfx_round_rect(c->x+9,y+7,24,20,6,
-        is_dir?0xF3BC5Du:(app_pkg?0x26A78Cu:0x548FEBu));
-    gfx_text_centered(c->x+21,y+10,is_dir?"D":(app_pkg?"A":"F"),0xFFFFFFu);
+        is_dir?0xF3BC5Du:(kind==FV_PACKAGE?0x26A78Cu:
+        (kind==FV_BITMAP||kind==FV_PPM)?0xA565D9u:
+        kind==FV_WAVE?0x19A680u:kind==FV_TEXT?0x548FEBu:0x748396u));
+    gfx_text_centered(c->x+21,y+10,is_dir?"D":
+        (kind==FV_PACKAGE?"A":(kind==FV_BITMAP||kind==FV_PPM)?"I":
+        kind==FV_WAVE?"M":kind==FV_TEXT?"T":"F"),0xFFFFFFu);
     if(c->clicked&&!c->consumed&&c->mx>=c->x&&c->mx<c->x+c->w &&
        c->my>=y&&c->my<y+34){
         u32 now=pit_ms();
@@ -523,6 +544,61 @@ static void files_row(const char *path, bool is_dir, u32 len, void *ud) {
         gfx_text(c->x+c->w-44,y+10,"B",PAL_TEXT_FAINT);
     }
     c->row++;
+}
+/* Reuse native media decoder and waveform painter in the Files viewer. */
+static void media_draw_image(const shfs_ent_t*file,fv_kind_t kind,
+                             i32 left,i32 top,i32 width,i32 height);
+static void media_draw_wave(const shfs_ent_t*file,
+                            i32 left,i32 top,i32 width,i32 height);
+/* Files media/text preview: length-checked SHFS bytes; no fake content. */
+static void files_render_preview(i32 wx,i32 wy,i32 ww,i32 wh){
+    if(!files_preview_active)return;
+    shfs_ent_t *ent=shfs_lookup(files_preview_path);
+    if(!ent||ent->is_dir){files_preview_active=false;return;}
+    i32 x=wx+26,y=wy+130,w=ww-52,h=wh-193;
+    if(w<160||h<94)return;
+    gfx_round_rect_a(x,y,w,h,15,PAL_PANEL_DEEP,255);
+    gfx_round_outline(x,y,w,h,15,PAL_ACCENT);
+    char title[74];i32 count=0;
+    const char*name=files_preview_path;
+    for(i32 i=0;files_preview_path[i];i++)if(files_preview_path[i]=='/'&&files_preview_path[i+1])name=files_preview_path+i+1;
+    while(name[count]&&count<70){title[count]=name[count];count++;}
+    title[count]=0;
+    gfx_text(x+18,y+13,title,PAL_TEXT);
+    gfx_round_rect(x+w-44,y+9,30,27,8,PAL_ACCENT_DIM);
+    gfx_text_centered(x+w-29,y+14,"X",PAL_TEXT);
+    i32 mx,my;bool down;mouse_get(&mx,&my,&down);(void)down;
+    if(wm_click_enabled()&&mx>=x+w-44&&mx<x+w-14&&my>=y+9&&my<y+36){
+        (void)mouse_consume_click();files_preview_active=false;return;
+    }
+    gfx_rect(x+15,y+44,w-30,1,PAL_HAIRLINE);
+    fv_kind_t kind=fv_kind(files_preview_path);
+    if(kind==FV_BITMAP||kind==FV_PPM){
+        media_draw_image(ent,kind,x+12,y+49,w-24,h-54);
+        return;
+    }
+    if(kind==FV_WAVE){
+        media_draw_wave(ent,x+12,y+49,w-24,h-54);
+        return;
+    }
+    i32 line=0,row=0,maxrows=(h-76)/19;
+    i32 maxcols=(w-48)/8;if(maxcols>116)maxcols=116;
+    if(maxcols<1)return;
+    u32 at=0;
+    while(at<ent->len && row<maxrows){
+        char buf[120];i32 n=0;
+        while(at<ent->len&&ent->data[at]!='\n'&&n<maxcols){
+            u8 ch=(u8)ent->data[at++];
+            if(ch=='\r')continue;
+            buf[n++]=(ch>=32||ch=='\t')?(char)(ch=='\t'?' ':ch):'.';
+        }
+        if(at<ent->len&&ent->data[at]=='\n')at++;
+        buf[n]=0;
+        if(line++<files_preview_scroll)continue;
+        gfx_text(x+21,y+58+row*19,buf,PAL_TEXT);
+        row++;
+    }
+    gfx_text(x+20,y+h-22,"Up/Down scroll  |  Backspace close  |  Read only",PAL_TEXT_DIM);
 }
 static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;shfs_init();
@@ -568,7 +644,7 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     shfs_foreach_path(files_row,&ctx);
     /* Run OUTSIDE the SHFS enumeration callback. Never trust the file
      * extension alone: market_validate_app_pkg checks all manifest/body. */
-    if(ctx.open_path[0])files_launch_pkg(ctx.open_path);
+    if(ctx.open_path[0])files_open_path(ctx.open_path);
     if(ctx.seen==0)
         gfx_text(main_x+16,wy+top+89,
             files_filter_len?"No matching files":"No files in this location",PAL_TEXT_DIM);
@@ -576,8 +652,10 @@ static void render_files(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_rect(sx,wy+wh-36,ww-2*margin,1,PAL_HAIRLINE);
     char count[16];k_itoa(ctx.files,count,10);
     gfx_text(sx+4,wy+wh-26,count,PAL_ACCENT);
-    gfx_text(sx+35,wy+wh-26,"files | Downloads | double click .app.pkg / Enter to run | F4 search",
+    gfx_text(sx+35,wy+wh-26,
+        "Enter: view/run  |  F4 search  |  F8 edit selected text in Codedium",
         PAL_TEXT_DIM);
+    files_render_preview(wx,wy,ww,wh);
 }
 
 static void render_clock(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
@@ -1085,6 +1163,11 @@ static char term_buf[TERM_LINES][TERM_COLS];
 static i32  term_init_done = 0;
 static i32  term_input_len = 0;
 static char term_input[TERM_COLS];
+/* Bounded local command recall, never shell execution on navigation. */
+#define TERM_HISTORY 16
+static char term_history[TERM_HISTORY][TERM_COLS];
+static i32 term_history_count,term_history_cursor;
+static char term_history_draft[TERM_COLS];
 static shvar_t  sh_vars [SH_VARS];
 
 static void term_push(const char *s)
@@ -1228,8 +1311,9 @@ static i32 sh_find_app_idx(const char *name)
         return sh_find_app_idx("Browser");
     if (sh_streq_ci(name, "heroic-launcher") || sh_streq_ci(name, "heroiclauncher"))
         return sh_find_app_idx("Heroic");
-    if (sh_streq_ci(name, "media") || sh_streq_ci(name, "video-player"))
-        return sh_find_app_idx("Video");
+    if (sh_streq_ci(name, "media") || sh_streq_ci(name, "video-player") ||
+        sh_streq_ci(name, "video"))
+        return sh_find_app_idx("Media");
     if (sh_streq_ci(name, "falco") || sh_streq_ci(name, "falco-browser") ||
         sh_streq_ci(name, "browser"))
         return sh_find_app_idx("Falco");
@@ -2772,8 +2856,8 @@ static void render_term(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
              T("FalconOS shell — POSIX subset", "FalconOS kabuğu — POSIX alt kümesi"),
              0xCFE6FF);
     gfx_text(wx + 30, wy + 38,
-             T("Try: help · hwinfo · prg · update check — cat readme.txt",
-              "Deneyin: help · hwinfo · prg · update check — cat readme.txt"),
+             T("Up/Down command history · help · hwinfo · prg · update check",
+              "Yukari/Asagi komut gecmisi · help · hwinfo · prg · update check"),
              0x8AAACE);
 
     for (i32 i = 0; i < TERM_LINES; i++) {
@@ -2797,7 +2881,39 @@ static void render_term(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
 static void term_input_key(i32 key)
 {
     term_init();
+    if(key==KEY_UP){
+        if(!term_history_count)return;
+        if(term_history_cursor==term_history_count)
+            k_strcpy(term_history_draft,term_input);
+        if(term_history_cursor>0)term_history_cursor--;
+        k_strcpy(term_input,term_history[term_history_cursor]);
+        term_input_len=k_strlen(term_input);
+        return;
+    }
+    if(key==KEY_DOWN){
+        if(term_history_cursor>=term_history_count)return;
+        term_history_cursor++;
+        k_strcpy(term_input,term_history_cursor==term_history_count?
+                 term_history_draft:term_history[term_history_cursor]);
+        term_input_len=k_strlen(term_input);
+        return;
+    }
     if (key == KEY_ENTER) {
+        if(term_input_len>0){
+            /* Drop oldest entry when full; ignore duplicate commands. */
+            bool duplicate=term_history_count>0&&
+                k_strcmp(term_input,term_history[term_history_count-1])==0;
+            if(!duplicate){
+                if(term_history_count==TERM_HISTORY){
+                    for(i32 n=1;n<TERM_HISTORY;n++)
+                        k_strcpy(term_history[n-1],term_history[n]);
+                    term_history_count--;
+                }
+                k_strcpy(term_history[term_history_count++],term_input);
+            }
+        }
+        term_history_cursor=term_history_count;
+        term_history_draft[0]=0;
         char prompt[TERM_COLS];
         k_strcpy(prompt, "$ ");
         k_strcat(prompt, term_input);
@@ -2906,7 +3022,9 @@ static void render_calc(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
  *  and uses left/right (or Enter) to toggle / cycle the value.            */
 typedef enum {
     SR_THEME = 0, SR_ACCENT, SR_AERO, SR_LANG, SR_KBD, SR_TZ, SR_DOCK,
-    SR_ANIM, SR_WIDGETS, SR_WALLPAPER, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_DRIVERS,
+    SR_ANIM, SR_WIDGETS, SR_WALLPAPER,
+    SR_WEB_ZOOM, SR_WEB_HOME, SR_WEB_READER, SR_WEB_JS, SR_WEB_CONTRAST,
+    SR_WEB_COMPACT, SR_VIEWPORT, SR_PASSWORD, SR_USERS, SR_DRIVERS,
     SR_SAVE, SR_LOCK, SR_COUNT
 } set_row_t;
 
@@ -3026,6 +3144,30 @@ static void set_input_key(i32 key)
 #endif
             break;
         }
+        case SR_WEB_ZOOM:
+            SET.browser_zoom=(u8)(((i32)SET.browser_zoom+d+5)%5);
+            (void)diskdb_save();
+            break;
+        case SR_WEB_HOME:
+            SET.browser_home=(u8)(((i32)SET.browser_home+d+3)%3);
+            (void)diskdb_save();
+            break;
+        case SR_WEB_READER:
+            SET.browser_reader=!SET.browser_reader;
+            (void)diskdb_save();
+            break;
+        case SR_WEB_JS:
+            SET.browser_scripts=!SET.browser_scripts;
+            (void)diskdb_save();
+            break;
+        case SR_WEB_CONTRAST:
+            SET.browser_contrast=!SET.browser_contrast;
+            (void)diskdb_save();
+            break;
+        case SR_WEB_COMPACT:
+            SET.browser_compact=!SET.browser_compact;
+            (void)diskdb_save();
+            break;
         case SR_VIEWPORT:
             { i32 n = (i32)(sizeof VIEWPORT_NAMES / sizeof *VIEWPORT_NAMES);
               i32 v = (set_viewport_idx + d + n) % n;
@@ -3204,6 +3346,34 @@ static void render_settings(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
               T("Wallpaper", "Arka plan"),
               wallpapers[SET.wallpaper_style%4u],
               set_row==SR_WALLPAPER,PAL_ACCENT);
+    }
+
+    /* Falcon Web: all six controls affect the native Falco browser. ---- */
+    {
+        static const char*const zoom[]={"75%","90%","100%","125%","150%"};
+        static const char*const home[]={"Offline MiniWeb","falconos.tech","example.com"};
+        s_row(sx,sy+SR_WEB_ZOOM*step,sw,T("Web text zoom","Web yazi olcegi"),
+              zoom[SET.browser_zoom<=4?SET.browser_zoom:2],
+              set_row==SR_WEB_ZOOM,PAL_ACCENT);
+        s_row(sx,sy+SR_WEB_HOME*step,sw,T("Web home page","Web ana sayfasi"),
+              home[SET.browser_home<=2?SET.browser_home:0],
+              set_row==SR_WEB_HOME,PAL_TEXT);
+        s_row(sx,sy+SR_WEB_READER*step,sw,T("Web reader mode","Web okuma modu"),
+              SET.browser_reader?T("on","acik"):T("off","kapali"),
+              set_row==SR_WEB_READER,SET.browser_reader?COL_OK:PAL_TEXT_DIM);
+        s_row(sx,sy+SR_WEB_JS*step,sw,
+              T("Safe JavaScript DOM actions","Guvenli JS DOM islemleri"),
+              SET.browser_scripts?T("allowed","izinli"):T("blocked","kapali"),
+              set_row==SR_WEB_JS,SET.browser_scripts?COL_OK:PAL_TEXT_DIM);
+        s_row(sx,sy+SR_WEB_CONTRAST*step,sw,
+              T("Web high contrast","Web yuksek kontrast"),
+              SET.browser_contrast?T("on","acik"):T("off","kapali"),
+              set_row==SR_WEB_CONTRAST,
+              SET.browser_contrast?COL_OK:PAL_TEXT_DIM);
+        s_row(sx,sy+SR_WEB_COMPACT*step,sw,
+              T("Web compact toolbar","Web kompakt cubuk"),
+              SET.browser_compact?T("on","acik"):T("off","kapali"),
+              set_row==SR_WEB_COMPACT,SET.browser_compact?COL_OK:PAL_TEXT_DIM);
     }
 
     /* Viewport / resolution ------------------------------------------- */
@@ -3645,6 +3815,9 @@ static void falco_input_key(i32 key){
         return;
     }
 #endif
+    if(key==KEY_F2){
+        falco_native_view=false;falco_web_view=true;browser_home_page();return;
+    }
     if(key==KEY_F9){falco_native_open();return;}
     if(falco_native_view){
         if((kbd_mod_state() & KMOD_CTRL) && (key=='l'||key=='L')){
@@ -3874,6 +4047,37 @@ static bool browser_miniweb;
 static char browser_status[120]="Type an HTTPS address, then press Enter to load.";
 static i32 browser_scroll;
 static bool browser_loaded;
+/* In-memory browsing history tracks only successfully rendered pages, not
+ * failed attempts or downloaded packages. URL query strings may be included;
+ * F9 clears the RAM history and no history is written to FalconFS. */
+static fnav_history_t browser_history;
+static bool browser_history_restoring;
+static void browser_history_commit(void){
+    if(browser_loaded&&!browser_history_restoring)
+        (void)fnav_record(&browser_history,browser_address);
+}
+static void browser_load(void);
+static bool browser_history_move(i32 direction){
+    u32 previous=browser_history.cursor;
+    const char*url=fnav_step(&browser_history,direction);
+    if(!url)return false;
+    k_strcpy(browser_address,url);
+    browser_address_len=k_strlen(browser_address);
+    browser_history_restoring=true;
+    browser_load();
+    browser_history_restoring=false;
+    if(!browser_loaded){browser_history.cursor=previous;return false;}
+    browser_address_focus=false;
+    return true;
+}
+static void browser_home_page(void){
+    const char*page=SET.browser_home==1?"https://falconos.tech/":
+                    SET.browser_home==2?"https://example.com/":"falco.start";
+    k_strcpy(browser_address,page);
+    browser_address_len=k_strlen(page);
+    browser_load();
+    browser_address_focus=false;
+}
 static void browser_page_from_http(void){
     /* Verified TLS transport is separate from safe display. This pure
      * FalconOS renderer preserves semantic blocks and decodes entities;
@@ -3884,7 +4088,8 @@ static void browser_page_from_http(void){
     p+=4;
     /* First try native CSS box layout and constrained DOM literal actions.
      * Unsupported content falls back to the already safe SemanticText/2. */
-    browser_miniweb=falco_miniweb_parse(&browser_dom,p);
+    browser_miniweb=!SET.browser_reader &&
+        falco_miniweb_parse_options(&browser_dom,p,SET.browser_scripts);
     i32 n=falco_html_extract(p,browser_text,sizeof browser_text);
     if(n<=0&&!browser_miniweb){
         k_strcpy(browser_status,"No renderable HTML content received");
@@ -3979,7 +4184,8 @@ static void browser_load(void){
     /* Explicit offline self-test, not a spoofed HTTPS page. Opens even when
      * there is no network card, and uses the exact same HTML/CSS/JS parser
      * and framebuffer renderer as external, host-verified HTTPS content. */
-    if(k_strcmp(browser_address,"falco.demo")==0 ||
+    if(k_strcmp(browser_address,"falco.start")==0 ||
+       k_strcmp(browser_address,"falco.demo")==0 ||
        k_strcmp(browser_address,"falco://demo")==0){
         static const char demo[]=
             "<html><head><title>Falco MiniWeb/3</title>"
@@ -3995,10 +4201,40 @@ static void browser_load(void){
             "<button onclick=\"document.getElementById('result').textContent='Clicked in FalconOS'\">Click to change text</button>"
             "<script>document.getElementById('result').textContent='JavaScript DOM updated!';</script>"
             "</body></html>";
-        browser_miniweb=falco_miniweb_parse(&browser_dom,demo);
+        static const char start[]=
+            "<html><head><title>Falco Start</title><style>"
+            "body{background:#101c32}h1{color:#1273c9;font-size:34px}"
+            "h2{color:#285acc;font-size:24px}"
+            ".intro{color:#304568;font-size:18px}"
+            "a{color:#1268d8;font-size:20px;background:#edf3fe}"
+            ".note{color:#51617b;font-size:16px}"
+            "</style></head><body>"
+            "<h1>FALCO  /  Start</h1>"
+            "<p class='intro'>FalconOS native web. Search securely with HTTPS.</p>"
+            "<h2>Your starting points</h2>"
+            "<a href='https://falconos.tech/'>FalconOS website</a>"
+            "<a href='https://www.wikipedia.org/'>Wikipedia</a>"
+            "<a href='https://github.com/'>GitHub</a>"
+            "<a href='https://example.com/'>Example HTTPS page</a>"
+            "<p class='note'>F2 Home / Alt+Left Back / F5 Reload</p>"
+            "<p class='note'>Reader, zoom, contrast and privacy: Settings.</p>"
+            "<p class='note'>Only a safe HTML/CSS and literal DOM subset.</p>"
+            "</body></html>";
+        bool is_home=k_strcmp(browser_address,"falco.start")==0;
+        const char*content=is_home?start:demo;
+        browser_miniweb=!SET.browser_reader &&
+            falco_miniweb_parse_options(&browser_dom,content,SET.browser_scripts);
         browser_loaded=browser_miniweb;
+        if(SET.browser_reader){
+            browser_miniweb=false;
+            browser_loaded=falco_html_extract(content,browser_text,
+                                             sizeof browser_text)>0;
+        }
         browser_scroll=0;
-        k_strcpy(browser_status,"LOCAL falco.demo | CSS + safe JS DOM subset | offline");
+        browser_history_commit();
+        k_strcpy(browser_status,is_home?
+            "Falco Start | Offline native home | HTTPS links | no telemetry":
+            "LOCAL falco.demo | CSS + safe JS DOM subset | offline");
 #ifdef FALCON_QEMU_UI_GALLERY
         outb(0xE9,'w');outb(0xE9,browser_loaded?'Y':'N');
 #endif
@@ -4102,7 +4338,7 @@ static void browser_load(void){
     if(browser_loaded && browser_host_gateway)
         k_strcpy(browser_status,
             "HOST-verified HTTPS | local VM link plaintext | read-only");
-
+    browser_history_commit();
 }
 /* Native text-web view is shared by Falco and the Browser, not simulated.
  * F6 in Falco loads the requested site with the same certificate checks.
@@ -4183,6 +4419,18 @@ static void falco_open_site(const char *address){
 }
 static void falco_open_site_host(const char *address){falco_navigate(address,true);}
 static void chrome_input_key(i32 key){
+    if((kbd_mod_state() & KMOD_ALT) && key==KEY_LEFT){
+        (void)browser_history_move(-1);return;
+    }
+    if((kbd_mod_state() & KMOD_ALT) && key==KEY_RIGHT){
+        (void)browser_history_move(1);return;
+    }
+    if(key==KEY_F2){browser_home_page();return;}
+    if(key==KEY_F9){
+        k_memset(&browser_history,0,sizeof browser_history);
+        k_strcpy(browser_status,"Visited URL history cleared from guest RAM.");
+        return;
+    }
     if((kbd_mod_state() & (1u<<1)) && (key=='l'||key=='L')) {
         browser_address_focus=true;return;
     }
@@ -4231,36 +4479,57 @@ static void chrome_input_key(i32 key){
  * Only supported DOM nodes and declarations from falco_miniweb.c.
  * Element bounds remain clipped to the actual browser content area. */
 static i32 browser_miniweb_layout(i32 x,i32 y,i32 w,i32 h,bool paint){
-    const i32 top=y-((browser_scroll>0)?browser_scroll*26:0);
+    const i32 top=y-((browser_scroll>0)?browser_scroll*
+                      (SET.browser_zoom>=3?33:22):0);
     i32 cursor=top;
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool click=paint&&wm_click_enabled();
     if(paint){
-        u32 bg=browser_dom.page_bg;
+        u32 bg=SET.browser_contrast?0x101624u:browser_dom.page_bg;
         if(bg==0xFFFFFFFFu)bg=0xFFFFFFu;
         gfx_rect(x,y,w,h,bg);
     }
     for(u32 i=0;i<browser_dom.count;i++){
         fmw_node_t*n=&browser_dom.nodes[i];
         if(n->hidden||!n->text[0])continue;
-        i32 textsize=n->font_px>=24?16:8;
+        bool larger=SET.browser_zoom>=3 || n->font_px>=24;
+        i32 textsize=larger?16:8;
         i32 chars=(w-32)/textsize;if(chars>87)chars=87;
         if(chars<10)chars=10;
         i32 length=k_strlen(n->text);
         i32 rows=(length+chars-1)/chars;
         if(rows<1)rows=1;
         if(rows>12)rows=12;
-        i32 step=n->font_px>=24?32:20;
+        i32 step=larger?
+            (SET.browser_zoom==4?39:32):
+            (SET.browser_zoom==0?16:SET.browser_zoom==1?18:20);
         i32 hh=12+rows*step+(n->button?12:0);
         if(hh>h-10)hh=h-10;
         i32 row_top=cursor;
         bool visible=row_top>=y && row_top+hh<=y+h;
         if(paint&&visible){
-            if(n->bg!=0xFFFFFFFFu)gfx_round_rect(x+8,row_top,w-16,hh,10,n->bg);
-            else if(n->button)gfx_round_rect(x+8,row_top,w-16,hh,10,0xE1EAF4u);
-            if(n->button)gfx_round_outline(x+8,row_top,w-16,hh,10,0x839ABD);
-            if(n->button&&click &&mx>=x+8&&mx<x+w-8&&my>=row_top&&my<row_top+hh){
-                if(falco_miniweb_action(&browser_dom,i)){
+            if(SET.browser_contrast)
+                gfx_round_rect(x+8,row_top,w-16,hh,10,0x192438u);
+            else if(n->bg!=0xFFFFFFFFu)
+                gfx_round_rect(x+8,row_top,w-16,hh,10,n->bg);
+            else if(n->button)
+                gfx_round_rect(x+8,row_top,w-16,hh,10,0xE1EAF4u);
+            if(n->button||n->href[0])
+                gfx_round_outline(x+8,row_top,w-16,hh,10,
+                    SET.browser_contrast?0xB5CFFFu:0x839ABDu);
+            if(click&&(n->button||n->href[0])&&
+               mx>=x+8&&mx<x+w-8&&my>=row_top&&my<row_top+hh){
+                if(n->href[0]){
+                    char target[FNAV_URL];
+                    if(fnav_resolve(browser_address,n->href,target,sizeof target)){
+                        k_strcpy(browser_address,target);
+                        browser_address_len=k_strlen(target);
+                        browser_load();browser_address_focus=false;
+                    }else k_strcpy(browser_status,"Link blocked: HTTPS-only safe navigation.");
+                    (void)mouse_consume_click();
+                    return cursor; /* page DOM may be replaced by navigation */
+                }
+                if(SET.browser_scripts&&falco_miniweb_action(&browser_dom,i)){
 #ifdef FALCON_QEMU_UI_GALLERY
                     outb(0xE9,'j');outb(0xE9,'Y');
 #endif
@@ -4276,8 +4545,10 @@ static i32 browser_miniweb_layout(i32 x,i32 y,i32 w,i32 h,bool paint){
                 i32 tx=x+18;
                 if(n->align==1)tx=x+w/2-(take*textsize)/2;
                 if(n->align==2)tx=x+w-18-take*textsize;
-                if(n->font_px>=24)gfx_text_lg(tx,row_top+6+row*step,line,n->color);
-                else gfx_text(tx,row_top+6+row*step,line,n->color);
+                u32 text_color=SET.browser_contrast?0xFFFFFFu:
+                               n->href[0]?PAL_ACCENT:n->color;
+                if(larger)gfx_text_lg(tx,row_top+6+row*step,line,text_color);
+                else gfx_text(tx,row_top+6+row*step,line,text_color);
             }
         }
         cursor+=hh+9;
@@ -4293,9 +4564,10 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         if(my>=wy+7&&my<wy+41){
             (void)mouse_consume_click();
             if(mx<wx+100){
-                if(active_app==13)falco_web_view=false;
-                else {browser_loaded=false;browser_address_focus=true;}
+                if(!browser_history_move(-1) && active_app==13)
+                    falco_web_view=false;
             }else if(mx<wx+196)browser_load();
+            else if(mx<wx+287)browser_home_page();
             else if(mx>=wx+ww-160){
                 browser_host_gateway=!browser_host_gateway;
                 k_strcpy(browser_status,browser_host_gateway?
@@ -4318,8 +4590,11 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     gfx_text(wx+margin+10,wy+15,"< Back",style.text);
     gfx_round_rect(wx+104,wy+7,88,32,10,style.tab_inactive);
     gfx_text(wx+114,wy+15,"Reload",style.muted);
-    gfx_text(wx+211,wy+16,active_app==13?"Falco Web":"Falcon Browser",style.text);
-    gfx_rect(wx+208,wy+42,114,2,style.accent);
+    gfx_round_rect(wx+201,wy+7,83,32,10,style.tab_inactive);
+    gfx_text(wx+218,wy+15,"Home",style.text);
+    if(ww>665)gfx_text(wx+299,wy+16,
+        active_app==13?"Falco Web":"Falcon Browser",style.text);
+    gfx_rect(wx+288,wy+42,95,2,style.accent);
     gfx_round_rect(wx+ww-160,wy+7,141,32,10,style.tab_inactive);
     gfx_round_outline(wx+ww-160,wy+7,141,32,10,style.chrome_border);
     gfx_text(wx+ww-150,wy+15,
@@ -4331,11 +4606,13 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
                       browser_address_focus?style.accent:style.hairline);
     gfx_circle(sx+15,sy+17,5,style.secure);
     gfx_text(sx+27,sy+11,browser_address,style.text);
-    gfx_rect(wx,wy+102,ww,34,style.chrome);
-    gfx_text(wx+margin,wy+113,browser_status,
-             browser_loaded?style.secure:style.muted);
-    i32 py=wy+146;
-    i32 height=wh-184;
+    if(!SET.browser_compact){
+        gfx_rect(wx,wy+102,ww,34,style.chrome);
+        gfx_text(wx+margin,wy+113,browser_status,
+                 browser_loaded?style.secure:style.muted);
+    }
+    i32 py=wy+(SET.browser_compact?110:146);
+    i32 height=wh-(SET.browser_compact?148:184);
     if(height<70)height=70;
     gfx_round_rect(sx,py,sw,height,12,style.surface);
     gfx_round_outline(sx,py,sw,height,12,style.hairline);
@@ -4377,99 +4654,178 @@ static void render_browser(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
         }
     }
     gfx_text(wx+margin,wy+wh-26,
-        "Ctrl+L URL | Enter load | F5 reload | Esc exit URL | Up/Down scroll",
+        "F2 Home | Alt+Left/Right history | Ctrl+L URL | F8 demo | F9 clear",
         PAL_TEXT_FAINT);
 }
 
-/* --- Video (software demo player) ---------------------------------------- */
-static bool vid_play = true;
-static u32  vid_epoch_ms = 0;
-static u32  vid_freeze_ms = 0;
-static i32  vid_clip = 0;   /* 0..2 */
-
-static u32 vid_now_ms(void)
-{
-    if (vid_play) return pit_ms() - vid_epoch_ms;
-    return vid_freeze_ms;
+/* --- Falcon Media: actual SHFS media files, not procedural sample clips. --
+ * Native 24-bit BMP + binary PPM images, PCM RIFF/WAV inspection, waveform.
+ * Audio-output and compressed video playback are not implemented; do not
+ * pretend that animated UI cards constitute decoded MP4 footage.
+ */
+#define MEDIA_SLOTS 48
+static char media_paths[MEDIA_SLOTS][SHFS_PATH];
+static i32 media_count,media_sel,media_scroll;
+static void media_collect(const char*path,bool is_dir,u32 len,void*ud){
+    (void)ud;(void)len;
+    if(is_dir||media_count>=MEDIA_SLOTS)return;
+    fv_kind_t type=fv_kind(path);
+    if(type!=FV_BITMAP&&type!=FV_PPM&&type!=FV_WAVE)return;
+    i32 n=0;while(path[n]&&n<SHFS_PATH-1)n++;
+    for(i32 i=0;i<n;i++)media_paths[media_count][i]=path[i];
+    media_paths[media_count][n]=0;
+    media_count++;
 }
-
-static void video_input_key(i32 key)
-{
-    if (key == ' ' || key == 'p' || key == 'P') {
-        if (vid_play) {
-            vid_freeze_ms = vid_now_ms();
-            vid_play = false;
-        } else {
-            vid_epoch_ms = pit_ms() - vid_freeze_ms;
-            vid_play = true;
+static void media_refresh(void){
+    shfs_init();media_count=0;
+    shfs_foreach_path(media_collect,NULL);
+    if(media_sel>=media_count)media_sel=media_count?media_count-1:0;
+    if(media_sel<0)media_sel=0;
+}
+static void video_input_key(i32 key){
+    media_refresh();
+    if(key==KEY_UP){if(media_sel>0)media_sel--;return;}
+    if(key==KEY_DOWN){if(media_sel+1<media_count)media_sel++;return;}
+    if(key==KEY_HOME){media_sel=0;return;}
+    if(key==KEY_PGDN){media_sel+=6;if(media_sel>=media_count)
+        media_sel=media_count?media_count-1:0;return;}
+    if(key==KEY_PGUP){media_sel-=6;if(media_sel<0)media_sel=0;return;}
+    if(key==KEY_ENTER&&media_count){
+        files_open_path(media_paths[media_sel]);
+        apps_open(1);
+    }
+}
+static void media_draw_image(const shfs_ent_t*file,fv_kind_t kind,
+                             i32 left,i32 top,i32 width,i32 height){
+    fv_bitmap_t image={0};
+    bool valid=kind==FV_BITMAP?
+        fv_bmp_open(file->data,file->len,&image):
+        fv_ppm_open(file->data,file->len,&image);
+    if(!valid){
+        gfx_text(left+17,top+22,"Corrupt or unsupported image",COL_WARN);
+        return;
+    }
+    i32 scale_x=(width-24)/(i32)image.width;
+    i32 scale_y=(height-55)/(i32)image.height;
+    i32 scale=scale_x<scale_y?scale_x:scale_y;
+    if(scale>12)scale=12;
+    if(scale<1){
+        gfx_text(left+17,top+22,"Image exceeds available viewport",COL_WARN);
+        return;
+    }
+    i32 x0=left+(width-(i32)image.width*scale)/2;
+    i32 y0=top+(height-(i32)image.height*scale)/2;
+    for(u32 y=0;y<image.height;y++)for(u32 x=0;x<image.width;x++){
+        u32 rgb=kind==FV_BITMAP?
+            fv_bmp_pixel(file->data,&image,x,y):
+            fv_ppm_pixel(file->data,&image,x,y);
+        gfx_rect(x0+(i32)x*scale,y0+(i32)y*scale,scale,scale,rgb);
+    }
+    char a[20],b[20];
+    k_itoa(image.width,a,10);k_itoa(image.height,b,10);
+    gfx_text(left+17,top+height-29,"Real decoded image pixels",PAL_TEXT_DIM);
+    gfx_text(left+width-125,top+height-29,a,PAL_TEXT_DIM);
+    gfx_text(left+width-88,top+height-29,"x",PAL_TEXT_DIM);
+    gfx_text(left+width-74,top+height-29,b,PAL_TEXT_DIM);
+}
+static void media_draw_wave(const shfs_ent_t*file,
+                            i32 left,i32 top,i32 width,i32 height){
+    fv_wave_t wav={0};
+    if(!fv_wave_open(file->data,file->len,&wav)){
+        gfx_text(left+17,top+22,"Invalid WAV: only PCM 8/16-bit is accepted",COL_WARN);
+        return;
+    }
+    char number[24];
+    gfx_text(left+19,top+15,"RIFF / WAVE  |  Parsed real file",PAL_TEXT);
+    gfx_text(left+19,top+44,"Sample rate (Hz):",PAL_TEXT_DIM);
+    k_itoa(wav.sample_rate,number,10);
+    gfx_text(left+180,top+44,number,PAL_ACCENT);
+    gfx_text(left+19,top+67,"Channels:",PAL_TEXT_DIM);
+    k_itoa(wav.channels,number,10);gfx_text(left+180,top+67,number,PAL_ACCENT);
+    gfx_text(left+19,top+90,"PCM bits:",PAL_TEXT_DIM);
+    k_itoa(wav.bits_per_sample,number,10);gfx_text(left+180,top+90,number,PAL_ACCENT);
+    gfx_text(left+19,top+113,"Frames:",PAL_TEXT_DIM);
+    k_itoa(wav.frames,number,10);gfx_text(left+180,top+113,number,PAL_ACCENT);
+    i32 cx=left+20,cy=top+height-100;
+    i32 graphw=width-40,amplitude=48;
+    if(graphw>0&&height>210){
+        gfx_line(cx,cy,cx+graphw,cy,PAL_HAIRLINE);
+        for(i32 x=0;x<graphw;x++){
+            u32 sample=(u32)((u64)x*(u64)wav.frames/(u32)graphw);
+            if(sample>=wav.frames)sample=wav.frames-1u;
+            u32 off=wav.data_offset+sample*(u32)wav.channels*
+                    (u32)(wav.bits_per_sample/8u);
+            i32 signed_sample;
+            if(wav.bits_per_sample==8u)signed_sample=((u8)file->data[off]-128)*256;
+            else{
+                const u8*bytes=(const u8*)file->data+off;
+                signed_sample=(i16)((u16)bytes[0]|((u16)bytes[1]<<8));
+            }
+            i32 rise=(signed_sample*amplitude)/32768;
+            gfx_line(cx+x,cy,cx+x,cy-rise,PAL_ACCENT);
         }
-        return;
     }
-    if (key == KEY_RIGHT) { vid_freeze_ms = vid_now_ms() + 1500; if (vid_play) vid_epoch_ms = pit_ms() - vid_freeze_ms; return; }
-    if (key == KEY_LEFT)  {
-        vid_freeze_ms = vid_now_ms();
-        if (vid_freeze_ms > 1500) vid_freeze_ms -= 1500;
-        else                      vid_freeze_ms = 0;
-        if (vid_play) vid_epoch_ms = pit_ms() - vid_freeze_ms;
-        return;
-    }
-    if (key == KEY_TAB || key == 'n' || key == 'N') {
-        vid_clip = (vid_clip + 1) % 3;
-    }
+    gfx_text(left+19,top+height-27,
+      "Actual waveform. Audio playback requires a real sound driver.",PAL_TEXT_DIM);
 }
-
-static void render_video(i32 wx, i32 wy, i32 ww, i32 wh, u32 frame)
-{
+static void render_video(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame){
     (void)frame;
-    section(wx, wy, T("Video", "Video"),
-            T("Space play/pause  ← / → seek  Tab clip",
-              "Boşluk duraklat  ← / → sar  Sekme klip"));
-
-    i32 vx = wx + 24, vy = wy + 56, vw = ww - 48, vh = wh - 120;
-    if (vh < 120) vh = 120;
-    gfx_round_rect_a(vx, vy, vw, vh, 12, 0x0D1118, 255);
-    gfx_round_outline(vx, vy, vw, vh, 12, PAL_HAIRLINE);
-
-    u32 t = vid_now_ms();
-    u32 sec = t / 1000;
-    u32 ms = t % 1000;
-
-    /* Procedural "video" clips rendered in real-time on the framebuffer. */
-    if (vid_clip == 0) {
-        for (i32 y = 8; y < vh - 8; y += 2) {
-            u8 a = (u8)(30 + (y * 60) / vh);
-            gfx_rect_a(vx + 8, vy + y, vw - 16, 2, PAL_ACCENT, a);
-        }
-        i32 bx = vx + 24 + (i32)(sec % (u32)(vw > 80 ? (vw - 80) : 1));
-        gfx_round_rect_a(bx, vy + vh / 2 - 18, 56, 36, 8, 0xFFFFFF, 190);
-    } else if (vid_clip == 1) {
-        i32 cx = vx + vw / 2, cy = vy + vh / 2;
-        for (i32 r = 18; r < (vh < vw ? vh : vw) / 2 - 8; r += 18) {
-            u8 a = (u8)(140 - (r * 100) / (vh > 0 ? vh : 1));
-            gfx_circle_a(cx, cy, r + (i32)(sec % 12), PAL_ACCENT, a);
-        }
-        gfx_circle(cx, cy, 14, 0xFFFFFF);
-    } else {
-        for (i32 x = vx + 10; x < vx + vw - 10; x += 18) {
-            i32 h = 20 + (i32)((((u32)x + sec * 37u) % (u32)(vh - 34)));
-            gfx_round_rect_a(x, vy + vh - h - 8, 10, h, 3, 0x34A853, 220);
+    media_refresh();
+    section(wx,wy,T("Falcon Media","Falcon Medya"),
+        T("Real local images and PCM audio inspector",
+          "Gercek yerel gorseller ve PCM ses inceleyici"));
+    i32 left=wx+18,top=wy+55;
+    i32 sidebar=ww/3;if(sidebar<175)sidebar=175;
+    if(sidebar>290)sidebar=290;
+    if(sidebar>ww-200)sidebar=ww-200;
+    i32 content_x=left+sidebar+14,content_w=ww-sidebar-50;
+    i32 content_h=wh-105;
+    if(sidebar<80||content_w<100||content_h<80)return;
+    gfx_round_rect_a(left,top,sidebar,content_h,13,PAL_PANEL_DEEP,255);
+    gfx_round_rect_a(content_x,top,content_w,content_h,13,0x0D1625u,255);
+    gfx_round_outline(content_x,top,content_w,content_h,13,PAL_HAIRLINE);
+    gfx_text(left+14,top+12,"ON-DEVICE MEDIA",PAL_TEXT_DIM);
+    char number[12];k_itoa(media_count,number,10);
+    gfx_text(left+sidebar-35,top+12,number,PAL_ACCENT);
+    i32 visible=(content_h-80)/40;
+    if(visible<1)visible=1;
+    if(media_sel<media_scroll)media_scroll=media_sel;
+    if(media_sel>=media_scroll+visible)media_scroll=media_sel-visible+1;
+    i32 mx,my;bool pressed;mouse_get(&mx,&my,&pressed);(void)pressed;
+    bool click=wm_click_enabled();
+    for(i32 row=0;row<visible&&row+media_scroll<media_count;row++){
+        i32 index=row+media_scroll,y=top+44+row*40;
+        bool chosen=index==media_sel;
+        gfx_round_rect(left+7,y,sidebar-14,35,9,
+            chosen?PAL_ACCENT_DIM:PAL_PANEL);
+        const char*name=media_paths[index];
+        for(i32 j=0;media_paths[index][j];j++)
+            if(media_paths[index][j]=='/'&&media_paths[index][j+1])
+                name=media_paths[index]+j+1;
+        char label[34];i32 cap=(sidebar-39)/8;
+        if(cap>32)cap=32;
+        if(cap<1)cap=1;
+        i32 n=0;while(name[n]&&n<cap){label[n]=name[n];n++;}
+        label[n]=0;
+        gfx_text(left+17,y+11,label,chosen?PAL_ACCENT:PAL_TEXT);
+        if(click&&mx>=left+7&&mx<left+sidebar-7&&my>=y&&my<y+35){
+            media_sel=index;(void)mouse_consume_click();click=false;
         }
     }
-
-    /* Transport row */
-    i32 tx = vx + 12, ty = vy + vh + 10, tw = vw - 24;
-    gfx_round_rect_a(tx, ty, tw, 28, 12, PAL_PANEL_DEEP, 255);
-    gfx_round_outline(tx, ty, tw, 28, 12, PAL_HAIRLINE);
-    i32 prog = (i32)(ms % (u32)(tw > 16 ? tw - 16 : 1));
-    gfx_round_rect_a(tx + 8, ty + 10, prog, 8, 4, PAL_ACCENT, 255);
-    gfx_text(tx + tw - 210, ty + 7, vid_play ? "playing" : "paused", vid_play ? COL_OK : COL_WARN);
-    char ts[32], n[8];
-    k_strcpy(ts, "t=");
-    k_itoa(sec, n, 10); k_strcat(ts, n); k_strcat(ts, ".");
-    if (ms < 100) k_strcat(ts, "0");
-    if (ms < 10)  k_strcat(ts, "0");
-    k_itoa(ms, n, 10); k_strcat(ts, n); k_strcat(ts, "s");
-    gfx_text(tx + 12, ty + 7, ts, PAL_TEXT);
+    if(!media_count){
+        gfx_text(left+14,top+60,"No local media files",PAL_TEXT_DIM);
+        gfx_text(content_x+20,top+35,"Use Files to add BMP / PPM / WAV.",PAL_TEXT);
+        gfx_text(content_x+20,top+66,"No sample videos or mock playback.",PAL_TEXT_DIM);
+        return;
+    }
+    shfs_ent_t*file=shfs_lookup(media_paths[media_sel]);
+    if(!file||file->is_dir)return;
+    fv_kind_t kind=fv_kind(media_paths[media_sel]);
+    if(kind==FV_WAVE)media_draw_wave(file,content_x,top,content_w,content_h);
+    else media_draw_image(file,kind,content_x,top,content_w,content_h);
+    gfx_text(left+14,top+content_h-26,
+        T("Up/Down choose   Enter open in Files",
+          "Yukari/Asagi sec  Enter Dosyalarda ac"),PAL_TEXT_DIM);
 }
 
 /* --- Heroic Launcher (Linux app bridge mock) ----------------------------- */
@@ -4705,6 +5061,31 @@ static void fapp_gui_input(i32 key){
     }else if(key==KEY_ENTER || key==' '){
         fapp_gui_run_action(fapp_button_selected);
     }
+}
+static void files_open_path(const char *path){
+    if(!path||!path[0]){files_action_status="Select a file first";return;}
+    fv_kind_t kind=fv_kind(path);
+    if(kind==FV_PACKAGE){files_preview_active=false;files_launch_pkg(path);return;}
+    shfs_ent_t *f=shfs_lookup(path);
+    if(!f||f->is_dir){files_action_status="Not a readable file";return;}
+    if(kind!=FV_TEXT&&kind!=FV_BITMAP&&kind!=FV_PPM&&kind!=FV_WAVE){
+        files_action_status="Unsupported file format (not executed)";return;
+    }
+    if(kind==FV_TEXT){
+        /* Text viewers never interpret binary content as executable code. */
+        for(u32 i=0;i<f->len;i++)if(f->data[i]==0){
+            files_action_status="Binary data rejected by text viewer";return;
+        }
+    }
+    i32 n=0;while(path[n]&&n<(i32)sizeof files_preview_path-1)n++;
+    for(i32 i=0;i<n;i++)files_preview_path[i]=path[i];
+    files_preview_path[n]=0;
+    files_preview_scroll=0;
+    files_preview_active=true;
+    files_action_status=kind==FV_BITMAP?"Native BMP image preview":
+        kind==FV_PPM?"Native PPM RGB preview":
+        kind==FV_WAVE?"Real PCM waveform / metadata (playback unsupported)":
+        "Read-only native text preview";
 }
 static void files_launch_pkg(const char *path){
     if(!path||!path[0]){files_action_status="Select a .app.pkg file first";return;}
@@ -5018,6 +5399,7 @@ static void render_market(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
 /* ---- Codedium: native editable FAPP/1 source, file save and script preview --- */
 #define CODE_CAP 4096
 static char code_text[CODE_CAP];
+static char code_document_path[SHFS_PATH]="/home/falcon/Desktop/project.fsh";
 static i32 code_len, code_cursor;
 static bool code_ready,code_dirty,code_publish_armed;
 static char code_undo[CODE_CAP], code_redo[CODE_CAP];
@@ -5060,16 +5442,60 @@ static void code_init(void)
     code_text[n] = 0;
     code_cursor = code_len = n;
 }
+static void code_new_document(void){
+    code_init();
+    if(code_dirty){
+        code_status="Save current edits (F5) before creating another document";
+        return;
+    }
+    code_document_path[0]=0;
+    k_strcpy(code_document_path,"/home/falcon/Desktop/untitled.fsh");
+    code_text[0]=0;code_len=0;code_cursor=0;
+    code_dirty=false;code_publish_armed=false;
+    code_undo_valid=code_redo_valid=false;
+    code_status="New blank FScript document. F5 saves to Desktop/untitled.fsh";
+}
+static bool code_open_path(const char*path){
+    code_init();
+    if(!path||!path[0]||fv_kind(path)!=FV_TEXT){
+        code_status="Open denied: select a text source file";return false;
+    }
+    if(code_dirty){
+        code_status="Save current changes (F5) before opening another file";
+        return false;
+    }
+    shfs_ent_t*file=shfs_lookup(path);
+    if(!file||file->is_dir||file->len>=CODE_CAP){
+        code_status="Open failed: missing file or source exceeds 4KiB";
+        return false;
+    }
+    for(u32 i=0;i<file->len;i++)if(file->data[i]==0){
+        code_status="Binary content cannot be opened in Codedium";return false;
+    }
+    u32 n=(u32)k_strlen(path);
+    if(n>=sizeof code_document_path)return false;
+    k_memcpy(code_text,file->data,file->len);
+    code_text[file->len]=0;
+    code_len=(i32)file->len;code_cursor=0;
+    k_memcpy(code_document_path,path,n+1u);
+    code_undo_valid=code_redo_valid=false;
+    code_dirty=false;
+    code_status="Opened real SHFS document | F5 Save | F6 Safe Run";
+    return true;
+}
 static void code_save(void)
 {
-    shfs_ent_t *file = shfs_open_w_abs("/home/falcon/Desktop/project.fsh", false);
+    shfs_ent_t *file = shfs_open_w_abs(code_document_path, false);
     if (!file) { code_status = "Save error: RAM file system is full"; return; }
     k_memcpy(file->data, code_text, code_len + 1);
     file->len = code_len;
     code_dirty=false;
-    code_status = codedium_project_save(code_text, code_len)
-        ? "Saved project to RAM and safe FalconOS disk"
-        : "Saved in RAM only (no safe disk selected)";
+    if(k_strcmp(code_document_path,"/home/falcon/Desktop/project.fsh")==0)
+        code_status=codedium_project_save(code_text,code_len)
+            ? "Saved project to guest filesystem and dedicated FalconOS slot"
+            : "Saved to guest RAM filesystem (no safe disk selected)";
+    else
+        code_status="Saved edited file to guest filesystem (persistence depends on mount)";
 }
 static void code_run(void)
 {
@@ -5121,6 +5547,7 @@ static void code_input_key(i32 key)
 {
     code_init();
     if (key == KEY_F5) { code_save(); return; }
+    if (key == KEY_F9) { code_new_document(); return; }
     if (key == KEY_F6) { code_run(); return; }
     if (key == KEY_F7) { (void)code_export(); return; }
     if (key == KEY_F10) {
@@ -5146,6 +5573,7 @@ static void code_input_key(i32 key)
         if(key=='z'||key=='Z'){code_history_apply(true);return;}
         if(key=='y'||key=='Y'){code_history_apply(false);return;}
         if(key=='s'||key=='S'){code_save();return;}
+        if(key=='n'||key=='N'){code_new_document();return;}
     }
     if (key == KEY_UP || key == KEY_DOWN) {
         i32 start = code_cursor;
@@ -5206,26 +5634,31 @@ static void render_codedium(i32 wx,i32 wy,i32 ww,i32 wh,u32 frame)
     code_init();
     section(wx,wy,"Codedium Studio","FAPP/1 editor  |  sandboxed commands only");
     /* Toolbar performs real actions; not placeholder or static artwork. */
-    const char *names[]={"Save  F5","Run  F6","Export  F7",
+    const char *names[]={"New F9","Save F5","Run F6","Export F7",
                          "GitHub F10"};
-    const u32 tones[]={0x3478E6u,0x19A680u,0x8862D7u,0x167B54u};
+    const u32 tones[]={0x60788Bu,0x3478E6u,0x19A680u,0x8862D7u,0x167B54u};
     i32 mx,my;bool held;mouse_get(&mx,&my,&held);(void)held;
     bool clicked=wm_click_enabled();
-    for(i32 i=0;i<4;i++){
-        i32 x=wx+21+i*123, y=wy+47;
+    for(i32 i=0;i<5;i++){
+        i32 x=wx+21+i*122, y=wy+47;
         bool hover=mx>=x&&mx<x+113&&my>=y&&my<y+34;
         gfx_round_rect_a(x,y,113,34,11,hover?PAL_ACCENT:tones[i],255);
         gfx_text_centered(x+56,y+11,names[i],0xFFFFFFu);
         if(clicked&&hover){
             (void)mouse_consume_click();clicked=false;
-            if(i==0)code_save();
-            else if(i==1)code_run();
-            else if(i==2)(void)code_export();
+            if(i==0)code_new_document();
+            else if(i==1)code_save();
+            else if(i==2)code_run();
+            else if(i==3)(void)code_export();
             else code_input_key(KEY_F10);
         }
     }
     if(ww>=800){
-        gfx_text(wx+ww-240,wy+58,"Desktop/project.fsh",PAL_TEXT_DIM);
+        const char*name=code_document_path;
+        for(i32 i=0;code_document_path[i];i++)
+            if(code_document_path[i]=='/'&&code_document_path[i+1])
+                name=code_document_path+i+1;
+        gfx_text(wx+ww-240,wy+58,name,PAL_TEXT_DIM);
         gfx_circle(wx+ww-24,wy+64,5,code_dirty?COL_WARN:COL_OK);
     }
     i32 top=wy+91;
@@ -5386,7 +5819,7 @@ static app_def_t APPS[] = {
     { "Stats",      "system telemetry",    0xE53935, render_stats,    NULL,             icon_stats    },
     { "Calendar",   "real RTC month view", 0x3070FF, render_calendar, calendar_input_key, icon_calendar },
     { "Gallery",    "palette swatches",    0xC084FC, render_gallery,  NULL,             icon_gallery  },
-    { "Video",      "software player",     0x16B5A8, render_video,    video_input_key,  icon_video    },
+    { "Media",      "local BMP / PPM / PCM WAV",0x16B5A8, render_video, video_input_key, icon_video    },
     { "Falco",      "native web search",   0x2A66F5, render_falco,    falco_input_key,  icon_falco    },
     { "Browser",    "Native TLS 1.2 text web", 0x4285F4, render_browser, chrome_input_key, icon_browser },
     { "Heroic",     "linux game launcher", 0x6D5BFF, render_heroic,  heroic_input_key, icon_heroic   },
@@ -5398,15 +5831,14 @@ static app_def_t APPS[] = {
 };
 
 static i32 builtin_app_count(void) { return (i32)(sizeof APPS / sizeof *APPS); }
-/* ChromeOS-style launcher catalog: native functions only, stable original
- * app IDs for desktop pins, Store receipts and automation compatibility.
- * Demo video/palette gallery, Heroic (no Linux ABI) and Jarvis (not a
- * connected AI) are deliberately absent rather than mislabeled as working.
- * USB UVC camera is not yet implemented and is never faked.
+/* Launcher catalog: preserve app IDs for old pins, receipts and tooling.
+ * Falcon Media replaces the procedural video demo and previews real files.
+ * Heroic/Jarvis (missing execution backend) remain intentionally hidden.
+ * USB UVC camera and compressed audio/video codecs remain unsupported.
  */
-static const i32 LAUNCH_FAVORITES[] = {1,14,13,20,6,7,3,5,2,8};
+static const i32 LAUNCH_FAVORITES[] = {1,14,13,12,20,6,7,3,5,2,8};
 static const i32 LAUNCH_SYSTEM[] = {3,9,4,17,18,20,5};
-static const i32 LAUNCH_ALL[] = {1,14,13,20,6,7,3,5,2,8,9,4,17,18,10};
+static const i32 LAUNCH_ALL[] = {1,14,13,20,12,6,7,3,5,2,8,9,4,17,18,10};
 i32 apps_launcher_count(i32 group) {
     if(group==0) return (i32)(sizeof LAUNCH_FAVORITES/sizeof *LAUNCH_FAVORITES);
     if(group==1) return (i32)(sizeof LAUNCH_SYSTEM/sizeof *LAUNCH_SYSTEM);
@@ -5464,7 +5896,7 @@ const char *apps_display_name(i32 i)
         case 9:  return "İstatistik";
         case 10: return "Takvim";
         case 11: return "Galeri";
-        case 12: return "Video";
+        case 12: return "Medya";
         case 13: return "Falco";
         case 14: return "Tarayıcı";
         case 15: return "Heroic";
@@ -5498,7 +5930,7 @@ const char *apps_display_subtitle(i32 i)
         case 9:  return "RAM / CPU / ekran";
         case 10: return "Ay görünümü";
         case 11: return "Renk paleti";
-        case 12: return "Yazılım oynatıcı";
+        case 12: return "BMP / PPM / PCM WAV";
         case 13: return "Yerel indeks arama";
         case 14: return "Doğrulanmış HTTPS metin görünümü";
         case 15: return "Oyun başlatıcı (uyum)";
@@ -5531,6 +5963,13 @@ void apps_draw_icon(i32 i,i32 cx,i32 cy){
         gfx_round_rect(cx-12,cy-9,13,5,2,white);
         gfx_round_rect(cx-12,cy-5,24,17,4,shadow);
         gfx_line(cx-9,cy+3,cx+9,cy+3,0xD59C42u);
+        break;
+    case 12: /* Falcon Media: real image and PCM file inspector */
+        gfx_round_rect(cx-12,cy-10,24,20,5,white);
+        gfx_circle(cx-5,cy-4,3,0x159B9Bu);
+        gfx_line(cx-10,cy+8,cx-2,cy,0x159B9Bu);
+        gfx_line(cx-2,cy,cx+3,cy+5,0x159B9Bu);
+        gfx_line(cx+3,cy+5,cx+8,cy,0x159B9Bu);
         break;
     case 14: /* Browser: globe, not deceptive Chrome logo */
         gfx_circle_outline(cx,cy,12,white);

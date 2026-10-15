@@ -1,0 +1,74 @@
+name: Falco 12 REAL website screenshots and critical review
+on:
+  push:
+    branches: ['feature/v2-visual-runtime-refresh-20261014']
+    paths:
+      - 'tools/qemu_falco_12sites_audit.py'
+      - '.github/workflows/falco-12-real-sites.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  real-falco-websites:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout the experimental V2 branch
+        uses: actions/checkout@v4
+      - name: Install actual x86_64 UEFI FalconOS and QEMU dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm xorriso mtools qemu-system-x86 ovmf clang lld binutils ca-certificates python3-pil fonts-dejavu-core
+      - name: Compile REAL native FalconOS/UEFI ISO (no host-browser render)
+        run: |
+          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_BROWSER_TEST -DFALCON_QEMU_UI_GALLERY'
+          test -s build/FalconOS.iso
+          file build/BOOTX64.EFI | grep -F 'PE32+'
+      - name: Open twelve randomly selected public sites INSIDE Falco and capture QEMU screenshots
+        id: audit
+        run: timeout 1000s python3 -u tools/qemu_falco_12sites_audit.py
+      - name: Verify all screenshots are real QEMU framebuffer captures
+        if: steps.audit.outcome == 'success'
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          p=Path("build/falco-sites-audit")
+          j=json.loads((p/"falco-12site-results.json").read_text())
+          assert len(j["results"])==12, "Wrong site count"
+          assert all(site.get("attempted") is True for site in j["results"]), (
+              "Not all website hostnames were actually requested from Falco: "+
+              str([(s["site"],s["load"]) for s in j["results"] if not s.get("attempted")]))
+          for site in j["results"]:
+              assert site["screenshot"] and Path(site["screenshot"]).exists(),site
+              im=Image.open(site["screenshot"])
+              assert im.width>=640 and im.height>=400, (site,im.size)
+          out=p/"Falco-12-Gercek-Site-Testi.png"
+          assert out.exists() and Image.open(out).size[0]>=2000
+          print("PASS 12 genuine FalconOS QEMU screen captures + one composite",out)
+          print("RESULTS",j["counts"])
+          PY
+      - name: Upload all original guest screenshots, composed PNG and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Falco-12-Real-QEMU-Website-Screenshots
+          if-no-files-found: warn
+          retention-days: 10
+          path: |
+            build/falco-sites-audit/*.png
+            build/falco-sites-audit/*.json
+            build/falco-sites-audit/*.log
+      - name: Publish ONLY verified complete composite PNG to GitHub raw URL
+        if: steps.audit.outcome == 'success'
+        run: |
+          mkdir -p reports
+          cp build/falco-sites-audit/Falco-12-Gercek-Site-Testi.png reports/Falco-12-Gercek-Site-Testi.png
+          cp build/falco-sites-audit/falco-12site-results.json reports/Falco-12-Gercek-Site-Testi.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/Falco-12-Gercek-Site-Testi.png reports/Falco-12-Gercek-Site-Testi.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "test: archive actual Falco twelve-site QEMU screenshot review [skip ci]"
+          git push origin HEAD:feature/v2-visual-runtime-refresh-20261014

@@ -1,0 +1,64 @@
+name: FalconOS V2 visual runtime and native viewer QA
+on:
+  push:
+    branches: ['feature/v2-visual-runtime-refresh-20261014']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate-guest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native UEFI toolchain and QEMU
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm xorriso mtools qemu-system-x86 ovmf clang lld binutils python3-venv fonts-dejavu-core
+          python3 -m venv /tmp/falcon-v2-visual
+          /tmp/falcon-v2-visual/bin/pip install --quiet 'numpy<3' trimesh opencv-python-headless pillow
+      - name: Validate native Falco CSS and safe DOM regression cases
+        run: |
+          mkdir -p build
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/falco_miniweb_test.c kernel/falco_miniweb.c -o build/test-miniweb
+          build/test-miniweb
+      - name: Validate real Falcon Web history and HTTPS-only links
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/falco_navigation_test.c kernel/falco_navigation.c -o build/test-navigation
+          build/test-navigation
+      - name: Validate file association and real BMP decoder
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/file_viewer_test.c kernel/file_viewer.c -o build/test-files
+          build/test-files
+      - name: Python regression suite
+        run: /tmp/falcon-v2-visual/bin/python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Build actual animated-GLB native UEFI FalconBoot ISO
+        run: PATH="/tmp/falcon-v2-visual/bin:$PATH" make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_UI_GALLERY'
+      - name: Verify exact build-generated dragon image is present on ESP
+        run: |
+          test -s build/boot_dragon.bmp
+          file build/BOOTX64.EFI | grep -F 'PE32+'
+          mcopy -i build/iso/falcon-esp.img ::/FALCONOS/BOOT.BMP build/boot-from-esp.bmp
+          cmp build/boot_dragon.bmp build/boot-from-esp.bmp
+          /tmp/falcon-v2-visual/bin/python - <<'PY'
+          from PIL import Image
+          import pathlib
+          img=Image.open("build/boot-from-esp.bmp").convert("RGB")
+          assert img.size==(360,270)
+          assert len(img.getcolors(maxcolors=100000)) > 30
+          print("PASS: genuine GLB bake on UEFI ESP, color preview",img.size)
+          PY
+      - name: QEMU boot smoke (no physical disks)
+        run: timeout 100s python3 tools/qemu_smoke.py --boot-seconds 20
+      - name: Publish real ISO and unmodified emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FalconOS-V2-Visual-QA
+          path: |
+            build/FalconOS.iso
+            build/boot_dragon.bmp
+            build/boot-from-esp.bmp
+            build/falcon-boot-smoke.png
+            build/falcon-boot-smoke.log
+          if-no-files-found: ignore

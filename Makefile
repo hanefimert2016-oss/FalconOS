@@ -86,7 +86,9 @@ endif
 ENABLE_BOOT_GLB ?= 1
 ifeq ($(ENABLE_BOOT_GLB),1)
 BOOT_GLB_FLAGS := -DFALCON_BOOT_GLB -I$(BUILD)
+BOOT_DRAGON_BMP := $(BUILD)/boot_dragon.bmp
 else
+BOOT_DRAGON_BMP :=
 BOOT_GLB_FLAGS :=
 endif
 
@@ -196,12 +198,17 @@ endif
 ifeq ($(ENABLE_BOOT_GLB),1)
 $(BUILD)/boot_model_frames.inc: assets/boot/falconos_boot_intro_animation.glb tools/bake_boot_intro.py | $(BUILD)
 	@if python3 -c 'import numpy, cv2, trimesh, PIL' >/dev/null 2>&1; then \
-	  python3 tools/bake_boot_intro.py --source $< --out $@ --frames 48; \
+	  python3 tools/bake_boot_intro.py --source $< --out $@ --bmp $(BOOT_DRAGON_BMP) --frames 48; \
 	else \
 	  python3 -m venv $(BUILD)/boot-intro-venv && \
 	  $(BUILD)/boot-intro-venv/bin/pip install --disable-pip-version-check 'numpy<3' trimesh opencv-python-headless pillow && \
-	  $(BUILD)/boot-intro-venv/bin/python tools/bake_boot_intro.py --source $< --out $@ --frames 48; \
+	  $(BUILD)/boot-intro-venv/bin/python tools/bake_boot_intro.py --source $< --out $@ --bmp $(BOOT_DRAGON_BMP) --frames 48; \
 	fi
+
+ifeq ($(ENABLE_BOOT_GLB),1)
+$(BUILD)/boot_dragon.bmp: $(BUILD)/boot_model_frames.inc
+	@test -s $@ || { echo "Missing baked boot dragon image"; exit 1; }
+endif
 
 $(BUILD)/kernel/boot_glb_animation.o: $(BUILD)/boot_model_frames.inc
 $(BUILD)/kernel/main.o: $(BUILD)/boot_model_frames.inc
@@ -232,7 +239,7 @@ $(UEFI_EFI): $(KERNEL_BIN) boot/falcon_uefi/loader.c boot/falcon_uefi/uefi.h boo
 	  /out:$(UEFI_EFI) $(BUILD)/falcon-loader.obj $(BUILD)/falcon-handoff.obj
 	@echo "[OK] FalconBoot UEFI application $@"
 
-$(ISO): $(UEFI_EFI) $(KERNEL_BIN)
+$(ISO): $(UEFI_EFI) $(KERNEL_BIN) $(BOOT_DRAGON_BMP)
 	@rm -rf $(ISO_DIR)
 	@mkdir -p $(ISO_DIR)
 	@truncate -s 25165824 $(ISO_DIR)/falcon-esp.img
@@ -240,6 +247,7 @@ $(ISO): $(UEFI_EFI) $(KERNEL_BIN)
 	mmd -i $(ISO_DIR)/falcon-esp.img ::/EFI ::/EFI/BOOT ::/FALCONOS
 	mcopy -i $(ISO_DIR)/falcon-esp.img $(UEFI_EFI) ::/EFI/BOOT/BOOTX64.EFI
 	mcopy -i $(ISO_DIR)/falcon-esp.img $(KERNEL_BIN) ::/FALCONOS/KERNEL.BIN
+	@if [ -n "$(BOOT_DRAGON_BMP)" ]; then mcopy -i $(ISO_DIR)/falcon-esp.img "$(BOOT_DRAGON_BMP)" ::/FALCONOS/BOOT.BMP; fi
 	xorriso -as mkisofs -r -J -V FALCONOS_V2 -e falcon-esp.img -no-emul-boot -o $(ISO) $(ISO_DIR)
 	@echo "[OK] GRUB-free FalconOS V2 UEFI ISO $@ (native FalconBoot/1)"
 
