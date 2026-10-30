@@ -212,3 +212,97 @@ class AssetRedirectSecurityTests(unittest.TestCase):
         )
         self.assertEqual(next_request.full_url, destination)
         self.assertLessEqual(handler.max_redirections, 4)
+
+class SignedPublisherTests(unittest.TestCase):
+    """Cryptographic publisher authentication is separate from SHA-256."""
+
+    PKG = (b"FAPP/1\nid=hello-world\nname=Hello World\nversion=1.0.0\n"
+           b"summary=Test publisher app\n\necho signed package\n")
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil, subprocess, tempfile
+        if not shutil.which("openssl"):
+            raise unittest.SkipTest("OpenSSL Ed25519 verifier unavailable")
+        cls.tmp = tempfile.TemporaryDirectory()
+        root = Path(cls.tmp.name)
+        cls.public = root / "publisher.pub.pem"
+        cls.private = root / "publisher.private.pem"
+        cls.pkg = root / "hello-world.app.pkg"
+        cls.sig = root / "hello-world.app.pkg.sig"
+        cls.pkg.write_bytes(cls.PKG)
+        for cmd in (
+            ["openssl", "genpkey", "-algorithm", "Ed25519", "-out", str(cls.private)],
+            ["openssl", "pkey", "-in", str(cls.private), "-pubout",
+             "-out", str(cls.public)],
+            ["openssl", "pkeyutl", "-sign", "-inkey", str(cls.private),
+             "-rawin", "-in", str(cls.pkg), "-out", str(cls.sig)],
+        ):
+            subprocess.run(cmd, check=True, capture_output=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_valid_signature_and_tampering(self):
+        signature = self.sig.read_bytes()
+        self.assertTrue(bridge.verify_publisher_signature(
+            self.PKG, signature, self.public))
+        with self.assertRaises(ValueError):
+            bridge.verify_publisher_signature(
+                self.PKG + b"\n", signature, self.public)
+        with self.assertRaises(ValueError):
+            bridge.verify_publisher_signature(self.PKG, signature[:4], self.public)
+
+    def _entry(self, signed=True):
+        import hashlib
+        filename = "hello-world-v1.0.0.app.pkg"
+        pkg_url = "https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/app-hello-world-v1.0.0/" + filename
+        e = {
+            "version": "1.0.0",
+            "asset": {"name": filename, "browser_download_url": pkg_url},
+            "checksum_asset": {"name": filename + ".sha256",
+                              "browser_download_url": pkg_url + ".sha256"},
+            "release": {"name": "Hello World"}
+        }
+        if signed:
+            e["signature_asset"] = {"name": filename + ".sig",
+                                    "browser_download_url": pkg_url + ".sig"}
+        return {"hello-world": e}
+
+    def test_signed_only_get_accepts_correct_signature(self):
+        import hashlib
+        signature = self.sig.read_bytes()
+        pkg = self.PKG
+        digest = hashlib.sha256(pkg).hexdigest()
+        received = FakeUART(["GET|hello-world"] + ["ACK"] * (2 + (len(pkg)+15)//16))
+        def download(url):
+            if url.endswith(".sig"):
+                return signature
+            if url.endswith(".sha256"):
+                return (digest + "  hello-world-v1.0.0.app.pkg\n").encode()
+            return pkg
+        with mock.patch.object(bridge, "releases", return_value=self._entry()), \
+             mock.patch.object(bridge, "request_bytes", side_effect=download):
+            with self.assertRaises(ConnectionError):
+                bridge.serve(received, trusted_publisher_key=self.public)
+        result = received.outbound.decode()
+        self.assertIn("BEGIN|hello-world|", result)
+        self.assertIn("CHUNK|", result)
+        self.assertIn("END", result)
+
+    def test_signed_only_get_rejects_unsigned_release(self):
+        import hashlib
+        pkg = self.PKG
+        digest = hashlib.sha256(pkg).hexdigest()
+        received = FakeUART(["GET|hello-world"])
+        def download(url):
+            if url.endswith(".sha256"):
+                return (digest + "  hello-world-v1.0.0.app.pkg\n").encode()
+            return pkg
+        with mock.patch.object(bridge, "releases", return_value=self._entry(False)), \
+             mock.patch.object(bridge, "request_bytes", side_effect=download):
+            with self.assertRaises(ConnectionError):
+                bridge.serve(received, trusted_publisher_key=self.public)
+        self.assertNotIn("BEGIN|", received.outbound.decode())
+        self.assertIn("ERR|download failed", received.outbound.decode())
