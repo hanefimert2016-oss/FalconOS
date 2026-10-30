@@ -33,24 +33,40 @@ NOT COMPLETE: general process scheduler, isolated native ELF apps and
 syscall/permission ABI, general-purpose filesystem with log reclamation,
 large file support, full fsck and disk power-loss certification.
 
-## Stage 3 — actual hardware controller validation: BLOCKED
+## Stage 3 — actual hardware controller validation: PARTIAL (QEMU ONLY)
 
 Added `tools/qemu_uefi_controller_e2e.py` and
-`.github/workflows/v2-uefi-controller-probes.yml` to test real controller
-instructions against a disposable QEMU/OVMF VM, never against a device path.
-The xHCI probe obtains an actual failure marker from the guest:
-https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41108152690
+`.github/workflows/v2-uefi-controller-probes.yml` to exercise actual
+controller commands under isolated QEMU/OVMF with disposable virtual media.
+The initial xHCI check failed with `Bx`: PCI discovered the device, but
+the firmware-assigned MMIO BAR could not be reached with the bootloader's
+0–4 GiB identity map.
 
-A two-stage diagnostic narrowed the cause to the xHCI device being present
-but `pci_extended_mmio(2)` not accepting its MMIO mapping. Trace is `Bx`,
-not a successful `X` command completion:
-https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41108758001
+A guest PCI trace established the exact 64-bit BAR:
+`[BAR:000000C0:00000004]` = physical `0x000000C000000000`.
+The test-only kernel now creates supervisor-only uncached high canonical
+MMIO windows using static PML4/PDPT/2-MiB PDE structures, and exports the
+**mapped virtual MMIO address** separately from the raw BAR.
+This implementation is only enabled for the explicit
+`FALCON_QEMU_XHCI_CMD_TEST` and `FALCON_QEMU_NVME_ID_TEST` build flags.
+Production preview builds still reject inaccessible high BARs.
 
-NEXT: inspect full 64-bit BAR placement and memory map; implement an
-actual checked ioremap/MMIO mapping mechanism and verify it independently
-under UEFI before enabling bus mastering. Only then retry xHCI command
-and NVMe Identify tests. Passing controller smoke does not equal a USB
-HID/MSC driver or safe physical laptop use.
+Acceptance test requires the *real* high BAR to be present (not a
+convenient low-MEM32 fallback) and successful command-ring completion.
+The same verified CI run completed both the xHCI NOOP command and
+NVMe Admin Identify controller/namespace, with no namespace reads/writes:
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41114907758
+
+All 65 Python regressions, native JFS2 checks and real QEMU framebuffer
+boot remained green:
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41114907780
+
+NEXT: a properly scoped, general PCI ioremap/MMIO allocator including
+physical resource validation and explicit unmap/TLB handling; real USB
+enumeration/HID/hub/hotplug and NVMe namespace read/write correctness
+against only *disposable virtual disks*; MSI-X and real-hardware validation.
+Controller-only QEMU probes are **not** drivers that make FalconOS safe for
+installation on a real laptop.
 
 ## Stages 4–7 — NOT COMPLETED
 
@@ -68,8 +84,9 @@ exists. Keep unverified checks red and do not merge into the stable release.
 
 ## Accepted evidence boundary
 
-- **Verified now:** native regression checks and real QEMU boot, JFS2
-  fail-closed regression red/green, xHCI PCI/MMIO failure diagnosis.
-- **Not verified now:** a complete xHCI HID path, full native HTTPS
-  browser, general Ring 3 application system, physical drivers or
-  stable-install safety.
+- **Verified now:** native Python/C regressions, JFS2 fail-closed red/green
+  tests, real QEMU UEFI ISO framebuffer, actual **64-bit high MMIO BAR**
+  xHCI command completion, and NVMe Admin Identify in isolated QEMU.
+- **NOT verified:** production ioremap, NVMe storage operations, USB
+  HID/hub runtime, full native HTTPS/browser, general Ring 3 application
+  system, physical device support or stable-install safety.
