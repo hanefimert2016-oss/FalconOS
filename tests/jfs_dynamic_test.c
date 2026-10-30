@@ -78,7 +78,7 @@ int main(void){
     DISK[(16384u+1u)*512u+3u] ^= 0x80u;
     CHECK(jfs_mount());
     CHECK(jfs_incomplete()>=1);
-    CHECK(jfs_read_only());
+    CHECK(!jfs_ready());
     CHECK(!jfs_write("/must-not-write",a,4));
     CHECK(DISK[0]==0);
     puts("PASS JFS2 variable-sized file journal, replay, interrupted writes, SHA, 128 names, no MBR overwrite");
