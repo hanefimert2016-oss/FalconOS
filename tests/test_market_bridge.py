@@ -179,3 +179,36 @@ class HardeningTests(unittest.TestCase):
             with self.assertRaises(ConnectionError):bridge.serve(wire)
         self.assertIn("ERR|download failed",wire.outbound.decode())
 
+
+class AssetRedirectSecurityTests(unittest.TestCase):
+    """Only HTTPS redirects to GitHub-controlled asset servers are allowed."""
+
+    def test_block_untrusted_asset_redirects(self):
+        handler = bridge.AssetRedirectHandler()
+        request = bridge.urllib.request.Request(
+            "https://github.com/hanefimert2016-oss/FalconOS-Marketplace/"
+            "releases/download/app-hello-world-v1.0.0/hello-world-v1.0.0.app.pkg"
+        )
+        for destination in (
+            "http://release-assets.githubusercontent.com/package",
+            "https://example.com/package",
+            "https://127.0.0.1/private",
+            "https://user:pass@release-assets.githubusercontent.com/file",
+            "https://release-assets.githubusercontent.com:8443/file",
+            "https://release-assets.githubusercontent.com.evil.example/file",
+        ):
+            with self.subTest(destination=destination), self.assertRaises(ValueError):
+                handler.redirect_request(request, None, 302, "Found", {}, destination)
+
+    def test_allow_exact_github_asset_cdn(self):
+        handler = bridge.AssetRedirectHandler()
+        request = bridge.urllib.request.Request(
+            "https://github.com/hanefimert2016-oss/FalconOS-Marketplace/"
+            "releases/download/app-hello-world-v1.0.0/hello-world-v1.0.0.app.pkg"
+        )
+        destination = "https://release-assets.githubusercontent.com/signed?token=abc"
+        next_request = handler.redirect_request(
+            request, None, 302, "Found", {}, destination
+        )
+        self.assertEqual(next_request.full_url, destination)
+        self.assertLessEqual(handler.max_redirections, 4)
