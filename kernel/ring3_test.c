@@ -328,6 +328,8 @@ bool ring3_caps_demo(void){
      * A passing run produces exactly one U and two D denial markers.
      */
     static const u8 commands[]={
+        /* SYS_getpid returns 1 or 2: must NEVER signal exit/yield. */
+        0xB8,3,0,0,0,0xCD,0x80, /* SYS_getpid */
         0xB8,5,0,0,0,0xCD,0x80, /* SYS_yield */
         0xB8,1,0,0,0,0xCD,0x80, /* SYS_diag */
         0xB8,4,0,0,0,0xCD,0x80, /* SYS_ticks */
