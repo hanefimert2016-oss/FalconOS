@@ -244,6 +244,38 @@ class SignedPublisherTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
+    def test_offline_signer_creates_verifiable_detached_signature(self):
+        signature = bridge.sign_publisher_package(self.PKG, self.private)
+        self.assertEqual(len(signature), 64)
+        self.assertTrue(bridge.verify_publisher_signature(
+            self.PKG, signature, self.public))
+        with self.assertRaises(ValueError):
+            bridge.sign_publisher_package(self.PKG, self.public)
+
+    def test_publisher_upload_includes_signature_asset(self):
+        import subprocess
+        real_run = subprocess.run
+        observed = []
+        def fake_run(command, **kwargs):
+            if command[0] != "gh":
+                return real_run(command, **kwargs)
+            if command[1:3] == ["release", "create"]:
+                self.assertEqual(command[3], "app-hello-world-v1.0.0")
+                pkg, checksum, signature = [Path(p) for p in command[4:7]]
+                self.assertEqual(pkg.read_bytes(), self.PKG)
+                self.assertEqual(signature.name, pkg.name + ".sig")
+                self.assertTrue(bridge.verify_publisher_signature(
+                    pkg.read_bytes(), signature.read_bytes(), self.public))
+                observed.append(True)
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            if command[1:3] == ["auth", "status"]:
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            return mock.Mock(returncode=1, stdout="", stderr="")
+        with mock.patch.object(bridge.subprocess, "run", side_effect=fake_run):
+            info = bridge.validate_package(self.PKG, "hello-world")
+            bridge.publish_release(self.PKG, info, signing_key=self.private)
+        self.assertEqual(observed, [True])
+
     def test_valid_signature_and_tampering(self):
         signature = self.sig.read_bytes()
         self.assertTrue(bridge.verify_publisher_signature(
