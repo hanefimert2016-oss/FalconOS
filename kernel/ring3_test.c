@@ -195,6 +195,16 @@ typedef struct {
 } native_task_t;
 static native_task_t native_tasks[RING3_NATIVE_TASKS];
 static u32 round_robin;
+/* Called only after the task has returned to CPL0. Never erase the frame
+ * while user code is still running or while a yielded task is runnable. */
+static void ring3_discard_task(native_task_t *task,bool completed){
+    task->runnable=false;
+    task->finished=completed;
+    task->caps=0;task->entry=0;
+    k_memset(task->text,0,sizeof task->text);
+    k_memset(task->stack,0,sizeof task->stack);
+    k_memset(task->frame,0,sizeof task->frame);
+}
 i32 ring3_spawn_elf_caps(const u8 *elf,u32 len,u32 caps){
     if(!ring3_caps_valid(caps))return -1;
     for(i32 i=0;i<RING3_NATIVE_TASKS;i++){
@@ -219,8 +229,10 @@ bool ring3_schedule_one(void){
         round_robin=(index+1)%RING3_NATIVE_TASKS;
         native_task_t *task=&native_tasks[index];
         if(!task->runnable)continue;
-        if(task->slices>=32u){task->runnable=false;return false;}
-        if(!map_guarded_user(task->text,4096u))return false;
+        if(task->slices>=32u){ring3_discard_task(task,false);return false;}
+        if(!map_guarded_user(task->text,4096u)){
+            ring3_discard_task(task,false);return false;
+        }
         ring3_exited=false;ring3_yielded=false;current_native_pid=(i32)index;
         current_native_caps=task->caps;
         if(task->started){
@@ -234,12 +246,12 @@ bool ring3_schedule_one(void){
         task->slices++;
         current_native_pid=-1;current_native_caps=0;
         if(ring3_exited){
-            task->runnable=false;task->finished=true;
+            ring3_discard_task(task,true);
         }else if(ring3_yielded){
             k_memcpy(task->stack,(const void *)(uintptr_t)USER_STACK,4096u);
             k_memcpy(task->frame,ring3_saved_user_frame,sizeof task->frame);
         }else {
-            task->runnable=false;return false;
+            ring3_discard_task(task,false);return false;
         }
         return true;
     }
