@@ -54,8 +54,8 @@ bool xhci_qemu_noop(void){
      trace_hex32(pci_read(bdf,0x14));outb(0xE9,':');
      trace_hex32(pci_read(bdf,0x10));outb(0xE9,']');}
     if(!pci_extended_mmio(2)){outb(0xE9,'B');return false;}
-    xhci_base=(u64)pci_extended_info(2,2);
-    if(xhci_base<0x100000ull || xhci_base>0xfff00000ull){outb(0xE9,'B');return false;}
+    xhci_base=pci_extended_mmio_address(2);
+    if(!xhci_base){outb(0xE9,'B');return false;}
     u32 bdf=pci_extended_info(2,6);
     pci_write(bdf,4,pci_read(bdf,4)|6u);
     u32 cap=read32(0);
