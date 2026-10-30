@@ -314,6 +314,53 @@ bool ring3_sched_demo(void){
         native_tasks[0].finished && native_tasks[1].finished &&
         native_tasks[0].slices==2 && native_tasks[1].slices==2;
 }
+
+#endif
+
+#ifdef FALCON_QEMU_CAP_TEST
+static void cap16(u8 *p,u16 n){p[0]=(u8)n;p[1]=(u8)(n>>8);}
+static void cap64(u8 *p,u64 n){
+    for(u32 i=0;i<8;i++)p[i]=(u8)(n>>(8*i));
+}
+bool ring3_caps_demo(void){
+    /* Two real CPL3 ELF tasks both yield, request diagnostic+clock then exit.
+     * The first task is granted both, second has no optional capabilities.
+     * A passing run produces exactly one U and two D denial markers.
+     */
+    static const u8 commands[]={
+        0xB8,5,0,0,0,0xCD,0x80, /* SYS_yield */
+        0xB8,1,0,0,0,0xCD,0x80, /* SYS_diag */
+        0xB8,4,0,0,0,0xCD,0x80, /* SYS_ticks */
+        0xB8,2,0,0,0,0xCD,0x80, /* SYS_exit */
+        0x0F,0x0B
+    };
+    u8 elf[192];k_memset(elf,0,sizeof elf);
+    elf[0]=0x7f;elf[1]='E';elf[2]='L';elf[3]='F';
+    elf[4]=2;elf[5]=1;elf[6]=1;
+    cap16(elf+16,2);cap16(elf+18,62);elf[20]=1;
+    cap64(elf+24,0x400000ull);cap64(elf+32,64u);
+    cap16(elf+52,64);cap16(elf+54,56);cap16(elf+56,1);
+    elf[64]=1;elf[68]=5;
+    cap64(elf+72,128u);cap64(elf+80,0x400000ull);
+    cap64(elf+96,sizeof commands);
+    cap64(elf+104,4096u);cap64(elf+112,1u);
+    k_memcpy(elf+128,commands,sizeof commands);
+    ring3_permission_denials=0;
+    if(ring3_native_running()!=0)return false;
+    if(ring3_spawn_elf_caps(elf,128u+sizeof commands,4u)!=-1)return false;
+    if(ring3_spawn_elf_caps(elf,128u+sizeof commands,
+                             RING3_CAP_DIAG|RING3_CAP_TIME)!=0)return false;
+    if(ring3_spawn_elf(elf,128u+sizeof commands)!=1)return false;
+    for(u32 step=0;step<4;step++){
+        outb(0xE9,(step&1u)?'B':'A');
+        if(!ring3_schedule_one())return false;
+    }
+    return ring3_permission_denials==2u &&
+           !native_tasks[0].runnable && !native_tasks[1].runnable &&
+           native_tasks[0].finished && native_tasks[1].finished &&
+           native_tasks[0].slices==2u && native_tasks[1].slices==2u &&
+           current_native_caps==0u && current_native_pid==-1;
+}
 #endif
 
 #endif
