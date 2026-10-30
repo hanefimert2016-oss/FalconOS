@@ -29,9 +29,50 @@ corrupt committed transactions while preserving recovery of a torn,
 uncommitted append. Full verification green:
 https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41107697344
 
-NOT COMPLETE: general process scheduler, isolated native ELF apps and
-syscall/permission ABI, general-purpose filesystem with log reclamation,
-large file support, full fsck and disk power-loss certification.
+### Cooperative Ring 3 ELF task hardening (QEMU only)
+
+Added `kernel/ring3_caps.c`, `tests/ring3_capabilities_test.c` and a
+mandatory host-compiled capability policy check. Only a kernel-granted
+bitmask permits diagnostic output or clock ticks in scheduled ELF tasks;
+exit, getpid and yield remain available, and unknown syscall numbers
+retain ENOSYS. Untrusted ELF metadata cannot grant capabilities.
+
+A new test-only UEFI/CPL3 workflow runs **two genuine ELF64 tasks** with
+different capabilities and checks four yield/resume/exit slices, exactly
+one permitted diagnostic syscall and two denied syscalls. It exposed a
+real assembly bug: the INT 0x80 handler confused normal syscall return
+values of 1 or 2 (getpid and clock) with exit/yield instructions.
+`boot/isr.asm` now uses the *original syscall number* to choose these
+actions. Red failing run:
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41118808982
+Green real-CPL3 run:
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41119057949
+
+An additional test required ended tasks' kernel-owned code, stack,
+saved register frames and capability masks to be zeroed. It initially
+failed after normal task completion:
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41119282249
+`ring3_discard_task()` now clears these snapshots on normal exit,
+failure and scheduler budget exhaustion. Green:
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41119572004
+
+Finally, a separate UEFI build verifies the original two-task ELF
+cooperative scheduler still yields, resumes and exits, after a new
+kernel-only `K[` diagnostic delimiter prevented firmware-text false
+positives. Both real CPL3 tests green:
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41119876267
+
+Latest mandatory native/Python/UEFI regressions and separate QEMU
+controller probes also green:
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41119876387
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41119876480
+
+NOT COMPLETE: **per-task CR3 address spaces**, preemptive scheduling,
+general ELF apps, full syscall/permissions ABI, native user-mode app
+loader and process lifecycle; storage log reclamation, larger files,
+full fsck and disk power-loss certification. Only kernel-owned task
+snapshots are zeroized; this does not imply all freed physical pages
+are scrubbed or that FalconOS can run arbitrary third-party binaries.
 
 ## Stage 3 — actual hardware controller validation: PARTIAL (QEMU ONLY)
 
