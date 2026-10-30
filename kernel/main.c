@@ -580,7 +580,7 @@ void long_start(u64 magic, u64 info_ptr)
 #ifdef FALCON_QEMU_SCHED_TEST
     {
         extern bool ring3_sched_demo(void);
-        outb(0xE9,'K');
+        outb(0xE9,'K');outb(0xE9,'[');
         outb(0xE9,ring3_sched_demo()?'Z':'z');
     }
 #endif
