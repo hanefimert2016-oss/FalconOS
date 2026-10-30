@@ -11,6 +11,7 @@ typedef struct {
     u8 bus,dev,fun,revision;
     u32 class_code;
     u64 bar0;
+    u64 mapped_base; /* kernel virtual address, never the raw PCI BAR */
     u32 cap0,cap1,cap2;
     bool mmio_readable;
 } pci_capability_t;
@@ -87,11 +88,62 @@ static u64 memory_bar(u32 bus,u32 dev,u32 fn){
     if((low&6u)==4u)address|=(u64)config(bus,dev,fn,0x14)<<32;
     return address;
 }
-static bool mapped_reg(u64 base,u32 off){
-    if(base<0x100000ull || base>=0x100000000ull)return false;
-    if(base+(u64)off+4u>0x100000000ull)return false;
-    if((base&3u)!=0)return false;
-    return true;
+/* Read-only baseline: addresses in the bootloader's low 4-GiB identity
+ * map. The QEMU-only high-BAR mapping below is never built for releases. */
+static bool low_mmio_reg(u64 base,u32 off){
+    return base>=0x100000ull && base<0x100000000ull &&
+           (base&3u)==0 && (u64)off+4u<=0x100000000ull-base;
+}
+
+#if defined(FALCON_QEMU_XHCI_CMD_TEST) || defined(FALCON_QEMU_NVME_ID_TEST)
+/* Temporary, supervisor-only test mapping for OVMF 64-bit PCI BARs.
+ * One 4-MiB uncached window per controller (NVMe=1, xHCI=2).
+ * Static page tables stay in identity-mapped kernel RAM. Mapping MMIO to
+ * a high canonical virtual address does NOT grant access to physical RAM
+ * or enable DMA; the controller tests enable bus mastering separately.
+ * This is deliberately not a general production ioremap allocator. */
+static u64 probe_pdpt[2][512] __attribute__((aligned(4096)));
+static u64 probe_pd[2][512] __attribute__((aligned(4096)));
+
+static u64 map_test_mmio(u32 kind,u64 physical){
+    if(kind<1u||kind>2u||physical<0x100000000ull||
+       physical>=0x1000000000000ull||(physical&3u))return 0;
+    u64 aligned=physical&~0x1fffffull;
+    u64 offset=physical&0x1fffffull;
+    if(offset+0x10000ull>0x400000ull)return 0;
+    u32 slot=kind-1u;
+    u64 cr3;
+    __asm__ volatile("mov %%cr3,%0":"=r"(cr3));
+    if(cr3>=0x100000000ull)return 0;
+    u64 *root=(u64*)(uintptr_t)(cr3&~0xfffull);
+    u32 pml4_index=256u+kind; /* 0xffff8080... / 0xffff8100... */
+    if(root[pml4_index]&1ull)return 0;
+    u64 pdpt_addr=(u64)(uintptr_t)probe_pdpt[slot];
+    u64 pd_addr=(u64)(uintptr_t)probe_pd[slot];
+    if((pdpt_addr|pd_addr)&4095ull)return 0;
+    if(pdpt_addr>=0x100000000ull||pd_addr>=0x100000000ull)return 0;
+    k_memset(probe_pdpt[slot],0,4096u);
+    k_memset(probe_pd[slot],0,4096u);
+    /* PS=1 for 2-MiB pages; PCD/PWT keep volatile register reads uncached. */
+    probe_pd[slot][0]=aligned|0x9bull;
+    probe_pd[slot][1]=(aligned+0x200000ull)|0x9bull;
+    probe_pdpt[slot][0]=pd_addr|3ull;
+    __asm__ volatile("mfence":::"memory");
+    root[pml4_index]=pdpt_addr|3ull;
+    /* CR3 reload invalidates translations after adding this PML4 entry. */
+    __asm__ volatile("mov %0,%%cr3"::"r"(cr3):"memory");
+    return (0xffff800000000000ull+((u64)kind<<39))+offset;
+}
+#endif
+
+static u64 map_probe_bar(u32 kind,u64 physical){
+    if(low_mmio_reg(physical,0x10000u))return physical;
+#if defined(FALCON_QEMU_XHCI_CMD_TEST) || defined(FALCON_QEMU_NVME_ID_TEST)
+    return map_test_mmio(kind,physical);
+#else
+    (void)kind;
+    return 0; /* No high PCI BAR mapping in production preview builds. */
+#endif
 }
 static u32 mmio_read32(u64 base,u32 off){
     volatile u32 *p=(volatile u32 *)(uintptr_t)(base+(u64)off);
@@ -104,6 +156,7 @@ static void fill(pci_capability_t *out,u32 bus,u32 dev,u32 fn,u32 identity,u32 c
     out->revision=(u8)cls;
     out->class_code=cls>>8;
     out->bar0=memory_bar(bus,dev,fn);
+    out->mapped_base=0;
     out->mmio_readable=false;
 }
 void pci_extended_probe(void){
@@ -141,16 +194,22 @@ void pci_extended_probe(void){
             fill(target,bus,dev,fn,identity,cls);
             /* These are read-only, safe fixed hardware register offsets.
              * Do not enable a controller, bus master or map DMA yet. */
-            if(target==&nvme && mapped_reg(target->bar0,0x20)){
-                target->cap0=mmio_read32(target->bar0,0);     /* CAP low */
-                target->cap1=mmio_read32(target->bar0,8);     /* VS */
-                target->cap2=mmio_read32(target->bar0,0x1C);  /* CSTS */
-                target->mmio_readable=true;
-            }else if(target==&usb3 && mapped_reg(target->bar0,0x20)){
-                target->cap0=mmio_read32(target->bar0,0);     /* CAPLENGTH/HCI */
-                target->cap1=mmio_read32(target->bar0,4);     /* HCSPARAMS1 */
-                target->cap2=mmio_read32(target->bar0,0x10);  /* HCCPARAMS1 */
-                target->mmio_readable=true;
+            if(target==&nvme){
+                target->mapped_base=map_probe_bar(1,target->bar0);
+                if(target->mapped_base){
+                    target->cap0=mmio_read32(target->mapped_base,0);
+                    target->cap1=mmio_read32(target->mapped_base,8);
+                    target->cap2=mmio_read32(target->mapped_base,0x1C);
+                    target->mmio_readable=true;
+                }
+            }else if(target==&usb3){
+                target->mapped_base=map_probe_bar(2,target->bar0);
+                if(target->mapped_base){
+                    target->cap0=mmio_read32(target->mapped_base,0);
+                    target->cap1=mmio_read32(target->mapped_base,4);
+                    target->cap2=mmio_read32(target->mapped_base,0x10);
+                    target->mmio_readable=true;
+                }
             }
         }
     }
@@ -161,6 +220,10 @@ u32 pci_extended_count(u32 kind){
 bool pci_extended_mmio(u32 kind){
     const pci_capability_t *c=kind==1?&nvme:kind==2?&usb3:&gpu;
     return c->mmio_readable;
+}
+u64 pci_extended_mmio_address(u32 kind){
+    const pci_capability_t *c=kind==1?&nvme:kind==2?&usb3:&gpu;
+    return c->mmio_readable?c->mapped_base:0ull;
 }
 u32 pci_extended_info(u32 kind,u32 field){
     const pci_capability_t *c=kind==1?&nvme:kind==2?&usb3:&gpu;
