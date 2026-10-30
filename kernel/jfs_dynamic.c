@@ -116,12 +116,19 @@ bool jfs_mount(void){
         u32 len=get32(header+8);
         u32 sectors=get32(header+12);
         u32 type=get32(header+16);
-        if(!generation || generation<=seq || len>JFS_LIMIT ||
-           sectors!=(len+511u)/512u ||
-           pos+2u+sectors>JFS_SECTORS || type>1u ||
-           (type==0 && len) || !name_valid((const char *)(header+32)) ||
-           !valid_transaction(pos,sectors,len)) {
+        /* A torn, uncommitted append may be replaced on recovery.
+         * A corrupt COMMITTED record is different: do not allow any more
+         * writes until an explicit repair has recovered user data. */
+        bool valid_header=generation && generation>seq &&
+           len<=JFS_LIMIT && sectors==(len+511u)/512u &&
+           pos+2u+sectors<=JFS_SECTORS && type<=1u &&
+           (type!=0 || !len) && name_valid((const char *)(header+32));
+        bool valid_record=valid_header && valid_transaction(pos,sectors,len);
+        if(!valid_record) {
             invalid_records++;
+            if(!valid_header ||
+               (get32(footer)==JFS_COMMIT &&
+                get32(footer+4)==generation))read_only=true;
             next_sector=pos;mounted=true;return true;
         }
         update_index((const char *)(header+32),pos,len,generation,type==0);
