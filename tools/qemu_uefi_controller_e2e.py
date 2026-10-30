@@ -72,7 +72,7 @@ def main():
             data = trace.read_bytes() if trace.exists() else b""
             if good in data:
                 if args.probe == "xhci":
-                    bar = re.search(rb"\\[BAR:([0-9A-F]{8}):([0-9A-F]{8})\\]", data)
+                    bar = re.search(rb"\[BAR:([0-9A-F]{8}):([0-9A-F]{8})\]", data)
                     if not bar:
                         raise AssertionError("xHCI high-BAR diagnostic missing")
                     high, low = (int(part, 16) for part in bar.groups())
