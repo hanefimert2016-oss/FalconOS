@@ -85,8 +85,8 @@ static bool admin_identify(u32 namespace_id,u32 cns,u32 cid){
 bool nvme_qemu_identify(void){
     ready=false;namespace_lbas=0;
     if(!pci_extended_count(1) || !pci_extended_mmio(1))return false;
-    base=(u64)pci_extended_info(1,2);
-    if(base<0x100000u || base>=0xffff0000u)return false;
+    base=pci_extended_mmio_address(1);
+    if(!base)return false;
     u32 command_address=pci_extended_info(1,6);
     u32 cmd=pci_read(command_address,4);
     pci_write(command_address,4,cmd|6u); /* PCI Memory + DMA mastering */
