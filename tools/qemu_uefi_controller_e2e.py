@@ -5,6 +5,7 @@ These tests perform an xHCI command-ring NOOP or NVMe admin Identify only.
 They NEVER issue NVMe namespace reads/writes or touch physical disks.
 """
 import argparse
+import re
 import shutil
 import subprocess
 import time
@@ -70,6 +71,17 @@ def main():
                 raise RuntimeError(f"QEMU stopped before {args.probe} probe: {detail}")
             data = trace.read_bytes() if trace.exists() else b""
             if good in data:
+                if args.probe == "xhci":
+                    bar = re.search(rb"\\[BAR:([0-9A-F]{8}):([0-9A-F]{8})\\]", data)
+                    if not bar:
+                        raise AssertionError("xHCI high-BAR diagnostic missing")
+                    high, low = (int(part, 16) for part in bar.groups())
+                    if high == 0 or (low & 6) != 4:
+                        raise AssertionError(
+                            f"xHCI test requires an actual 64-bit BAR above 4 GiB, "
+                            f"got {high:08X}:{low:08X}"
+                        )
+                    print(f"PASS: mapped high xHCI PCI BAR {high:08X}:{low:08X}")
                 print(f"PASS UEFI/QEMU {args.probe}: actual controller diagnostic marker")
                 return
             if bad in data:
