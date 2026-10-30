@@ -276,7 +276,7 @@ def sign_publisher_package(raw, private_key):
     The private key never crosses the VM serial bridge and is never uploaded.
     A signature is exactly 64 bytes for Ed25519.
     """
-    if not isinstance(raw, bytes) or not raw.startswith(b"FAPP/1\\n") or len(raw) > MAX_BYTES:
+    if not isinstance(raw, bytes) or not raw.startswith(b"FAPP/1\n") or len(raw) > MAX_BYTES:
         raise ValueError("invalid FAPP/1 bytes for signing")
     key = Path(private_key)
     if not key.is_file():
