@@ -51,6 +51,20 @@ class StandalonePublisherTests(unittest.TestCase):
                 self.assertEqual(upload.call_args.args[0], VALID)
                 self.assertEqual(upload.call_args.args[1]["version"], "3.0.0")
 
+    def test_signed_publish_passes_host_private_key_explicitly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "code.app.pkg"
+            key = Path(directory) / "publisher.private.pem"
+            path.write_bytes(VALID)
+            key.write_text("not a real key")
+            with mock.patch.object(publisher, "publish_release") as upload:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    result = publisher.main([
+                        "--package", str(path), "--yes", "--signing-key", str(key)
+                    ])
+            self.assertEqual(result, 0)
+            self.assertEqual(upload.call_args.kwargs["signing_key"], key)
+
     def test_validation_rejects_malformed_package_before_github(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "dangerous.app.pkg"
