@@ -33,6 +33,12 @@ static void pci_write(u32 bdf,u32 off,u32 value){
     __asm__ volatile("outl %0,%1"::"a"(address),"Nd"((u16)0xcf8));
     __asm__ volatile("outl %0,%1"::"a"(value),"Nd"((u16)0xcfc));
 }
+/* Test-only PCI BAR trace: expose the exact mapping requirement rather
+ * than guessing whether a device was assigned above 4 GiB by OVMF. */
+static void trace_hex32(u32 value){
+    const char *digits="0123456789ABCDEF";
+    for(i32 i=7;i>=0;i--)outb(0xE9,(u8)digits[(value>>(i*4))&15u]);
+}
 static bool wait_for(u32 off,u32 mask,u32 target){
     for(u32 tries=0;tries<5000000;tries++){
         if((read32(off)&mask)==target)return true;
@@ -43,6 +49,10 @@ static bool wait_for(u32 off,u32 mask,u32 target){
 bool xhci_qemu_noop(void){
     succeeded=false;
     if(!pci_extended_count(2)){outb(0xE9,'A');return false;}
+    {u32 bdf=pci_extended_info(2,6);
+     outb(0xE9,'[');outb(0xE9,'B');outb(0xE9,'A');outb(0xE9,'R');outb(0xE9,':');
+     trace_hex32(pci_read(bdf,0x14));outb(0xE9,':');
+     trace_hex32(pci_read(bdf,0x10));outb(0xE9,']');}
     if(!pci_extended_mmio(2)){outb(0xE9,'B');return false;}
     xhci_base=(u64)pci_extended_info(2,2);
     if(xhci_base<0x100000ull || xhci_base>0xfff00000ull){outb(0xE9,'B');return false;}
