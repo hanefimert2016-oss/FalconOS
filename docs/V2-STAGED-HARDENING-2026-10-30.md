@@ -68,10 +68,30 @@ against only *disposable virtual disks*; MSI-X and real-hardware validation.
 Controller-only QEMU probes are **not** drivers that make FalconOS safe for
 installation on a real laptop.
 
-## Stages 4–7 — NOT COMPLETED
+## Stage 4 — Marketplace trust and updater: PARTIAL
 
-4. Signed Marketplace packages, scoped permissions, verified native
-   updating and physical-disk A/B rollback.
+The host-assisted QEMU Marketplace fetch path now uses an explicit
+`AssetRedirectHandler` in `tools/marketplace_bridge.py`. Valid HTTPS
+GitHub-owned asset/CDN locations remain usable; redirects to plaintext,
+arbitrary domains, private IPs, credential-bearing destinations and custom
+ports are rejected before the HTTP client follows them. The handler also
+limits redirect chains to four.
+
+Tests were added before the change and first failed due to the missing
+redirect guard:
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41115374304
+
+The implementation then passed both new security cases and all 67 Python
+tests, native JFS2 and media checks, and real QEMU boot:
+https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41115531091
+
+NOT COMPLETE: publisher signature/identity verification, revoked publisher
+keys, guest-native signature validation, permission grants and safe,
+signed A/B physical-disk updates. Existing SHA-256 checks do NOT establish
+publisher identity.
+
+## Stages 5–7 — NOT COMPLETED
+
 5. Standards-compatible Falco HTML/CSS/JavaScript, images, HTTPS and
    web security model.
 6. Real independent GUI applications, unbounded/safe window lifecycle,
@@ -84,9 +104,10 @@ exists. Keep unverified checks red and do not merge into the stable release.
 
 ## Accepted evidence boundary
 
-- **Verified now:** native Python/C regressions, JFS2 fail-closed red/green
-  tests, real QEMU UEFI ISO framebuffer, actual **64-bit high MMIO BAR**
-  xHCI command completion, and NVMe Admin Identify in isolated QEMU.
+- **Verified now:** 67 Python regressions, native C checks, JFS2
+  fail-closed red/green tests, real QEMU UEFI ISO framebuffer, actual
+  **64-bit high MMIO BAR** xHCI command completion, NVMe Admin Identify,
+  and HTTPS Marketplace asset redirect restrictions.
 - **NOT verified:** production ioremap, NVMe storage operations, USB
   HID/hub runtime, full native HTTPS/browser, general Ring 3 application
   system, physical device support or stable-install safety.
