@@ -32,6 +32,10 @@ jobs:
           build/strict-jfs
           gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/file_viewer_test.c kernel/file_viewer.c -o build/strict-media
           build/strict-media
+      - name: Ring3 syscall permission policy (native kernel code)
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/ring3_capabilities_test.c kernel/ring3_caps.c -o build/strict-ring3-caps
+          build/strict-ring3-caps
       - name: Build real V2.1 UEFI ISO
         run: |
           PATH="/tmp/falcon-v2-gates/bin:$PATH" make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=0 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
