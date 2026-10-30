@@ -85,10 +85,27 @@ The implementation then passed both new security cases and all 67 Python
 tests, native JFS2 and media checks, and real QEMU boot:
 https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41115531091
 
-NOT COMPLETE: publisher signature/identity verification, revoked publisher
-keys, guest-native signature validation, permission grants and safe,
-signed A/B physical-disk updates. Existing SHA-256 checks do NOT establish
-publisher identity.
+A second test-first milestone added host-pinned **Ed25519 detached
+signatures** and an explicitly opt-in signed-only download mode. The host
+checks a 64-byte .sig against the operator's trusted public PEM **before**
+sending a package to the guest; unsigned and tampered packages are refused.
+An offline host signer produces the matching .sig alongside a published
+Release when the operator explicitly selects `--signing-key`.
+No private keys are committed or generated in the repo.
+
+- Red verification tests: 
+  https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41116358742
+- Red host signing tests:
+  https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41116827716
+- Verified green: **73/73 Python tests**, real OpenSSL Ed25519 signing and
+  verification, mocked GitHub Release upload and real UEFI/QEMU boot:
+  https://github.com/hanefimert2016-oss/FalconOS/actions/runs/41117061607
+- Operator guide: `docs/MARKETPLACE-ED25519-PREVIEW.md`.
+
+NOT COMPLETE: guest-native publisher signature enforcement, key rotation and
+revocation, signed-only mode as the safe default, actual production Release
+publication tests, permission grants, secure guest/host session binding,
+and signed A/B physical-disk updates. SHA-256 alone does not prove identity.
 
 ## Stages 5–7 — NOT COMPLETED
 
@@ -104,10 +121,11 @@ exists. Keep unverified checks red and do not merge into the stable release.
 
 ## Accepted evidence boundary
 
-- **Verified now:** 67 Python regressions, native C checks, JFS2
+- **Verified now:** 73 Python regressions, native C checks, JFS2
   fail-closed red/green tests, real QEMU UEFI ISO framebuffer, actual
   **64-bit high MMIO BAR** xHCI command completion, NVMe Admin Identify,
-  and HTTPS Marketplace asset redirect restrictions.
+  HTTPS Marketplace asset redirect restrictions, and **opt-in host-side**
+  pinned Ed25519 verification and offline Release-signing test coverage.
 - **NOT verified:** production ioremap, NVMe storage operations, USB
   HID/hub runtime, full native HTTPS/browser, general Ring 3 application
   system, physical device support or stable-install safety.
