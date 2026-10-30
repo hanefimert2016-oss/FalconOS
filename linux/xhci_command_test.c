@@ -33,6 +33,12 @@ static void pci_write(u32 bdf,u32 off,u32 value){
     __asm__ volatile("outl %0,%1"::"a"(address),"Nd"((u16)0xcf8));
     __asm__ volatile("outl %0,%1"::"a"(value),"Nd"((u16)0xcfc));
 }
+/* Test-only PCI BAR trace: expose the exact mapping requirement rather
+ * than guessing whether a device was assigned above 4 GiB by OVMF. */
+static void trace_hex32(u32 value){
+    const char *digits="0123456789ABCDEF";
+    for(i32 i=7;i>=0;i--)outb(0xE9,(u8)digits[(value>>(i*4))&15u]);
+}
 static bool wait_for(u32 off,u32 mask,u32 target){
     for(u32 tries=0;tries<5000000;tries++){
         if((read32(off)&mask)==target)return true;
@@ -42,9 +48,14 @@ static bool wait_for(u32 off,u32 mask,u32 target){
 }
 bool xhci_qemu_noop(void){
     succeeded=false;
-    if(!pci_extended_count(2)||!pci_extended_mmio(2))return false;
-    xhci_base=(u64)pci_extended_info(2,2);
-    if(xhci_base<0x100000ull || xhci_base>0xfff00000ull)return false;
+    if(!pci_extended_count(2)){outb(0xE9,'A');return false;}
+    {u32 bdf=pci_extended_info(2,6);
+     outb(0xE9,'[');outb(0xE9,'B');outb(0xE9,'A');outb(0xE9,'R');outb(0xE9,':');
+     trace_hex32(pci_read(bdf,0x14));outb(0xE9,':');
+     trace_hex32(pci_read(bdf,0x10));outb(0xE9,']');}
+    if(!pci_extended_mmio(2)){outb(0xE9,'B');return false;}
+    xhci_base=pci_extended_mmio_address(2);
+    if(!xhci_base){outb(0xE9,'B');return false;}
     u32 bdf=pci_extended_info(2,6);
     pci_write(bdf,4,pci_read(bdf,4)|6u);
     u32 cap=read32(0);
@@ -54,12 +65,12 @@ bool xhci_qemu_noop(void){
     u32 runtime=read32(0x18)&~31u;
     if(op<0x20||op>0x100||slots<1||db<0x100||runtime<0x100 ||
        (u64)db+4>0x100000000ull-xhci_base ||
-       (u64)runtime+0x80>0x100000000ull-xhci_base)return false;
+       (u64)runtime+0x80>0x100000000ull-xhci_base){outb(0xE9,'C');return false;}
     write32(op,read32(op)&~1u); /* halt host controller */
-    if(!wait_for(op+4,1u,1u))return false; /* USBSTS.HCH */
+    if(!wait_for(op+4,1u,1u)){outb(0xE9,'D');return false;} /* USBSTS.HCH */
     write32(op,read32(op)|2u);  /* Host Controller Reset */
-    if(!wait_for(op,2u,0u)||!wait_for(op+4,1u<<11,0u))return false;
-    if(!(read32(op+8)&1u))return false; /* 4KiB supported */
+    if(!wait_for(op,2u,0u)||!wait_for(op+4,1u<<11,0u)){outb(0xE9,'E');return false;}
+    if(!(read32(op+8)&1u)){outb(0xE9,'F');return false;} /* 4KiB supported */
     k_memset(dcbaa,0,sizeof dcbaa);
     k_memset(command_ring,0,sizeof command_ring);
     k_memset(event_ring,0,sizeof event_ring);
@@ -74,7 +85,7 @@ bool xhci_qemu_noop(void){
     write64(ir0+0x10,(u64)(uintptr_t)erst);
     write64(ir0+0x18,(u64)(uintptr_t)event_ring);
     write32(op,read32(op)|1u); /* run, no interrupts */
-    if(!wait_for(op+4,1u,0u))return false;
+    if(!wait_for(op+4,1u,0u)){outb(0xE9,'G');return false;}
     /* No-op Command TRB, Type 23, Cycle=1. */
     command_ring[0]=0;
     command_ring[1]=0;
@@ -88,12 +99,13 @@ bool xhci_qemu_noop(void){
         u32 type=(control>>10)&63u;
         u32 result=(event_ring[2]>>24)&255u;
         u64 pointer=(u64)event_ring[0]|((u64)event_ring[1]<<32);
-        if(type!=33 || result!=1u || pointer!=(u64)(uintptr_t)command_ring)break;
+        if(type!=33 || result!=1u || pointer!=(u64)(uintptr_t)command_ring){outb(0xE9,'H');break;}
         /* Dequeue event and update EHB in ERDP, no busy interrupts. */
         write64(ir0+0x18,(u64)(uintptr_t)(event_ring+4)|8u);
         succeeded=true;
         break;
     }
+    if(!succeeded)outb(0xE9,'T');
     write32(op,read32(op)&~1u);
     return succeeded;
 }

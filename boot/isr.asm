@@ -218,10 +218,13 @@ ring3_syscall_int80:
     cld
     call ring3_syscall_dispatch
     mov rsp, rbx
-    cmp rax, 2
-    je .yield_ring3
-    cmp rax, 1
-    je ring3_leave_kernel         ; syscall 2 (exit)
+    ; Dispatch action by ORIGINAL syscall number, not its return value.
+    ; getpid() legitimately returns 1/2 and ticks() may return 1/2;
+    ; comparing RAX here previously exited/yielded those processes.
+    cmp qword [rsp+112], 5
+    je .yield_ring3              ; SYS_yield
+    cmp qword [rsp+112], 2
+    je ring3_leave_kernel        ; SYS_exit
     mov [rsp+112], rax
     POPA64
     iretq

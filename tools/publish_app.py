@@ -36,6 +36,8 @@ def main(argv=None):
     parser.add_argument("--package", help="Path to an existing .app.pkg file")
     parser.add_argument("--check-only", action="store_true",
                         help="Validate locally; do not create a GitHub Release")
+    parser.add_argument("--signing-key", type=Path,
+                        help="Host-only Ed25519 private PEM key for publishing a detached .sig")
     parser.add_argument("--yes", action="store_true",
                         help="Confirm publishing without an interactive prompt")
     args = parser.parse_args(argv)
@@ -71,7 +73,8 @@ def main(argv=None):
             if response != "PUBLISH":
                 print("Cancelled. Nothing was published.")
                 return 0
-        result = publish_release(raw, info)
+        result = (publish_release(raw, info, signing_key=args.signing_key)
+                  if args.signing_key is not None else publish_release(raw, info))
         print(f"Published: https://github.com/{REPO}/releases/tag/{result}")
         return 0
     except (OSError, ValueError) as exc:

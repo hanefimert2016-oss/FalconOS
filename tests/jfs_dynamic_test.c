@@ -70,6 +70,16 @@ int main(void){
     CHECK(jfs_mount()&&jfs_file_count()==128);
     u32 files=0,bad=0;
     CHECK(jfs_fsck(&files,&bad)&&files==128);
+    /* A committed record with a damaged payload must fail closed. Unlike an
+     * incomplete write, a corrupted committed record cannot be overwritten. */
+    memset(DISK,0,sizeof DISK);
+    CHECK(jfs_mount());
+    CHECK(jfs_write("/corrupted",a,16));
+    DISK[(16384u+1u)*512u+3u] ^= 0x80u;
+    CHECK(jfs_mount());
+    CHECK(jfs_incomplete()>=1);
+    CHECK(!jfs_ready());
+    CHECK(!jfs_write("/must-not-write",a,4));
     CHECK(DISK[0]==0);
     puts("PASS JFS2 variable-sized file journal, replay, interrupted writes, SHA, 128 names, no MBR overwrite");
     return 0;

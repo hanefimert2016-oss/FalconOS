@@ -708,7 +708,14 @@ void fvm_status(char *out,i32 capacity);
 /* Experimental only; available when ENABLE_RING3_TEST=1. */
 #ifdef FALCON_RING3_TEST
 bool ring3_run_elf(const u8 *image,u32 length);
-/* Ring3 preview-only cooperative user ELF scheduler (2 tasks). */
+/* Ring3 preview-only cooperative user ELF scheduler (2 tasks).
+ * Capabilities are a kernel-owned per-task bit mask, NOT ELF metadata.
+ * Default spawn grants no diagnostic or time access. */
+#define RING3_CAP_DIAG 1u
+#define RING3_CAP_TIME 2u
+bool ring3_caps_valid(u32 caps);
+bool ring3_caps_authorize(u32 caps,u64 syscall_no);
+i32 ring3_spawn_elf_caps(const u8 *image,u32 length,u32 caps);
 i32 ring3_spawn_elf(const u8 *image,u32 length);
 bool ring3_schedule_one(void);
 u32 ring3_native_running(void);
@@ -720,6 +727,8 @@ bool elf64_stage(const u8 *image,u32 length,u8 *arena,u32 arena_len,u64 *entry);
 void pci_extended_probe(void);
 u32 pci_extended_count(u32 kind);
 bool pci_extended_mmio(u32 kind);
+/* Mapped virtual MMIO address; zero when the BAR is inaccessible. */
+u64 pci_extended_mmio_address(u32 kind);
 u32 pci_extended_info(u32 kind,u32 field);
 u32 pci_inventory_count(void);
 u32 pci_inventory_field(u32 index,u32 field);
