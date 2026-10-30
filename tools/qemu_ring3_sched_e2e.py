@@ -44,8 +44,8 @@ def main():
                 raise RuntimeError("Ring3 scheduler guest stopped: "+
                                    q.stderr.read().decode(errors="replace")[-500:])
             data=debug.read_bytes() if debug.exists() else b""
-            if b"K" in data:
-                trace=data[data.index(b"K")+1:]
+            if b"K[" in data:
+                trace=data.split(b"K[",1)[1]
                 if b"z" in trace:
                     raise AssertionError("Ring3 scheduler failed: "+repr(trace))
                 if b"Z" in trace:
