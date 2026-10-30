@@ -21,15 +21,17 @@ jobs:
       - name: Install UEFI toolchain and QEMU
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y nasm xorriso mtools qemu-system-x86 ovmf clang lld binutils
+          sudo apt-get install -y nasm xorriso mtools qemu-system-x86 ovmf clang lld binutils python3-venv fonts-dejavu-core
+          python3 -m venv /tmp/falcon-hw
+          /tmp/falcon-hw/bin/pip -q install 'numpy<3' trimesh opencv-python-headless pillow
       - name: Build xHCI test-only UEFI image and verify real QEMU command ring
         run: |
-          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_XHCI_CMD_TEST'
+          PATH="/tmp/falcon-hw/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_XHCI_CMD_TEST'
           python3 tools/qemu_uefi_controller_e2e.py xhci
       - name: Rebuild separate NVMe test-only UEFI image and verify Identify
         run: |
           make clean
-          make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_NVME_ID_TEST'
+          PATH="/tmp/falcon-hw/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 EXTRA_CFLAGS='-DFALCON_QEMU_NVME_ID_TEST'
           python3 tools/qemu_uefi_controller_e2e.py nvme
       - name: Publish failure diagnostics
         if: always()
