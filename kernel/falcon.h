@@ -720,6 +720,8 @@ bool elf64_stage(const u8 *image,u32 length,u8 *arena,u32 arena_len,u64 *entry);
 void pci_extended_probe(void);
 u32 pci_extended_count(u32 kind);
 bool pci_extended_mmio(u32 kind);
+/* Mapped virtual MMIO address; zero when the BAR is inaccessible. */
+u64 pci_extended_mmio_address(u32 kind);
 u32 pci_extended_info(u32 kind,u32 field);
 u32 pci_inventory_count(void);
 u32 pci_inventory_field(u32 index,u32 field);
