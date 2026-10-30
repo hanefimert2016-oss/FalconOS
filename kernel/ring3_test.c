@@ -110,12 +110,24 @@ static const u8 kernel_probe[]={
     };
 static bool ring3_exited,ring3_yielded;
 static i32 current_native_pid=-1;
+static u32 current_native_caps;
+#ifdef FALCON_QEMU_CAP_TEST
+static u32 ring3_permission_denials;
+#endif
 extern u64 ring3_saved_user_frame[20];
 extern void ring3_resume(void);
 u64 ring3_syscall_dispatch(u64 number){
     u16 cs;
     __asm__ volatile("mov %%cs,%0":"=r"(cs));
     if((cs&3u)!=0) return (u64)-1;
+    if(current_native_pid>=0 &&
+       !ring3_caps_authorize(current_native_caps,number)){
+#ifdef FALCON_QEMU_CAP_TEST
+        ring3_permission_denials++;
+        outb(0xE9,'D');
+#endif
+        return (u64)-13; /* EPERM; no diagnostic or clock output */
+    }
     if(number==1){outb(0xE9,'U');return 0;}
     if(number==2){ring3_exited=true;return 1;} /* exit -> saved Ring0 stack */
     if(number==3)return current_native_pid<0?42u:(u64)(current_native_pid+1);
@@ -179,22 +191,27 @@ typedef struct {
     bool runnable,started,finished;
     u8 text[4096],stack[4096];
     u64 frame[20],entry;
-    u32 slices;
+    u32 slices,caps;
 } native_task_t;
 static native_task_t native_tasks[RING3_NATIVE_TASKS];
 static u32 round_robin;
-i32 ring3_spawn_elf(const u8 *elf,u32 len){
+i32 ring3_spawn_elf_caps(const u8 *elf,u32 len,u32 caps){
+    if(!ring3_caps_valid(caps))return -1;
     for(i32 i=0;i<RING3_NATIVE_TASKS;i++){
         native_task_t *task=&native_tasks[i];
         if(task->runnable)continue;
         u64 entry=0;
         if(!stage_ring3_elf(elf,len,task->text,&entry))return -1;
         k_memset(task->stack,0,sizeof task->stack);
-        task->entry=entry;task->slices=0;
+        task->entry=entry;task->slices=0;task->caps=caps;
         task->started=false;task->finished=false;task->runnable=true;
         return i;
     }
     return -1;
+}
+/* Untrusted ELF defaults to no diagnostic or clock capabilities. */
+i32 ring3_spawn_elf(const u8 *elf,u32 len){
+    return ring3_spawn_elf_caps(elf,len,0u);
 }
 bool ring3_schedule_one(void){
     for(u32 search=0;search<RING3_NATIVE_TASKS;search++){
@@ -205,6 +222,7 @@ bool ring3_schedule_one(void){
         if(task->slices>=32u){task->runnable=false;return false;}
         if(!map_guarded_user(task->text,4096u))return false;
         ring3_exited=false;ring3_yielded=false;current_native_pid=(i32)index;
+        current_native_caps=task->caps;
         if(task->started){
             k_memcpy((void *)(uintptr_t)USER_STACK,task->stack,4096u);
             k_memcpy(ring3_saved_user_frame,task->frame,sizeof task->frame);
@@ -214,7 +232,7 @@ bool ring3_schedule_one(void){
             ring3_enter(USER_PAGE+(task->entry-0x400000ull),USER_STACK+4096u-16u);
         }
         task->slices++;
-        current_native_pid=-1;
+        current_native_pid=-1;current_native_caps=0;
         if(ring3_exited){
             task->runnable=false;task->finished=true;
         }else if(ring3_yielded){
@@ -286,8 +304,8 @@ bool ring3_sched_demo(void){
     native64(image+96,sizeof commands);
     native64(image+104,4096u);native64(image+112,1u);
     k_memcpy(image+128,commands,sizeof commands);
-    if(ring3_spawn_elf(image,128u+sizeof commands)!=0)return false;
-    if(ring3_spawn_elf(image,128u+sizeof commands)!=1)return false;
+    if(ring3_spawn_elf_caps(image,128u+sizeof commands,RING3_CAP_DIAG)!=0)return false;
+    if(ring3_spawn_elf_caps(image,128u+sizeof commands,RING3_CAP_DIAG)!=1)return false;
     for(u32 step=0;step<4;step++){
         outb(0xE9,(step&1u)?'B':'A');
         if(!ring3_schedule_one())return false;
