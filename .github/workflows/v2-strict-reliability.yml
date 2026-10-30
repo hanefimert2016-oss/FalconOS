@@ -1,0 +1,52 @@
+name: FalconOS V2 strict reliability gates
+on:
+  push:
+    branches: ['work/v2-sequential-hardening-20261030']
+  pull_request:
+    branches: ['v2']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  strict-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native build and VM dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm xorriso mtools qemu-system-x86 ovmf clang lld binutils python3-venv fonts-dejavu-core
+          python3 -m venv /tmp/falcon-v2-gates
+          /tmp/falcon-v2-gates/bin/pip install 'numpy<3' trimesh opencv-python-headless pillow
+      - name: Python regression tests must all pass
+        run: /tmp/falcon-v2-gates/bin/python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Native browser and storage tests must all pass
+        run: |
+          mkdir -p build
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/falco_miniweb_test.c kernel/falco_miniweb.c -o build/strict-miniweb
+          build/strict-miniweb
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/falco_navigation_test.c kernel/falco_navigation.c -o build/strict-navigation
+          build/strict-navigation
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/jfs_dynamic_test.c kernel/jfs_dynamic.c -o build/strict-jfs
+          build/strict-jfs
+          gcc -std=c11 -Wall -Wextra -Werror -Ikernel tests/file_viewer_test.c kernel/file_viewer.c -o build/strict-media
+          build/strict-media
+      - name: Build real V2.1 UEFI ISO
+        run: |
+          PATH="/tmp/falcon-v2-gates/bin:$PATH" make iso ENABLE_BOOT_GLB=1 ENABLE_BEARSSL=0 EXTRA_CFLAGS=-DFALCON_QEMU_UI_GALLERY
+          test -s build/FalconOS.iso
+          file build/BOOTX64.EFI | grep -F 'PE32+'
+      - name: Boot real ISO in QEMU and verify rendered desktop
+        run: timeout 100s python3 tools/qemu_smoke.py --boot-seconds 20 --output build/falcon-v2-strict-qemu.png
+      - name: Publish failures and proof for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: falcon-v2-strict-gates-evidence
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            build/falcon-v2-strict-qemu.png
+            build/falcon-boot-smoke.log
+            build/FalconOS.iso
