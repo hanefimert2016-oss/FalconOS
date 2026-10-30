@@ -270,13 +270,45 @@ def static_catalog():
 
 REPO = "hanefimert2016-oss/FalconOS-Marketplace"
 
-def publish_release(raw, metadata):
+def sign_publisher_package(raw, private_key):
+    """Create an Ed25519 detached signature offline using a host private key.
+
+    The private key never crosses the VM serial bridge and is never uploaded.
+    A signature is exactly 64 bytes for Ed25519.
+    """
+    if not isinstance(raw, bytes) or not raw.startswith(b"FAPP/1\\n") or len(raw) > MAX_BYTES:
+        raise ValueError("invalid FAPP/1 bytes for signing")
+    key = Path(private_key)
+    if not key.is_file():
+        raise ValueError("host signing key does not exist")
+    try:
+        with tempfile.TemporaryDirectory(prefix="falcon-sign-") as directory:
+            pkg = Path(directory) / "package.app.pkg"
+            signature = Path(directory) / "package.sig"
+            pkg.write_bytes(raw)
+            result = subprocess.run(
+                ["openssl", "pkeyutl", "-sign", "-inkey", str(key),
+                 "-rawin", "-in", str(pkg), "-out", str(signature)],
+                capture_output=True, check=False, timeout=10)
+            if result.returncode != 0:
+                raise ValueError("host private key could not sign FAPP/1 package")
+            signed = signature.read_bytes()
+        if len(signed) != 64:
+            raise ValueError("host private key must be Ed25519")
+        return signed
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("offline publisher signing failed") from exc
+
+
+def publish_release(raw, metadata, *, signing_key=None):
     """Create exactly one immutable GitHub Release via authenticated host gh.
 
     No guest-provided command/URL/repository reaches subprocess arguments.
     gh auth login (or scoped GH_TOKEN) is required outside the guest.
     """
     validate_package(raw, metadata["id"])
+    signed = (sign_publisher_package(raw, signing_key)
+              if signing_key is not None else None)
     tag = f'app-{metadata["id"]}-v{metadata["version"]}'
     asset = f'{metadata["id"]}-v{metadata["version"]}.app.pkg'
     status = subprocess.run(["gh", "auth", "status"], timeout=20,
@@ -293,10 +325,14 @@ def publish_release(raw, metadata):
         sidecar = Path(directory) / (asset + ".sha256")
         sidecar.write_text(hashlib.sha256(raw).hexdigest() + "  " + asset + "\n",
                            encoding="ascii")
-        cmd = ["gh", "release", "create", tag, str(pkg), str(sidecar),
-               "--repo", REPO, "--title", metadata["name"],
-               "--notes", "FAPP/1 script published from FalconOS Codedium/Discover.",
-               "--latest=false"]
+        cmd = ["gh", "release", "create", tag, str(pkg), str(sidecar)]
+        if signed is not None:
+            signature_asset = Path(directory) / (asset + ".sig")
+            signature_asset.write_bytes(signed)
+            cmd.append(str(signature_asset))
+        cmd += ["--repo", REPO, "--title", metadata["name"],
+                "--notes", "FAPP/1 script published from FalconOS Codedium/Discover.",
+                "--latest=false"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=70)
         if result.returncode:
             raise ValueError("GitHub release failed: " + result.stderr[:250])
