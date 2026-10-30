@@ -1,0 +1,38 @@
+name: FalconOS V2 Ring3 syscall capability proof
+on:
+  push:
+    branches: ['work/v2-sequential-hardening-20261030']
+    paths:
+      - 'kernel/**'
+      - 'boot/**'
+      - 'tools/qemu_ring3_caps_uefi.py'
+      - '.github/workflows/v2-ring3-caps.yml'
+  pull_request:
+    branches: ['v2']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ring3-cpl3-grant-isolation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install UEFI build and QEMU dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm xorriso mtools qemu-system-x86 ovmf clang lld binutils python3-venv fonts-dejavu-core
+          python3 -m venv /tmp/falcon-ring3
+          /tmp/falcon-ring3/bin/pip -q install 'numpy<3' trimesh opencv-python-headless pillow
+      - name: Build isolated opt-in CPL3 permission-test kernel
+        run: PATH="/tmp/falcon-ring3/bin:$PATH" make iso ENABLE_BOOT_GLB=0 ENABLE_BEARSSL=0 ENABLE_RING3_TEST=1 EXTRA_CFLAGS=-DFALCON_QEMU_CAP_TEST
+      - name: Verify two native user ELF tasks cannot exceed kernel grants
+        run: python3 tools/qemu_ring3_caps_uefi.py
+      - name: Upload Ring3 kernel diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: falcon-ring3-capability-proof
+          retention-days: 14
+          if-no-files-found: ignore
+          path: build/ring3-caps-debug.log
