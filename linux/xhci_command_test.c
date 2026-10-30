@@ -42,7 +42,8 @@ static bool wait_for(u32 off,u32 mask,u32 target){
 }
 bool xhci_qemu_noop(void){
     succeeded=false;
-    if(!pci_extended_count(2)||!pci_extended_mmio(2)){outb(0xE9,'A');return false;}
+    if(!pci_extended_count(2)){outb(0xE9,'A');return false;}
+    if(!pci_extended_mmio(2)){outb(0xE9,'B');return false;}
     xhci_base=(u64)pci_extended_info(2,2);
     if(xhci_base<0x100000ull || xhci_base>0xfff00000ull){outb(0xE9,'B');return false;}
     u32 bdf=pci_extended_info(2,6);
