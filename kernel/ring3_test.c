@@ -357,10 +357,17 @@ bool ring3_caps_demo(void){
         outb(0xE9,(step&1u)?'B':'A');
         if(!ring3_schedule_one())return false;
     }
+    /* The kernel must not retain code/stack/registers or grants from dead
+     * tasks; check the entire snapshot, not just its first byte. */
+    for(u32 i=0;i<RING3_NATIVE_TASKS;i++){
+        const native_task_t *task=&native_tasks[i];
+        if(task->runnable||!task->finished||task->slices!=2u||
+           task->caps||task->entry)return false;
+        for(u32 j=0;j<sizeof task->text;j++)
+            if(task->text[j]||task->stack[j])return false;
+        for(u32 j=0;j<20u;j++)if(task->frame[j])return false;
+    }
     return ring3_permission_denials==2u &&
-           !native_tasks[0].runnable && !native_tasks[1].runnable &&
-           native_tasks[0].finished && native_tasks[1].finished &&
-           native_tasks[0].slices==2u && native_tasks[1].slices==2u &&
            current_native_caps==0u && current_native_pid==-1;
 }
 #endif
