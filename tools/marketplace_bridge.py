@@ -77,7 +77,7 @@ class AssetRedirectHandler(urllib.request.HTTPRedirectHandler):
 def request_bytes(url):
     if not (url.startswith("https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/")
             or url.startswith("https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases/assets/")
-            or (url.startswith(STATIC_ROOT) and re.fullmatch(r"[a-z][a-z0-9-]{1,31}-v[0-9a-z.\-]+\.app\.pkg(?:\.sha256)?", url[len(STATIC_ROOT):]))):
+            or (url.startswith(STATIC_ROOT) and re.fullmatch(r"[a-z][a-z0-9-]{1,31}-v[0-9a-z.\-]+\.app\.pkg(?:\.sha256|\.sig)?", url[len(STATIC_ROOT):]))):
         raise ValueError("untrusted asset URL")
     req = urllib.request.Request(url, headers={"User-Agent": "FalconOS-Bridge/1.0"})
     with urllib.request.build_opener(AssetRedirectHandler()).open(req, timeout=25) as response:
@@ -85,6 +85,46 @@ def request_bytes(url):
     if len(raw) > MAX_BYTES:
         raise ValueError("package larger than 4096 bytes")
     return raw
+
+def verify_publisher_signature(raw, signature, public_key):
+    """Require Ed25519 detached signature over the complete FAPP/1 bytes.
+
+    The trust anchor is a host-supplied public-key file. Never accept a
+    signing key from a Release or from the untrusted guest. OpenSSL handles
+    Ed25519; no private key or network request is used by this verifier.
+    """
+    if not isinstance(raw, bytes) or not (0 < len(raw) <= MAX_BYTES):
+        raise ValueError("invalid signed package payload")
+    if not isinstance(signature, bytes) or len(signature) != 64:
+        raise ValueError("invalid Ed25519 detached signature length")
+    key = Path(public_key)
+    if not key.is_file():
+        raise ValueError("configured publisher trust key does not exist")
+    try:
+        # Require an actual Ed25519 public key; do not silently accept
+        # another algorithm through a PEM supplied by an operator.
+        key_info = subprocess.run(
+            ["openssl", "pkey", "-pubin", "-in", str(key),
+             "-text_pub", "-noout"],
+            capture_output=True, check=False, timeout=10)
+        if key_info.returncode or b"ED25519 Public-Key:" not in key_info.stdout:
+            raise ValueError("trusted publisher key must be Ed25519")
+        with tempfile.TemporaryDirectory(prefix="falcon-verify-") as directory:
+            pkg = Path(directory) / "package.app.pkg"
+            sig = Path(directory) / "package.sig"
+            pkg.write_bytes(raw)
+            sig.write_bytes(signature)
+            result = subprocess.run(
+                ["openssl", "pkeyutl", "-verify", "-pubin",
+                 "-inkey", str(key), "-rawin", "-in", str(pkg),
+                 "-sigfile", str(sig)],
+                capture_output=True, check=False, timeout=10)
+        if result.returncode != 0:
+            raise ValueError("untrusted or corrupted publisher signature")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("publisher signature verifier unavailable") from exc
+    return True
+
 
 def validate_package(raw, app_id):
     if len(raw) > MAX_BYTES or b"\x00" in raw or not raw.isascii():
@@ -179,8 +219,14 @@ def releases():
                                   if x.get("name") == filename + ".sha256"), None)
                 if not sha_asset:
                     continue
-                result[m.group(1)] = {"asset": a, "checksum_asset": sha_asset,
-                                       "version": m.group(2), "release": release}
+                signature_asset = next(
+                    (x for x in release.get("assets", [])
+                     if x.get("name") == filename + ".sig"), None)
+                result[m.group(1)] = {
+                    "asset": a, "checksum_asset": sha_asset,
+                    "signature_asset": signature_asset,
+                    "version": m.group(2), "release": release
+                }
     if not result:
         result = static_catalog()
     return dict(sorted(result.items())[:48])
@@ -214,6 +260,8 @@ def static_catalog():
           "asset":{"name":filename,"browser_download_url":STATIC_ROOT+filename},
           "checksum_asset":{"name":filename+".sha256",
                             "browser_download_url":STATIC_ROOT+filename+".sha256"},
+          "signature_asset":{"name":filename+".sig",
+                             "browser_download_url":STATIC_ROOT+filename+".sig"},
           "version":ver,"release":{"name":name,"tag_name":f"app-{app_id}-v{ver}"},
           "static_digest":digest,
         }
@@ -326,7 +374,7 @@ def send_acknowledged(sock, line):
     finally:
         sock.settimeout(None)  # idle guest may stay open indefinitely
 
-def serve(sock, publisher=None):
+def serve(sock, publisher=None, trusted_publisher_key=None):
     cache = {}
     upload = None
     while True:
@@ -389,6 +437,12 @@ def serve(sock, publisher=None):
                     raise ValueError("Published checksum points to a different package")
                 if entry.get("static_digest") and digest != entry["static_digest"]:
                     raise ValueError("Static catalog SHA-256 mismatch")
+                if trusted_publisher_key is not None:
+                    signature_asset = entry.get("signature_asset")
+                    if not signature_asset:
+                        raise ValueError("unsigned Marketplace release refused")
+                    signature = request_bytes(signature_asset["browser_download_url"])
+                    verify_publisher_signature(raw, signature, trusted_publisher_key)
                 # SHA-256 is independently checked again by the guest.
                 send_acknowledged(sock, "BEGIN|" + app_id + "|" + str(len(raw)) + "|" + digest)
                 for start in range(0, len(raw), 16):
@@ -411,7 +465,11 @@ def main():
     p.add_argument("--socket", default="build/falcon-market.sock")
     p.add_argument("--enable-publish", action="store_true",
                    help="Explicitly authorize authenticated GitHub Release uploads from this VM")
+    p.add_argument("--trusted-publisher-key", type=Path,
+                   help="Enable signed-only downloads using a pinned Ed25519 public PEM key")
     args = p.parse_args()
+    if args.trusted_publisher_key is not None and not args.trusted_publisher_key.is_file():
+        p.error("--trusted-publisher-key must name an existing public PEM key")
     path = Path(args.socket)
     print("Connecting to QEMU serial socket:", path, flush=True)
     while not path.exists():
@@ -421,7 +479,11 @@ def main():
         if args.enable_publish:
             print("WARNING: GitHub publishing enabled: guest-confirmed FAPP/1 releases only.",
                   flush=True)
-        serve(sock, publisher=publish_release if args.enable_publish else None)
+        if args.trusted_publisher_key:
+            print("Signed-only Marketplace downloads enabled (pinned Ed25519 key).",
+                  flush=True)
+        serve(sock, publisher=publish_release if args.enable_publish else None,
+              trusted_publisher_key=args.trusted_publisher_key)
 
 if __name__ == "__main__":
     main()
