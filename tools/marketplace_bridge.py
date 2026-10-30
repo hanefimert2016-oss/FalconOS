@@ -17,6 +17,7 @@ import urllib.error
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 API = "https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases?per_page=100"
 ALLOWED = {"echo", "date", "uname", "uptime", "whoami", "pwd", "ls", "help", "cal", "hwinfo", "free", "df", "clear", "doctor", "isostudio", "storagecenter", "themecreator", "codedium", "update"}
@@ -31,13 +32,55 @@ def request_json(url):
     with urllib.request.urlopen(req, timeout=15) as response:
         return json.load(response)
 
+# GitHub Releases serve asset bytes through signed GitHub CDN URLs. Never
+# follow package-download redirects to arbitrary hosts or plaintext HTTP.
+# This is transport hardening, NOT a publisher signature verification scheme.
+ASSET_REDIRECT_HOSTS = frozenset({
+    "github.com",
+    "api.github.com",
+    "raw.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com",
+    "github-releases.githubusercontent.com",
+})
+
+def approved_asset_redirect(url):
+    try:
+        parsed = urlsplit(url)
+        if (parsed.scheme != "https" or parsed.hostname not in ASSET_REDIRECT_HOSTS
+                or parsed.username is not None or parsed.password is not None
+                or parsed.port is not None):
+            return False
+    except ValueError:
+        return False
+    if parsed.hostname == "github.com":
+        return url.startswith(
+            "https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/"
+        )
+    if parsed.hostname == "api.github.com":
+        return url.startswith(
+            "https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases/assets/"
+        )
+    if parsed.hostname == "raw.githubusercontent.com":
+        return url.startswith(STATIC_ROOT)
+    # These are GitHub-controlled signed asset transport endpoints.
+    return True
+
+class AssetRedirectHandler(urllib.request.HTTPRedirectHandler):
+    max_redirections = 4
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not approved_asset_redirect(newurl):
+            raise ValueError("untrusted Marketplace asset redirect")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
 def request_bytes(url):
     if not (url.startswith("https://github.com/hanefimert2016-oss/FalconOS-Marketplace/releases/download/")
             or url.startswith("https://api.github.com/repos/hanefimert2016-oss/FalconOS-Marketplace/releases/assets/")
             or (url.startswith(STATIC_ROOT) and re.fullmatch(r"[a-z][a-z0-9-]{1,31}-v[0-9a-z.\-]+\.app\.pkg(?:\.sha256)?", url[len(STATIC_ROOT):]))):
         raise ValueError("untrusted asset URL")
     req = urllib.request.Request(url, headers={"User-Agent": "FalconOS-Bridge/1.0"})
-    with urllib.request.urlopen(req, timeout=25) as response:
+    with urllib.request.build_opener(AssetRedirectHandler()).open(req, timeout=25) as response:
         raw = response.read(MAX_BYTES + 1)
     if len(raw) > MAX_BYTES:
         raise ValueError("package larger than 4096 bytes")
